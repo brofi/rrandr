@@ -1,6 +1,14 @@
+extern crate gio;
+extern crate gtk;
+
+use gio::prelude::*;
+use gtk::prelude::*;
+
+use std::env;
 use std::ffi::CStr;
 use std::ptr::null;
 
+use gtk::{Application, ApplicationWindow};
 use x11::xlib::{Display, Window, XCloseDisplay, XDefaultScreen, XOpenDisplay, XRootWindow};
 use x11::xrandr::{
     Connection, RRMode, RROutput, RR_Connected, RR_DoubleScan, RR_Interlace, XRRGetOutputInfo,
@@ -8,6 +16,16 @@ use x11::xrandr::{
 };
 
 fn main() {
+    let application = Application::new(Some("com.github.brofi.rxrandr"), Default::default())
+        .expect("Failed to initialize GTK application.");
+    application.connect_activate(|app| {
+        let win = ApplicationWindow::new(app);
+        win.set_default_size(320, 200);
+        win.set_title("RXRandR");
+        win.show_all();
+    });
+    application.run(&env::args().collect::<Vec<_>>());
+
     print_connected_outputs();
 }
 

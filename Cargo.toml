@@ -8,3 +8,5 @@ edition = "2018"
 
 [dependencies]
 x11 = { version = "2.18.1", features = ["xlib", "xrandr"] }
+gtk = "0.7.0"
+gio = "0.7.0"
