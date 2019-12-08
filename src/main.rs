@@ -2,7 +2,10 @@ use std::ffi::CStr;
 use std::ptr::null;
 
 use x11::xlib::{Display, Window, XCloseDisplay, XDefaultScreen, XOpenDisplay, XRootWindow};
-use x11::xrandr::{Connection, RR_Connected, RR_DoubleScan, RR_Interlace, RRMode, RROutput, XRRGetOutputInfo, XRRGetScreenResourcesCurrent, XRRModeInfo, XRROutputInfo, XRRScreenResources};
+use x11::xrandr::{
+    Connection, RRMode, RROutput, RR_Connected, RR_DoubleScan, RR_Interlace, XRRGetOutputInfo,
+    XRRGetScreenResourcesCurrent, XRRModeInfo, XRROutputInfo, XRRScreenResources,
+};
 
 fn main() {
     print_connected_outputs();
@@ -48,9 +51,9 @@ fn print_connected_outputs() {
 
 fn is_connected(connection: Connection) -> bool {
     #[allow(non_upper_case_globals)]
-        return match connection as i32 {
+    return match connection as i32 {
         RR_Connected => true,
-        _ => false
+        _ => false,
     };
 }
 
@@ -64,8 +67,9 @@ fn get_refresh_rate(mode_info: XRRModeInfo) -> f64 {
         v_total /= 2;
     }
 
-    return
-        if mode_info.hTotal > 0 && v_total > 0 {
-            mode_info.dotClock as f64 / (mode_info.hTotal as f64 * v_total as f64)
-        } else { 0.0 };
+    return if mode_info.hTotal > 0 && v_total > 0 {
+        mode_info.dotClock as f64 / (mode_info.hTotal as f64 * v_total as f64)
+    } else {
+        0.0
+    };
 }
