@@ -1,5 +1,5 @@
 [package]
-name = "rrandr"
+name = "rxrandr"
 version = "0.1.0"
 authors = ["Andy B. <brofi.archlinux@gmail.com>"]
 edition = "2018"
