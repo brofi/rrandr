@@ -1,14 +1,13 @@
 extern crate gio;
 extern crate gtk;
 
-use gio::prelude::*;
-use gtk::prelude::*;
-
 use std::env;
 use std::ffi::CStr;
 use std::ptr::null;
 
-use gtk::{Application, ApplicationWindow};
+use gio::prelude::*;
+use gtk::prelude::*;
+use gtk::{Application, ApplicationWindow, ComboBoxText, Grid, PositionType, ToggleButton};
 use x11::xlib::{Display, Window, XCloseDisplay, XDefaultScreen, XOpenDisplay, XRootWindow};
 use x11::xrandr::{
     Connection, RRMode, RROutput, RR_Connected, RR_DoubleScan, RR_Interlace, XRRGetOutputInfo,
@@ -20,8 +19,31 @@ fn main() {
         .expect("Failed to initialize GTK application.");
     application.connect_activate(|app| {
         let win = ApplicationWindow::new(app);
-        win.set_default_size(320, 200);
         win.set_title("RXRandR");
+        win.set_default_size(320, 200);
+
+        let grid = Grid::new();
+
+        let tb_enable = ToggleButton::new_with_label("Enable");
+        grid.attach(&tb_enable, 0, 0, 20, 5);
+
+        let cb_resolution = ComboBoxText::new();
+        cb_resolution.append_text("2560x1440");
+        cb_resolution.append_text("1920x1080");
+        grid.attach_next_to(&cb_resolution, Some(&tb_enable), PositionType::Right, 20, 5);
+
+        let cb_refresh_rate = ComboBoxText::new();
+        cb_refresh_rate.append_text("144 Hz");
+        cb_refresh_rate.append_text("60 Hz");
+        grid.attach_next_to(
+            &cb_refresh_rate,
+            Some(&cb_resolution),
+            PositionType::Right,
+            20,
+            5,
+        );
+
+        win.add(&grid);
         win.show_all();
     });
     application.run(&env::args().collect::<Vec<_>>());
