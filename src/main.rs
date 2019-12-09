@@ -8,15 +8,14 @@ use std::{env, slice};
 use gio::prelude::*;
 use gtk::prelude::*;
 use gtk::{
-    Application, ApplicationWindow, ComboBoxText, Grid, PositionType, ToggleButton,
-    NONE_TOGGLE_BUTTON,
+    Application, ApplicationWindow, ComboBoxText, Grid, PositionType, RadioButton, ToggleButton,
+    NONE_RADIO_BUTTON,
 };
 use std::collections::HashMap;
 use x11::xlib::{Display, Window, XCloseDisplay, XDefaultScreen, XOpenDisplay, XRootWindow};
 use x11::xrandr::{
     Connection, RRCrtc, RRMode, RROutput, RR_Connected, RR_DoubleScan, RR_Interlace,
-    XRRGetOutputInfo, XRRGetScreenResourcesCurrent, XRRModeInfo, XRROutputInfo,
-    XRRScreenResources,
+    XRRGetOutputInfo, XRRGetScreenResourcesCurrent, XRRModeInfo, XRROutputInfo, XRRScreenResources,
 };
 
 #[derive(Debug)]
@@ -37,13 +36,33 @@ fn main() {
 
         let grid = Grid::new();
 
+        let output_info: HashMap<u64, OutputInfo> = get_output_info();
+        for oi in output_info.values() {
+            println!("{:?}", oi);
+        }
+
+        // create radio buttons with output name as label
+        let mut output_radio_buttons = Vec::new();
+        for o in output_info.values() {
+            output_radio_buttons.push(RadioButton::new_with_label(o.name.as_str()));
+        }
+
+        // join output radio buttons to a group and add to grid
+        let mut prev_rb = NONE_RADIO_BUTTON;
+        let mut it = output_radio_buttons.iter();
+        while let Some(rb) = it.next() {
+            rb.join_group(prev_rb);
+            grid.attach_next_to(rb, prev_rb, PositionType::Right, 1, 1);
+            prev_rb = Some(rb);
+        }
+
         let tb_enable = ToggleButton::new_with_label("Enable");
-        grid.attach_next_to(&tb_enable, NONE_TOGGLE_BUTTON, PositionType::Left, 20, 5);
+        grid.attach(&tb_enable, 0, 1, 1, 1);
 
         let cb_resolution = ComboBoxText::new();
         cb_resolution.append_text("2560x1440");
         cb_resolution.append_text("1920x1080");
-        grid.attach_next_to(&cb_resolution, Some(&tb_enable), PositionType::Right, 20, 5);
+        grid.attach_next_to(&cb_resolution, Some(&tb_enable), PositionType::Right, 1, 1);
 
         let cb_refresh_rate = ComboBoxText::new();
         cb_refresh_rate.append_text("144 Hz");
@@ -52,19 +71,14 @@ fn main() {
             &cb_refresh_rate,
             Some(&cb_resolution),
             PositionType::Right,
-            20,
-            5,
+            1,
+            1,
         );
 
         win.add(&grid);
         win.show_all();
     });
     application.run(&env::args().collect::<Vec<_>>());
-
-    let all_output_info: HashMap<u64, OutputInfo> = get_output_info();
-    for oi in all_output_info.values() {
-        println!("{:?}", oi);
-    }
 }
 
 fn get_output_info() -> HashMap<u64, OutputInfo> {
