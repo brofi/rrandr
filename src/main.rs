@@ -33,6 +33,7 @@ fn main() {
         let win = ApplicationWindow::new(app);
         win.set_title("RXRandR");
         win.set_default_size(320, 200);
+        win.set_border_width(20);
 
         let grid = Grid::new();
 
@@ -52,8 +53,20 @@ fn main() {
         let mut it = output_radio_buttons.iter();
         while let Some(rb) = it.next() {
             rb.join_group(prev_rb);
+            rb.connect_toggled(|b| {
+                if b.get_active() {
+                    if let Some(label) = b.get_label() {
+                        println!("RadioButton {} was turned on.", label);
+                    }
+                }
+            });
             grid.attach_next_to(rb, prev_rb, PositionType::Right, 1, 1);
             prev_rb = Some(rb);
+        }
+
+        // TODO set to primary
+        if let Some(rb) = output_radio_buttons.get(1) {
+            rb.set_active(true);
         }
 
         let tb_enable = ToggleButton::new_with_label("Enable");
