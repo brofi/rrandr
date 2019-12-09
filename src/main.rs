@@ -1,6 +1,3 @@
-extern crate gio;
-extern crate gtk;
-
 use std::ffi::CStr;
 use std::ptr::null;
 use std::{env, slice};
@@ -18,6 +15,7 @@ use x11::xrandr::{
     XRRGetOutputInfo, XRRGetScreenResourcesCurrent, XRRModeInfo, XRROutputInfo, XRRScreenResources,
 };
 
+// TODO Display Trait?
 #[derive(Debug)]
 struct OutputInfo {
     xid: u64,
@@ -72,14 +70,37 @@ fn main() {
         let tb_enable = ToggleButton::new_with_label("Enable");
         grid.attach(&tb_enable, 0, 1, 1, 1);
 
-        let cb_resolution = ComboBoxText::new();
-        cb_resolution.append_text("2560x1440");
-        cb_resolution.append_text("1920x1080");
-        grid.attach_next_to(&cb_resolution, Some(&tb_enable), PositionType::Right, 1, 1);
-
         let cb_refresh_rate = ComboBoxText::new();
-        cb_refresh_rate.append_text("144 Hz");
-        cb_refresh_rate.append_text("60 Hz");
+        let cb_resolution = ComboBoxText::new();
+
+        cb_resolution.connect_changed(|cb| {
+            if let Some(resolution) = cb.get_active_text() {
+                println!("resolution {} selected.", resolution);
+                // TODO dependent on radio button choice
+                // TODO cb may outlive cb_refresh_rate
+//                if let Some(first) = output_info.values().next() {
+//                    if let Some(o) = output_info.get(&first.xid) {
+//                        if let Some(rrs) = o.modes.get(resolution.as_str()) {
+//                            cb_refresh_rate.remove_all();
+//                            for r in rrs {
+//                                cb_refresh_rate.append_text(format!("{:2}", r).as_str());
+//                            }
+//                        }
+//                    }
+//                }
+            }
+        });
+
+        // TODO dependent on radio button choice
+        // TODO rethink the HashMap
+        if let Some(first) = output_info.values().next() {
+            if let Some(o) = output_info.get(&first.xid) {
+                for m in o.modes.keys() {
+                    cb_resolution.append_text(m);
+                }
+            }
+        }
+        grid.attach_next_to(&cb_resolution, Some(&tb_enable), PositionType::Right, 1, 1);
         grid.attach_next_to(
             &cb_refresh_rate,
             Some(&cb_resolution),
