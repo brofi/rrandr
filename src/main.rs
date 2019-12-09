@@ -7,12 +7,25 @@ use std::{env, slice};
 
 use gio::prelude::*;
 use gtk::prelude::*;
-use gtk::{Application, ApplicationWindow, ComboBoxText, Grid, PositionType, ToggleButton};
+use gtk::{
+    Application, ApplicationWindow, ComboBoxText, Grid, PositionType, ToggleButton,
+    NONE_TOGGLE_BUTTON,
+};
+use std::collections::HashMap;
 use x11::xlib::{Display, Window, XCloseDisplay, XDefaultScreen, XOpenDisplay, XRootWindow};
 use x11::xrandr::{
-    Connection, RRMode, RROutput, RR_Connected, RR_DoubleScan, RR_Interlace, XRRGetOutputInfo,
-    XRRGetScreenResourcesCurrent, XRRModeInfo, XRROutputInfo, XRRScreenResources,
+    Connection, RRCrtc, RRMode, RROutput, RR_Connected, RR_DoubleScan, RR_Interlace,
+    XRRGetOutputInfo, XRRGetScreenResourcesCurrent, XRRModeInfo, XRROutputInfo,
+    XRRScreenResources,
 };
+
+#[derive(Debug)]
+struct OutputInfo {
+    xid: u64,
+    name: String,
+    enabled: bool,
+    modes: HashMap<String, Vec<f64>>,
+}
 
 fn main() {
     let application = Application::new(Some("com.github.brofi.rxrandr"), Default::default())
@@ -25,7 +38,7 @@ fn main() {
         let grid = Grid::new();
 
         let tb_enable = ToggleButton::new_with_label("Enable");
-        grid.attach(&tb_enable, 0, 0, 20, 5);
+        grid.attach_next_to(&tb_enable, NONE_TOGGLE_BUTTON, PositionType::Left, 20, 5);
 
         let cb_resolution = ComboBoxText::new();
         cb_resolution.append_text("2560x1440");
@@ -48,10 +61,27 @@ fn main() {
     });
     application.run(&env::args().collect::<Vec<_>>());
 
-    print_connected_outputs();
+    let all_output_info: HashMap<u64, OutputInfo> = get_output_info();
+    for oi in all_output_info.values() {
+        println!("{:?}", oi);
+    }
 }
 
-fn print_connected_outputs() {
+fn get_output_info() -> HashMap<u64, OutputInfo> {
+    //    let crtcs: Vec<RRCrtc> = get_crtcs_as_vec(&mut *res);
+    //    for c in crtcs {
+    //        print!("crtc: {}, outputs: ", c);
+    //        let crtc_info: *mut XRRCrtcInfo = XRRGetCrtcInfo(dpy, res, c);
+    //        let crtc_outputs: *mut u64 = (*crtc_info).outputs;
+    //        for o in 0..(*crtc_info).noutput {
+    //            let output = *crtc_outputs.offset(o as isize);
+    //            print!("{}", output);
+    //        }
+    //        println!();
+    //    }
+
+    let mut output_info: HashMap<u64, OutputInfo> = HashMap::new();
+
     unsafe {
         let dpy: *mut Display = XOpenDisplay(null());
 
@@ -61,24 +91,43 @@ fn print_connected_outputs() {
 
         let res: *mut XRRScreenResources = get_screen_res(&mut *dpy);
         let outputs: Vec<RROutput> = get_outputs_as_vec(&mut *res);
-
         for o in outputs {
-            let output_info: *mut XRROutputInfo = XRRGetOutputInfo(dpy, res, o);
-            if is_connected((*output_info).connection) {
-                let name = CStr::from_ptr((*output_info).name).to_str().unwrap();
-                println!("{}", &name);
+            let x_output_info: *mut XRROutputInfo = XRRGetOutputInfo(dpy, res, o);
 
-                let mode_info: Vec<XRRModeInfo> =
-                    get_mode_info_for_output_as_vec(&mut *res, &mut *output_info);
-                for mode_i in mode_info {
-                    let mode_name = CStr::from_ptr(mode_i.name).to_str().unwrap();
-                    println!("{} ({:.2} Hz)", &mode_name, get_refresh_rate(mode_i));
-                }
+            if !is_connected((*x_output_info).connection) {
+                continue;
             }
+
+            let name: String = CStr::from_ptr((*x_output_info).name)
+                .to_str()
+                .unwrap()
+                .to_owned();
+            let enabled: bool = is_output_enabled(&mut *res, (*x_output_info).crtc);
+            let mut modes: HashMap<String, Vec<f64>> = HashMap::new();
+            let mode_info: Vec<XRRModeInfo> =
+                get_mode_info_for_output_as_vec(&mut *res, &mut *x_output_info);
+            for mode_i in mode_info {
+                let mode_name = CStr::from_ptr(mode_i.name).to_str().unwrap().to_owned();
+                modes
+                    .entry(mode_name)
+                    .or_insert(Vec::new())
+                    .push(get_refresh_rate(mode_i));
+            }
+            output_info.insert(
+                o,
+                OutputInfo {
+                    xid: o,
+                    name,
+                    enabled,
+                    modes,
+                },
+            );
         }
 
         XCloseDisplay(dpy);
     }
+
+    output_info
 }
 
 fn get_screen_res(dpy: &mut Display) -> *mut XRRScreenResources {
@@ -89,6 +138,15 @@ fn get_screen_res(dpy: &mut Display) -> *mut XRRScreenResources {
         assert!(!res.is_null());
         res
     }
+}
+
+#[allow(dead_code)]
+fn get_crtcs_as_vec(res: &mut XRRScreenResources) -> Vec<RRCrtc> {
+    let crtcs: *mut RRCrtc = res.crtcs;
+    let len = res.ncrtc;
+    assert!(!crtcs.is_null());
+    assert!(len >= 0);
+    unsafe { slice::from_raw_parts(crtcs, len as usize) }.to_vec()
 }
 
 fn get_outputs_as_vec(res: &mut XRRScreenResources) -> Vec<RROutput> {
@@ -138,6 +196,17 @@ fn is_connected(connection: Connection) -> bool {
         RR_Connected => true,
         _ => false,
     }
+}
+
+fn is_output_enabled(res: &XRRScreenResources, output_crtc: RRCrtc) -> bool {
+    let crtcs = res.crtcs;
+    for i in 0..res.ncrtc {
+        let c = unsafe { *crtcs.offset(i as isize) };
+        if c == output_crtc {
+            return true;
+        }
+    }
+    false
 }
 
 fn get_refresh_rate(mode_info: XRRModeInfo) -> f64 {
