@@ -1,3 +1,11 @@
 /target
 **/*.rs.bk
+
+# Fix for error "Cargo project update failed: no explicit stdlib or rustup
+# found": Click "Attach manually" in top bar of rs file, and add
+# "/usr/lib/rustlib/src/rust/src". This error occurs because the ignored
+# .idea/workspace.xml is not correctly generated when importing this project.
+# It's missing the option <option name="explicitPathToStdlib"
+# value="/usr/lib/rustlib/src/rust/src" /> in <component
+# name="RustProjectSettings">
 .idea/
