@@ -27,15 +27,32 @@ macro_rules! enclose {
 
 // TODO Display Trait?
 #[derive(Debug, Clone)]
-struct OutputInfo {
+struct Output {
     xid: u64,
     name: String,
-    enabled: bool,
     modes: HashMap<String, Vec<f64>>,
+    curr_conf: OutputConfig,
+    new_conf: OutputConfig,
+}
+
+impl Output {
+    fn add_mode(&mut self, mode_name: String, refresh_rate: f64) {
+        self.modes
+            .entry(mode_name)
+            .or_insert(Vec::new())
+            .push(refresh_rate);
+    }
+}
+
+#[derive(Debug, Clone)]
+struct OutputConfig {
+    enabled: bool,
+    resolution: String,
+    refresh_rate: f64,
 }
 
 fn main() {
-    let output_info: HashMap<String, OutputInfo> = get_output_info();
+    let output_info: HashMap<String, Output> = get_output_info();
     for oi in output_info.values() {
         println!("{:?}", oi);
     }
@@ -50,7 +67,7 @@ fn main() {
     application.run(&env::args().collect::<Vec<_>>());
 }
 
-fn build_ui(application: &Application, output_info: &HashMap<String, OutputInfo>) {
+fn build_ui(application: &Application, output_info: &HashMap<String, Output>) {
     let builder = Builder::new_from_string(include_str!("gui.glade"));
 
     let window_name = "window";
@@ -125,7 +142,7 @@ fn build_ui(application: &Application, output_info: &HashMap<String, OutputInfo>
 
 fn on_output_selected(
     rb: &RadioButton,
-    output_info: &HashMap<String, OutputInfo>,
+    output_info: &HashMap<String, Output>,
     cb_resolution: &ComboBoxText,
 ) {
     if rb.get_active() {
@@ -167,7 +184,7 @@ fn on_resolution_changed(cb: &ComboBoxText, cb_refresh_rate: &ComboBoxText) {
     }
 }
 
-fn get_output_info() -> HashMap<String, OutputInfo> {
+fn get_output_info() -> HashMap<String, Output> {
     //    let crtcs: Vec<RRCrtc> = get_crtcs_as_vec(&mut *res);
     //    for c in crtcs {
     //        print!("crtc: {}, outputs: ", c);
@@ -180,7 +197,7 @@ fn get_output_info() -> HashMap<String, OutputInfo> {
     //        println!();
     //    }
 
-    let mut output_info: HashMap<String, OutputInfo> = HashMap::new();
+    let mut output_info: HashMap<String, Output> = HashMap::new();
 
     unsafe {
         let dpy: *mut Display = XOpenDisplay(null());
@@ -203,22 +220,32 @@ fn get_output_info() -> HashMap<String, OutputInfo> {
             let mut modes: HashMap<String, Vec<f64>> = HashMap::new();
             let mode_info: Vec<XRRModeInfo> =
                 get_mode_info_for_output_as_vec(&mut *res, &mut *x_output_info);
-            for mode_i in mode_info {
-                let mode_name = CStr::from_ptr(mode_i.name).to_str().unwrap().to_owned();
-                modes
-                    .entry(mode_name)
-                    .or_insert(Vec::new())
-                    .push(get_refresh_rate(mode_i));
-            }
-            output_info.insert(name.to_owned(), {
+
+            // TODO
+            let curr_res = "";
+            let curr_refresh_rate = 0.0;
+
+            let curr_conf = OutputConfig {
+                enabled,
+                resolution: curr_res.into(),
+                refresh_rate: curr_refresh_rate,
+            };
+            let new_conf = curr_conf.clone();
+            let mut output = {
                 let name = name.to_owned();
-                OutputInfo {
+                Output {
                     xid: o,
                     name,
-                    enabled,
                     modes,
+                    curr_conf,
+                    new_conf,
                 }
-            });
+            };
+            for mode_i in mode_info {
+                let mode_name = CStr::from_ptr(mode_i.name).to_str().unwrap().to_owned();
+                output.add_mode(mode_name, get_refresh_rate(mode_i));
+            }
+            output_info.insert(name.to_owned(), output);
         }
 
         XCloseDisplay(dpy);
