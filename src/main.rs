@@ -104,22 +104,25 @@ fn build_ui(application: &Application, output_info: HashMap<u64, OutputInfo>) {
         .get_object(cb_resolution_name)
         .expect(&format!("Failed to get ComboBox '{}'", cb_resolution_name));
 
-    // TODO refactor
-    let cb_refresh_rate_c = cb_refresh_rate.clone();
+    // TODO connect with selected output
     let output_info_first_c = match output_info.values().next() {
         Some(o) => (*o).clone(),
         None => panic!("no first"),
     };
-    cb_resolution.connect_changed(move |cb| {
-        if let Some(resolution) = cb.get_active_text() {
-            println!("resolution {} selected.", resolution);
-            // TODO dependent on radio button choice
-            if let Some(rrs) = output_info_first_c.modes.get(resolution.as_str()) {
-                cb_refresh_rate_c.remove_all();
-                for r in rrs {
-                    cb_refresh_rate_c.append_text(format!("{:2}", r).as_str());
+    cb_resolution.connect_changed({
+        let cb_refresh_rate = cb_refresh_rate.clone();
+        move |cb| {
+            if let Some(resolution) = cb.get_active_text() {
+                println!("resolution {} selected.", resolution);
+                // TODO dependent on radio button choice
+                if let Some(rrs) = output_info_first_c.modes.get(resolution.as_str()) {
+                    cb_refresh_rate.remove_all();
+                    for r in rrs {
+                        cb_refresh_rate.append_text(format!("{:2}", r).as_str());
+                    }
+                    // TODO use current if current res
+                    cb_refresh_rate.set_active(Some(0));
                 }
-                cb_refresh_rate_c.set_active(Some(0));
             }
         }
     });
