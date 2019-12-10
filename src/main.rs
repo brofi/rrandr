@@ -44,14 +44,13 @@ fn main() {
         .expect("Failed to initialize GTK application.");
 
     application.connect_activate(move |app| {
-        let output_info = output_info.clone();
-        build_ui(app, output_info);
+        build_ui(app, &output_info);
     });
 
     application.run(&env::args().collect::<Vec<_>>());
 }
 
-fn build_ui(application: &Application, output_info: HashMap<String, OutputInfo>) {
+fn build_ui(application: &Application, output_info: &HashMap<String, OutputInfo>) {
     let builder = Builder::new_from_string(include_str!("gui.glade"));
 
     let window_name = "window";
@@ -98,27 +97,7 @@ fn build_ui(application: &Application, output_info: HashMap<String, OutputInfo>)
         // let cb_refresh_rate = cb_refresh_rate.clone();
         // let output_radio_buttons = output_radio_buttons.clone();
         move |cb| {
-            if let Some(resolution) = cb.get_active_text() {
-                println!("resolution {} selected.", resolution);
-                /* TODO cannot move output here, need it later
-                for rb in output_radio_buttons {
-                    if rb.get_active() {
-                        if let Some(name) = WidgetExt::get_name(&rb) {
-                            println!("Found active RadioButton {}.", name);
-                            if let Some(o) = output_info.get(name.as_str()) {
-                                if let Some(rrs) = o.modes.get(resolution.as_str()) {
-                                    cb_refresh_rate.remove_all();
-                                    for r in rrs {
-                                        cb_refresh_rate.append_text(format!("{:2}", r).as_str());
-                                    }
-                                    // TODO use current if current res
-                                    cb_refresh_rate.set_active(Some(0));
-                                }
-                            }
-                        }
-                    }
-                }*/
-            }
+            on_resolution_changed(cb, &cb_refresh_rate);
         }
     });
 
@@ -131,19 +110,7 @@ fn build_ui(application: &Application, output_info: HashMap<String, OutputInfo>)
             let cb_resolution = cb_resolution.clone();
             let output_info = output_info.clone();
             move |rb| {
-                if rb.get_active() {
-                    if let Some(name) = WidgetExt::get_name(rb) {
-                        println!("RadioButton {} was turned on.", name);
-                        if let Some(o) = output_info.get(name.as_str()) {
-                            cb_resolution.remove_all();
-                            for m in o.modes.keys() {
-                                cb_resolution.append_text(m);
-                            }
-                            // TODO user current if current res
-                            cb_resolution.set_active_id(Some("1024x768"));
-                        }
-                    }
-                }
+                on_output_selected(rb, &output_info, &cb_resolution);
             }
         });
     }
@@ -154,6 +121,50 @@ fn build_ui(application: &Application, output_info: HashMap<String, OutputInfo>)
     }
 
     window.show_all();
+}
+
+fn on_output_selected(
+    rb: &RadioButton,
+    output_info: &HashMap<String, OutputInfo>,
+    cb_resolution: &ComboBoxText,
+) {
+    if rb.get_active() {
+        if let Some(name) = WidgetExt::get_name(rb) {
+            println!("RadioButton {} was turned on.", name);
+            if let Some(o) = output_info.get(name.as_str()) {
+                cb_resolution.remove_all();
+                for m in o.modes.keys() {
+                    cb_resolution.append_text(m);
+                }
+                // TODO user current if current res
+                cb_resolution.set_active_id(Some("1024x768"));
+            }
+        }
+    }
+}
+
+fn on_resolution_changed(cb: &ComboBoxText, cb_refresh_rate: &ComboBoxText) {
+    if let Some(resolution) = cb.get_active_text() {
+        println!("resolution {} selected.", resolution);
+        /* TODO cannot move output here, need it later
+        for rb in output_radio_buttons {
+            if rb.get_active() {
+                if let Some(name) = WidgetExt::get_name(&rb) {
+                    println!("Found active RadioButton {}.", name);
+                    if let Some(o) = output_info.get(name.as_str()) {
+                        if let Some(rrs) = o.modes.get(resolution.as_str()) {
+                            cb_refresh_rate.remove_all();
+                            for r in rrs {
+                                cb_refresh_rate.append_text(format!("{:2}", r).as_str());
+                            }
+                            // TODO use current if current res
+                            cb_refresh_rate.set_active(Some(0));
+                        }
+                    }
+                }
+            }
+        }*/
+    }
 }
 
 fn get_output_info() -> HashMap<String, OutputInfo> {
