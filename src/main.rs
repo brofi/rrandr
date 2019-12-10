@@ -16,7 +16,7 @@ use x11::xrandr::{
 };
 
 // TODO Display Trait?
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct OutputInfo {
     xid: u64,
     name: String,
@@ -63,7 +63,7 @@ fn main() {
         }
 
         // TODO set to primary
-        if let Some(rb) = output_radio_buttons.get(1) {
+        if let Some(rb) = output_radio_buttons.get(0) {
             rb.set_active(true);
         }
 
@@ -73,21 +73,23 @@ fn main() {
         let cb_refresh_rate = ComboBoxText::new();
         let cb_resolution = ComboBoxText::new();
 
-        cb_resolution.connect_changed(|cb| {
+        // TODO ???
+        let cb_refresh_rate_c = cb_refresh_rate.clone();
+        let output_info_first_c = match output_info.values().next() {
+            Some(o) => (*o).clone(),
+            None => panic!("no first"),
+        };
+        cb_resolution.connect_changed(move |cb| {
             if let Some(resolution) = cb.get_active_text() {
                 println!("resolution {} selected.", resolution);
                 // TODO dependent on radio button choice
-                // TODO cb may outlive cb_refresh_rate
-//                if let Some(first) = output_info.values().next() {
-//                    if let Some(o) = output_info.get(&first.xid) {
-//                        if let Some(rrs) = o.modes.get(resolution.as_str()) {
-//                            cb_refresh_rate.remove_all();
-//                            for r in rrs {
-//                                cb_refresh_rate.append_text(format!("{:2}", r).as_str());
-//                            }
-//                        }
-//                    }
-//                }
+                if let Some(rrs) = output_info_first_c.modes.get(resolution.as_str()) {
+                    cb_refresh_rate_c.remove_all();
+                    for r in rrs {
+                        cb_refresh_rate_c.append_text(format!("{:2}", r).as_str());
+                    }
+                    cb_refresh_rate_c.set_active(Some(0));
+                }
             }
         });
 
@@ -100,6 +102,11 @@ fn main() {
                 }
             }
         }
+
+        // TODO set current resolution
+        cb_resolution.set_id_column(0);
+        cb_resolution.set_active_id(Some("1024x768"));
+
         grid.attach_next_to(&cb_resolution, Some(&tb_enable), PositionType::Right, 1, 1);
         grid.attach_next_to(
             &cb_refresh_rate,
