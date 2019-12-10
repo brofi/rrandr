@@ -35,7 +35,7 @@ struct OutputInfo {
 }
 
 fn main() {
-    let output_info: HashMap<u64, OutputInfo> = get_output_info();
+    let output_info: HashMap<String, OutputInfo> = get_output_info();
     for oi in output_info.values() {
         println!("{:?}", oi);
     }
@@ -51,12 +51,12 @@ fn main() {
     application.run(&env::args().collect::<Vec<_>>());
 }
 
-fn build_ui(application: &Application, output_info: HashMap<u64, OutputInfo>) {
+fn build_ui(application: &Application, output_info: HashMap<String, OutputInfo>) {
     let builder = Builder::new_from_string(include_str!("gui.glade"));
 
     let window_name = "window";
     let window: ApplicationWindow = builder.get_object(window_name).expect(&format!(
-        "Failed to get ApplicationWindow '{}'",
+        "Failed to get ApplicationWindow `{}`",
         window_name
     ));
     window.set_application(Some(application));
@@ -64,7 +64,7 @@ fn build_ui(application: &Application, output_info: HashMap<u64, OutputInfo>) {
     let box_outputs_name = "box_outputs";
     let box_outputs: Box = builder
         .get_object(box_outputs_name)
-        .expect(&format!("Failed to get Box '{}'", box_outputs_name));
+        .expect(&format!("Failed to get Box `{}`", box_outputs_name));
 
     // create radio buttons with output name as label
     let mut output_radio_buttons = Vec::new();
@@ -79,15 +79,73 @@ fn build_ui(application: &Application, output_info: HashMap<u64, OutputInfo>) {
     let mut it = output_radio_buttons.iter();
     while let Some(rb) = it.next() {
         rb.join_group(prev_rb);
-        rb.connect_toggled(|b| {
-            if b.get_active() {
-                if let Some(name) = WidgetExt::get_name(b) {
-                    println!("RadioButton {} was turned on.", name);
+        box_outputs.add(rb);
+        prev_rb = Some(rb);
+    }
+
+    let cb_refresh_rate_name = "cb_refresh_rate";
+    let cb_refresh_rate: ComboBoxText = builder.get_object(cb_refresh_rate_name).expect(&format!(
+        "Failed to get ComboBox `{}`",
+        cb_refresh_rate_name
+    ));
+
+    let cb_resolution_name = "cb_resolution";
+    let cb_resolution: ComboBoxText = builder
+        .get_object(cb_resolution_name)
+        .expect(&format!("Failed to get ComboBox `{}`", cb_resolution_name));
+
+    cb_resolution.connect_changed({
+        // let cb_refresh_rate = cb_refresh_rate.clone();
+        // let output_radio_buttons = output_radio_buttons.clone();
+        move |cb| {
+            if let Some(resolution) = cb.get_active_text() {
+                println!("resolution {} selected.", resolution);
+                /* TODO cannot move output here, need it later
+                for rb in output_radio_buttons {
+                    if rb.get_active() {
+                        if let Some(name) = WidgetExt::get_name(&rb) {
+                            println!("Found active RadioButton {}.", name);
+                            if let Some(o) = output_info.get(name.as_str()) {
+                                if let Some(rrs) = o.modes.get(resolution.as_str()) {
+                                    cb_refresh_rate.remove_all();
+                                    for r in rrs {
+                                        cb_refresh_rate.append_text(format!("{:2}", r).as_str());
+                                    }
+                                    // TODO use current if current res
+                                    cb_refresh_rate.set_active(Some(0));
+                                }
+                            }
+                        }
+                    }
+                }*/
+            }
+        }
+    });
+
+    // TODO set current resolution
+    cb_resolution.set_id_column(0);
+    cb_resolution.set_active_id(Some("1024x768"));
+
+    for rb in &output_radio_buttons {
+        rb.connect_toggled({
+            let cb_resolution = cb_resolution.clone();
+            let output_info = output_info.clone();
+            move |rb| {
+                if rb.get_active() {
+                    if let Some(name) = WidgetExt::get_name(rb) {
+                        println!("RadioButton {} was turned on.", name);
+                        if let Some(o) = output_info.get(name.as_str()) {
+                            cb_resolution.remove_all();
+                            for m in o.modes.keys() {
+                                cb_resolution.append_text(m);
+                            }
+                            // TODO user current if current res
+                            cb_resolution.set_active_id(Some("1024x768"));
+                        }
+                    }
                 }
             }
         });
-        box_outputs.add(rb);
-        prev_rb = Some(rb);
     }
 
     // TODO set to primary
@@ -95,58 +153,10 @@ fn build_ui(application: &Application, output_info: HashMap<u64, OutputInfo>) {
         rb.set_active(true);
     }
 
-    let cb_refresh_rate_name = "cb_refresh_rate";
-    let cb_refresh_rate: ComboBoxText = builder.get_object(cb_refresh_rate_name).expect(&format!(
-        "Failed to get ComboBox '{}'",
-        cb_refresh_rate_name
-    ));
-
-    let cb_resolution_name = "cb_resolution";
-    let cb_resolution: ComboBoxText = builder
-        .get_object(cb_resolution_name)
-        .expect(&format!("Failed to get ComboBox '{}'", cb_resolution_name));
-
-    // TODO connect with selected output
-    let output_info_first_c = match output_info.values().next() {
-        Some(o) => (*o).clone(),
-        None => panic!("no first"),
-    };
-    cb_resolution.connect_changed({
-        let cb_refresh_rate = cb_refresh_rate.clone();
-        move |cb| {
-            if let Some(resolution) = cb.get_active_text() {
-                println!("resolution {} selected.", resolution);
-                // TODO dependent on radio button choice
-                if let Some(rrs) = output_info_first_c.modes.get(resolution.as_str()) {
-                    cb_refresh_rate.remove_all();
-                    for r in rrs {
-                        cb_refresh_rate.append_text(format!("{:2}", r).as_str());
-                    }
-                    // TODO use current if current res
-                    cb_refresh_rate.set_active(Some(0));
-                }
-            }
-        }
-    });
-
-    // TODO dependent on radio button choice
-    // TODO rethink the HashMap
-    if let Some(first) = output_info.values().next() {
-        if let Some(o) = output_info.get(&first.xid) {
-            for m in o.modes.keys() {
-                cb_resolution.append_text(m);
-            }
-        }
-    }
-
-    // TODO set current resolution
-    cb_resolution.set_id_column(0);
-    cb_resolution.set_active_id(Some("1024x768"));
-
     window.show_all();
 }
 
-fn get_output_info() -> HashMap<u64, OutputInfo> {
+fn get_output_info() -> HashMap<String, OutputInfo> {
     //    let crtcs: Vec<RRCrtc> = get_crtcs_as_vec(&mut *res);
     //    for c in crtcs {
     //        print!("crtc: {}, outputs: ", c);
@@ -159,7 +169,7 @@ fn get_output_info() -> HashMap<u64, OutputInfo> {
     //        println!();
     //    }
 
-    let mut output_info: HashMap<u64, OutputInfo> = HashMap::new();
+    let mut output_info: HashMap<String, OutputInfo> = HashMap::new();
 
     unsafe {
         let dpy: *mut Display = XOpenDisplay(null());
@@ -177,10 +187,7 @@ fn get_output_info() -> HashMap<u64, OutputInfo> {
                 continue;
             }
 
-            let name: String = CStr::from_ptr((*x_output_info).name)
-                .to_str()
-                .unwrap()
-                .to_owned();
+            let name: &str = CStr::from_ptr((*x_output_info).name).to_str().unwrap();
             let enabled: bool = is_output_enabled(&mut *res, (*x_output_info).crtc);
             let mut modes: HashMap<String, Vec<f64>> = HashMap::new();
             let mode_info: Vec<XRRModeInfo> =
@@ -192,15 +199,15 @@ fn get_output_info() -> HashMap<u64, OutputInfo> {
                     .or_insert(Vec::new())
                     .push(get_refresh_rate(mode_i));
             }
-            output_info.insert(
-                o,
+            output_info.insert(name.to_owned(), {
+                let name = name.to_owned();
                 OutputInfo {
                     xid: o,
                     name,
                     enabled,
                     modes,
-                },
-            );
+                }
+            });
         }
 
         XCloseDisplay(dpy);
