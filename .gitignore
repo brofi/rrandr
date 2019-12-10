@@ -9,3 +9,7 @@
 # value="/usr/lib/rustlib/src/rust/src" /> in <component
 # name="RustProjectSettings">
 .idea/
+
+# glade
+**/#*.glade#
+**/*.glade~

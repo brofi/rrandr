@@ -5,8 +5,7 @@ use std::{env, slice};
 use gio::prelude::*;
 use gtk::prelude::*;
 use gtk::{
-    Application, ApplicationWindow, ComboBoxText, Grid, PositionType, RadioButton, ToggleButton,
-    NONE_RADIO_BUTTON,
+    Application, ApplicationWindow, Box, Builder, ComboBoxText, RadioButton, NONE_RADIO_BUTTON,
 };
 use std::collections::HashMap;
 use x11::xlib::{Display, Window, XCloseDisplay, XDefaultScreen, XOpenDisplay, XRootWindow};
@@ -14,6 +13,17 @@ use x11::xrandr::{
     Connection, RRCrtc, RRMode, RROutput, RR_Connected, RR_DoubleScan, RR_Interlace,
     XRRGetOutputInfo, XRRGetScreenResourcesCurrent, XRRModeInfo, XRROutputInfo, XRRScreenResources,
 };
+
+// TODO consider using
+#[allow(unused_macros)]
+macro_rules! enclose {
+    ( ($( $x:ident ),*) $y:expr ) => {
+        {
+            $(let $x = $x.clone();)*
+            $y
+        }
+    };
+}
 
 // TODO Display Trait?
 #[derive(Debug, Clone)]
@@ -25,101 +35,110 @@ struct OutputInfo {
 }
 
 fn main() {
+    let output_info: HashMap<u64, OutputInfo> = get_output_info();
+    for oi in output_info.values() {
+        println!("{:?}", oi);
+    }
+
     let application = Application::new(Some("com.github.brofi.rxrandr"), Default::default())
         .expect("Failed to initialize GTK application.");
-    application.connect_activate(|app| {
-        let win = ApplicationWindow::new(app);
-        win.set_title("RXRandR");
-        win.set_default_size(320, 200);
-        win.set_border_width(20);
 
-        let grid = Grid::new();
+    application.connect_activate(move |app| {
+        let output_info = output_info.clone();
+        build_ui(app, output_info);
+    });
 
-        let output_info: HashMap<u64, OutputInfo> = get_output_info();
-        for oi in output_info.values() {
-            println!("{:?}", oi);
-        }
+    application.run(&env::args().collect::<Vec<_>>());
+}
 
-        // create radio buttons with output name as label
-        let mut output_radio_buttons = Vec::new();
-        for o in output_info.values() {
-            output_radio_buttons.push(RadioButton::new_with_label(o.name.as_str()));
-        }
+fn build_ui(application: &Application, output_info: HashMap<u64, OutputInfo>) {
+    let builder = Builder::new_from_string(include_str!("gui.glade"));
 
-        // join output radio buttons to a group and add to grid
-        let mut prev_rb = NONE_RADIO_BUTTON;
-        let mut it = output_radio_buttons.iter();
-        while let Some(rb) = it.next() {
-            rb.join_group(prev_rb);
-            rb.connect_toggled(|b| {
-                if b.get_active() {
-                    if let Some(label) = b.get_label() {
-                        println!("RadioButton {} was turned on.", label);
-                    }
-                }
-            });
-            grid.attach_next_to(rb, prev_rb, PositionType::Right, 1, 1);
-            prev_rb = Some(rb);
-        }
+    let window_name = "window";
+    let window: ApplicationWindow = builder.get_object(window_name).expect(&format!(
+        "Failed to get ApplicationWindow '{}'",
+        window_name
+    ));
+    window.set_application(Some(application));
 
-        // TODO set to primary
-        if let Some(rb) = output_radio_buttons.get(0) {
-            rb.set_active(true);
-        }
+    let box_outputs_name = "box_outputs";
+    let box_outputs: Box = builder
+        .get_object(box_outputs_name)
+        .expect(&format!("Failed to get Box '{}'", box_outputs_name));
 
-        let tb_enable = ToggleButton::new_with_label("Enable");
-        grid.attach(&tb_enable, 0, 1, 1, 1);
+    // create radio buttons with output name as label
+    let mut output_radio_buttons = Vec::new();
+    for o in output_info.values() {
+        output_radio_buttons.push(RadioButton::new_with_label(o.name.as_str()));
+    }
 
-        let cb_refresh_rate = ComboBoxText::new();
-        let cb_resolution = ComboBoxText::new();
-
-        // TODO ???
-        let cb_refresh_rate_c = cb_refresh_rate.clone();
-        let output_info_first_c = match output_info.values().next() {
-            Some(o) => (*o).clone(),
-            None => panic!("no first"),
-        };
-        cb_resolution.connect_changed(move |cb| {
-            if let Some(resolution) = cb.get_active_text() {
-                println!("resolution {} selected.", resolution);
-                // TODO dependent on radio button choice
-                if let Some(rrs) = output_info_first_c.modes.get(resolution.as_str()) {
-                    cb_refresh_rate_c.remove_all();
-                    for r in rrs {
-                        cb_refresh_rate_c.append_text(format!("{:2}", r).as_str());
-                    }
-                    cb_refresh_rate_c.set_active(Some(0));
+    // join output radio buttons to a group and add to grid
+    let mut prev_rb = NONE_RADIO_BUTTON;
+    let mut it = output_radio_buttons.iter();
+    while let Some(rb) = it.next() {
+        rb.join_group(prev_rb);
+        rb.connect_toggled(|b| {
+            if b.get_active() {
+                if let Some(label) = b.get_label() {
+                    println!("RadioButton {} was turned on.", label);
                 }
             }
         });
+        box_outputs.add(rb);
+        prev_rb = Some(rb);
+    }
 
-        // TODO dependent on radio button choice
-        // TODO rethink the HashMap
-        if let Some(first) = output_info.values().next() {
-            if let Some(o) = output_info.get(&first.xid) {
-                for m in o.modes.keys() {
-                    cb_resolution.append_text(m);
+    // TODO set to primary
+    if let Some(rb) = output_radio_buttons.get(0) {
+        rb.set_active(true);
+    }
+
+    let cb_refresh_rate_name = "cb_refresh_rate";
+    let cb_refresh_rate: ComboBoxText = builder.get_object(cb_refresh_rate_name).expect(&format!(
+        "Failed to get ComboBox '{}'",
+        cb_refresh_rate_name
+    ));
+
+    let cb_resolution_name = "cb_resolution";
+    let cb_resolution: ComboBoxText = builder
+        .get_object(cb_resolution_name)
+        .expect(&format!("Failed to get ComboBox '{}'", cb_resolution_name));
+
+    // TODO refactor
+    let cb_refresh_rate_c = cb_refresh_rate.clone();
+    let output_info_first_c = match output_info.values().next() {
+        Some(o) => (*o).clone(),
+        None => panic!("no first"),
+    };
+    cb_resolution.connect_changed(move |cb| {
+        if let Some(resolution) = cb.get_active_text() {
+            println!("resolution {} selected.", resolution);
+            // TODO dependent on radio button choice
+            if let Some(rrs) = output_info_first_c.modes.get(resolution.as_str()) {
+                cb_refresh_rate_c.remove_all();
+                for r in rrs {
+                    cb_refresh_rate_c.append_text(format!("{:2}", r).as_str());
                 }
+                cb_refresh_rate_c.set_active(Some(0));
             }
         }
-
-        // TODO set current resolution
-        cb_resolution.set_id_column(0);
-        cb_resolution.set_active_id(Some("1024x768"));
-
-        grid.attach_next_to(&cb_resolution, Some(&tb_enable), PositionType::Right, 1, 1);
-        grid.attach_next_to(
-            &cb_refresh_rate,
-            Some(&cb_resolution),
-            PositionType::Right,
-            1,
-            1,
-        );
-
-        win.add(&grid);
-        win.show_all();
     });
-    application.run(&env::args().collect::<Vec<_>>());
+
+    // TODO dependent on radio button choice
+    // TODO rethink the HashMap
+    if let Some(first) = output_info.values().next() {
+        if let Some(o) = output_info.get(&first.xid) {
+            for m in o.modes.keys() {
+                cb_resolution.append_text(m);
+            }
+        }
+    }
+
+    // TODO set current resolution
+    cb_resolution.set_id_column(0);
+    cb_resolution.set_active_id(Some("1024x768"));
+
+    window.show_all();
 }
 
 fn get_output_info() -> HashMap<u64, OutputInfo> {
