@@ -69,7 +69,9 @@ fn build_ui(application: &Application, output_info: HashMap<u64, OutputInfo>) {
     // create radio buttons with output name as label
     let mut output_radio_buttons = Vec::new();
     for o in output_info.values() {
-        output_radio_buttons.push(RadioButton::new_with_label(o.name.as_str()));
+        let rb = RadioButton::new_with_label(&format!("Output: {}", o.name));
+        WidgetExt::set_name(&rb, o.name.as_str());
+        output_radio_buttons.push(rb);
     }
 
     // join output radio buttons to a group and add to grid
@@ -79,8 +81,8 @@ fn build_ui(application: &Application, output_info: HashMap<u64, OutputInfo>) {
         rb.join_group(prev_rb);
         rb.connect_toggled(|b| {
             if b.get_active() {
-                if let Some(label) = b.get_label() {
-                    println!("RadioButton {} was turned on.", label);
+                if let Some(name) = WidgetExt::get_name(b) {
+                    println!("RadioButton {} was turned on.", name);
                 }
             }
         });
