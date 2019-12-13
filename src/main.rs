@@ -11,6 +11,7 @@ use gtk::{
     Application, ApplicationWindow, Box, Builder, ComboBoxText, RadioButton, Switch,
     NONE_RADIO_BUTTON,
 };
+use std::cmp::Ordering;
 use x11::xlib::{Display, Window, XCloseDisplay, XDefaultScreen, XOpenDisplay, XRootWindow};
 use x11::xrandr::{
     Connection, RRCrtc, RRMode, RROutput, RR_Connected, RR_DoubleScan, RR_Interlace,
@@ -59,6 +60,35 @@ impl Output {
             .entry(mode_name)
             .or_insert(Vec::new())
             .push(refresh_rate);
+    }
+
+    fn get_resolutions_sorted(&self) -> Vec<String> {
+        let mut resolutions: Vec<String> = self.modes.keys().map(|k| k.to_owned()).collect();
+        resolutions.sort_by(|a, b| {
+            match Self::get_resolution_params(a) {
+                Some((wa, ha)) => match Self::get_resolution_params(b) {
+                    Some((wb, hb)) => wb.cmp(&wa).then(hb.cmp(&ha)),
+                    None => Ordering::Greater,
+                },
+                None => match Self::get_resolution_params(b) {
+                    Some(_) => Ordering::Less,
+                    None => a.cmp(&b),
+                },
+            }
+        });
+        resolutions
+    }
+
+    fn get_resolution_params(s: &str) -> Option<(u32, u32)> {
+        let split: Vec<&str> = s.splitn(2, 'x').collect::<Vec<&str>>();
+        if split.len() == 2 {
+            if let Ok(w) = split[0].parse::<u32>() {
+                if let Ok(h) = split[1].parse::<u32>() {
+                    return Some((w, h));
+                }
+            }
+        }
+        None
     }
 }
 
@@ -192,8 +222,8 @@ fn on_output_selected(
                 }
 
                 cb_resolution.remove_all();
-                for m in o.modes.keys() {
-                    cb_resolution.append_text(m);
+                for m in o.get_resolutions_sorted() {
+                    cb_resolution.append_text(m.as_str());
                 }
 
                 // Trying hard to let new_conf go out of scope.
