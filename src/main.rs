@@ -1,5 +1,8 @@
+use std::cell::RefCell;
+use std::collections::HashMap;
 use std::ffi::CStr;
 use std::ptr::null;
+use std::rc::Rc;
 use std::{env, slice};
 
 use gio::prelude::*;
@@ -7,9 +10,6 @@ use gtk::prelude::*;
 use gtk::{
     Application, ApplicationWindow, Box, Builder, ComboBoxText, RadioButton, NONE_RADIO_BUTTON,
 };
-use std::cell::RefCell;
-use std::collections::HashMap;
-use std::rc::Rc;
 use x11::xlib::{Display, Window, XCloseDisplay, XDefaultScreen, XOpenDisplay, XRootWindow};
 use x11::xrandr::{
     Connection, RRCrtc, RRMode, RROutput, RR_Connected, RR_DoubleScan, RR_Interlace,
@@ -29,14 +29,16 @@ macro_rules! enclose {
 
 struct OutputState {
     outputs: HashMap<String, Output>,
-    // TODO this should be a reference into outputs
-    selected: RefCell<Output>,
+    key_selected: RefCell<String>,
 }
 
 impl OutputState {
-    fn new(outputs: HashMap<String, Output>, selected: Output) -> Rc<OutputState> {
+    fn new(outputs: HashMap<String, Output>, selected: String) -> Rc<OutputState> {
         let selected = RefCell::new(selected);
-        Rc::new(OutputState { outputs, selected })
+        Rc::new(OutputState {
+            outputs,
+            key_selected: selected,
+        })
     }
 }
 
@@ -47,7 +49,7 @@ struct Output {
     name: String,
     modes: HashMap<String, Vec<f64>>,
     curr_conf: OutputConfig,
-    new_conf: OutputConfig,
+    new_conf: RefCell<OutputConfig>,
 }
 
 impl Output {
@@ -68,7 +70,8 @@ struct OutputConfig {
 
 fn main() {
     let outputs = get_output_info();
-    let selected_output = outputs.get("DP-2").unwrap().clone();
+    // TODO use primary
+    let selected_output = String::from("DP-2");
     let output_state = OutputState::new(outputs, selected_output);
 
     let application = Application::new(Some("com.github.brofi.rxrandr"), Default::default())
@@ -124,8 +127,7 @@ fn build_ui(application: &Application, output_state: &Rc<OutputState>) {
         move |cb| {
             on_refresh_rate_changed(cb, &output_state);
         }
-    }
-    );
+    });
 
     cb_refresh_rate.set_id_column(0);
 
@@ -165,16 +167,26 @@ fn on_output_selected(rb: &RadioButton, output_state: &OutputState, cb_resolutio
     if rb.get_active() {
         if let Some(name) = WidgetExt::get_name(rb) {
             if let Some(o) = output_state.outputs.get(name.as_str()) {
-
-                let mut selected_output = output_state.selected.borrow_mut();
-                *selected_output = o.clone();
-                println!("Selected output changed to: {:?}", selected_output);
+                if let Ok(mut key_selected) = output_state.key_selected.try_borrow_mut() {
+                    *key_selected = name.as_str().to_string();
+                    println!("Selected output key changed to: {:?}", key_selected);
+                } else {
+                    println!("borrow_mut in on_output_selected failed.");
+                }
 
                 cb_resolution.remove_all();
                 for m in o.modes.keys() {
                     cb_resolution.append_text(m);
                 }
-                cb_resolution.set_active_id(Some(selected_output.new_conf.resolution.as_str()));
+
+                // Trying hard to let new_conf out of scope before we call set_active_id.
+                let mut active_resolution: String = String::new();
+                if let Ok(new_conf) = o.new_conf.try_borrow() {
+                    active_resolution = new_conf.resolution.to_owned();
+                } else {
+                    println!("borrow in on_output_selected failed.");
+                }
+                cb_resolution.set_active_id(Some(active_resolution.as_str()));
             }
         }
     }
@@ -186,25 +198,49 @@ fn on_resolution_changed(
     cb_refresh_rate: &ComboBoxText,
 ) {
     if let Some(resolution) = cb.get_active_text() {
-        let mut selected_output = output_state.selected.borrow_mut();
-        selected_output.new_conf.resolution = resolution.to_string();
-        println!("Selected output with new resolution: {:?}", selected_output);
+        if let Ok(key_selected) = output_state.key_selected.try_borrow() {
+            let selected_output = output_state.outputs.get(key_selected.as_str()).unwrap();
 
-        if let Some(rrs) = selected_output.modes.get(resolution.as_str()) {
-            cb_refresh_rate.remove_all();
-            for r in rrs {
-                cb_refresh_rate.append_text(format!("{:2}", r).as_str());
+            let mut active_refresh_rate = 0.0;
+            if let Ok(mut new_conf) = selected_output.new_conf.try_borrow_mut() {
+                new_conf.resolution = resolution.to_string();
+                println!("Selected output with new resolution: {:?}", selected_output);
+
+                if let Some(rrs) = selected_output.modes.get(resolution.as_str()) {
+                    cb_refresh_rate.remove_all();
+                    for r in rrs {
+                        cb_refresh_rate.append_text(format!("{:2}", r).as_str());
+                    }
+                    active_refresh_rate = new_conf.refresh_rate.to_owned();
+                }
+            } else {
+                println!("borrow_mut in on_resolution_changed failed.");
             }
-            cb_refresh_rate.set_active_id(Some(selected_output.new_conf.refresh_rate.to_string().as_str()));
+            cb_refresh_rate.set_active_id(Some(active_refresh_rate.to_string().as_str()));
+        } else {
+            println!("borrow in on_resolution_changed failed.");
         }
+    } else {
+        cb_refresh_rate.remove_all();
     }
 }
 
 fn on_refresh_rate_changed(cb: &ComboBoxText, output_state: &OutputState) {
     if let Some(refresh_rate) = cb.get_active_text() {
-        let mut selected_output = output_state.selected.borrow_mut();
-        selected_output.new_conf.refresh_rate = refresh_rate.parse().unwrap();
-        println!("Selected output with new refresh rate: {:?}", selected_output);
+        if let Ok(key_selected) = output_state.key_selected.try_borrow() {
+            let selected_output = output_state.outputs.get(key_selected.as_str()).unwrap();
+            if let Ok(mut new_conf) = selected_output.new_conf.try_borrow_mut() {
+                new_conf.refresh_rate = refresh_rate.parse().unwrap();
+            } else {
+                println!("borrow_mut in on_refresh_rate_changed failed.");
+            }
+            println!(
+                "Selected output with new refresh rate: {:?}",
+                selected_output
+            );
+        } else {
+            println!("borrow in on_refresh_rate_changed failed.");
+        }
     }
 }
 
@@ -254,7 +290,7 @@ fn get_output_info() -> HashMap<String, Output> {
                 resolution: curr_res.into(),
                 refresh_rate: curr_refresh_rate,
             };
-            let new_conf = curr_conf.clone();
+            let new_conf = RefCell::new(curr_conf.clone());
             let mut output = {
                 let name = name.to_owned();
                 Output {
