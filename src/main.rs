@@ -302,7 +302,7 @@ fn get_output_info() -> HashMap<String, Output> {
         }
 
         let res: *mut XRRScreenResources = get_screen_res(&mut *dpy);
-        let outputs: Vec<RROutput> = get_outputs_as_vec(&mut *res);
+        let outputs: Vec<RROutput> = get_as_vec((*res).outputs, (*res).noutput);
         for o in outputs {
             let x_output_info: *mut XRROutputInfo = XRRGetOutputInfo(dpy, res, o);
 
@@ -314,7 +314,7 @@ fn get_output_info() -> HashMap<String, Output> {
             let enabled: bool = is_output_enabled(&mut *res, (*x_output_info).crtc);
             let modes: HashMap<String, Vec<f64>> = HashMap::new();
             let mode_info: Vec<XRRModeInfo> =
-                get_mode_info_for_output_as_vec(&mut *res, &mut *x_output_info);
+                get_mode_info_for_output(&mut *res, &mut *x_output_info);
 
             // TODO
             let curr_res = "";
@@ -359,46 +359,19 @@ fn get_screen_res(dpy: &mut Display) -> *mut XRRScreenResources {
     }
 }
 
-#[allow(dead_code)]
-fn get_crtcs_as_vec(res: &mut XRRScreenResources) -> Vec<RRCrtc> {
-    let crtcs: *mut RRCrtc = res.crtcs;
-    let len = res.ncrtc;
-    assert!(!crtcs.is_null());
+fn get_as_vec<T: Clone>(array: *const T, len: i32) -> Vec<T> {
+    assert!(!array.is_null());
     assert!(len >= 0);
-    unsafe { slice::from_raw_parts(crtcs, len as usize) }.to_vec()
+    unsafe { slice::from_raw_parts(array, len as usize) }.to_vec()
 }
 
-fn get_outputs_as_vec(res: &mut XRRScreenResources) -> Vec<RROutput> {
-    let outputs: *mut RROutput = res.outputs;
-    let len = res.noutput;
-    assert!(!outputs.is_null());
-    assert!(len >= 0);
-    unsafe { slice::from_raw_parts(outputs, len as usize) }.to_vec()
-}
-
-fn get_mode_info_as_vec(res: &mut XRRScreenResources) -> Vec<XRRModeInfo> {
-    let mode_info: *mut XRRModeInfo = res.modes;
-    let len = res.nmode;
-    assert!(!mode_info.is_null());
-    assert!(len >= 0);
-    unsafe { slice::from_raw_parts(mode_info, len as usize) }.to_vec()
-}
-
-fn get_modes_as_vec(output_info: &mut XRROutputInfo) -> Vec<RRMode> {
-    let modes: *mut RRMode = output_info.modes;
-    let len = output_info.nmode;
-    assert!(!modes.is_null());
-    assert!(len >= 0);
-    unsafe { slice::from_raw_parts(modes, len as usize) }.to_vec()
-}
-
-fn get_mode_info_for_output_as_vec(
+fn get_mode_info_for_output(
     res: &mut XRRScreenResources,
     output_info: &mut XRROutputInfo,
 ) -> Vec<XRRModeInfo> {
     let mut mode_info_for_output: Vec<XRRModeInfo> = Vec::new();
-    let mode_ids_for_output: Vec<RRMode> = get_modes_as_vec(output_info);
-    let mode_info: Vec<XRRModeInfo> = get_mode_info_as_vec(res);
+    let mode_ids_for_output: Vec<RRMode> = get_as_vec(output_info.modes, output_info.nmode);
+    let mode_info: Vec<XRRModeInfo> = get_as_vec(res.modes, res.nmode);
     for mode_id in mode_ids_for_output {
         for mode_i in &mode_info {
             if mode_id == (*mode_i).id {
