@@ -8,7 +8,8 @@ use std::{env, slice};
 use gio::prelude::*;
 use gtk::prelude::*;
 use gtk::{
-    Application, ApplicationWindow, Box, Builder, ComboBoxText, RadioButton, NONE_RADIO_BUTTON,
+    Application, ApplicationWindow, Box, Builder, ComboBoxText, RadioButton, Switch,
+    NONE_RADIO_BUTTON,
 };
 use x11::xlib::{Display, Window, XCloseDisplay, XDefaultScreen, XOpenDisplay, XRootWindow};
 use x11::xrandr::{
@@ -116,6 +117,16 @@ fn build_ui(application: &Application, output_state: &Rc<OutputState>) {
         prev_rb = Some(rb);
     }
 
+    let sw_enabled_name = "sw_enabled";
+    let sw_enabled: Switch = builder
+        .get_object(sw_enabled_name)
+        .expect(&format!("Failed to get Switch `{}`", sw_enabled_name));
+
+    sw_enabled.connect_state_set({
+        let output_state = Rc::clone(output_state);
+        move |sw, state| on_enabled_changed(sw, state, &output_state)
+    });
+
     let cb_refresh_rate_name = "cb_refresh_rate";
     let cb_refresh_rate: ComboBoxText = builder.get_object(cb_refresh_rate_name).expect(&format!(
         "Failed to get ComboBox `{}`",
@@ -147,10 +158,11 @@ fn build_ui(application: &Application, output_state: &Rc<OutputState>) {
 
     for rb in &output_radio_buttons {
         rb.connect_toggled({
-            let cb_resolution = cb_resolution.clone();
             let output_state = Rc::clone(output_state);
+            let cb_resolution = cb_resolution.clone();
+            let sw_enabled = sw_enabled.clone();
             move |rb| {
-                on_output_selected(rb, &output_state, &cb_resolution);
+                on_output_selected(rb, &output_state, &cb_resolution, &sw_enabled);
             }
         });
     }
@@ -163,7 +175,12 @@ fn build_ui(application: &Application, output_state: &Rc<OutputState>) {
     window.show_all();
 }
 
-fn on_output_selected(rb: &RadioButton, output_state: &OutputState, cb_resolution: &ComboBoxText) {
+fn on_output_selected(
+    rb: &RadioButton,
+    output_state: &OutputState,
+    cb_resolution: &ComboBoxText,
+    sw_enabled: &Switch,
+) {
     if rb.get_active() {
         if let Some(name) = WidgetExt::get_name(rb) {
             if let Some(o) = output_state.outputs.get(name.as_str()) {
@@ -179,17 +196,35 @@ fn on_output_selected(rb: &RadioButton, output_state: &OutputState, cb_resolutio
                     cb_resolution.append_text(m);
                 }
 
-                // Trying hard to let new_conf out of scope before we call set_active_id.
+                // Trying hard to let new_conf go out of scope.
                 let mut active_resolution: String = String::new();
+                let mut enabled = false;
                 if let Ok(new_conf) = o.new_conf.try_borrow() {
                     active_resolution = new_conf.resolution.to_owned();
+                    enabled = new_conf.enabled;
                 } else {
                     println!("borrow in on_output_selected failed.");
                 }
+                sw_enabled.set_active(enabled);
                 cb_resolution.set_active_id(Some(active_resolution.as_str()));
             }
         }
     }
+}
+
+fn on_enabled_changed(_sw: &Switch, state: bool, output_state: &OutputState) -> Inhibit {
+    if let Ok(key_selected) = output_state.key_selected.try_borrow() {
+        let selected_output = output_state.outputs.get(key_selected.as_str()).unwrap();
+        if let Ok(mut new_conf) = selected_output.new_conf.try_borrow_mut() {
+            new_conf.enabled = state;
+        } else {
+            println!("borrow_mut in on_enabled_changed failed.");
+        }
+    } else {
+        println!("borrow in on_enabled_changed failed.");
+    }
+    // Let default handler run to keep state in sync with active property.
+    Inhibit(false)
 }
 
 fn on_resolution_changed(
