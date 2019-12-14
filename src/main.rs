@@ -51,13 +51,23 @@ struct Output {
     xid: u64,
     name: String,
     modes: HashMap<String, Vec<f64>>,
-    mode_curr: Option<(String, f64)>,
     mode_pref: Option<(String, f64)>,
     curr_conf: OutputConfig,
     new_conf: RefCell<OutputConfig>,
 }
 
 impl Output {
+    fn new(xid: u64, name: String) -> Output {
+        Output {
+            xid,
+            name,
+            modes: HashMap::new(),
+            mode_pref: None,
+            curr_conf: Default::default(),
+            new_conf: RefCell::new(Default::default()),
+        }
+    }
+
     fn add_mode(&mut self, mode_name: String, refresh_rate: f64) {
         self.modes
             .entry(mode_name)
@@ -93,7 +103,7 @@ impl Output {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 struct OutputConfig {
     enabled: bool,
     resolution: String,
@@ -342,52 +352,37 @@ fn get_output_info() -> HashMap<String, Output> {
             }
 
             let name: &str = CStr::from_ptr((*x_output_info).name).to_str().unwrap();
-            let enabled: bool = is_output_enabled(&mut *res, (*x_output_info).crtc);
-            let modes: HashMap<String, Vec<f64>> = HashMap::new();
-            let mode_info: Vec<XRRModeInfo> =
-                get_mode_info_for_output(&mut *res, &mut *x_output_info);
-
-            // TODO
-            let curr_res = "";
-            let curr_refresh_rate = 0.0;
-
-            let curr_conf = OutputConfig {
-                enabled,
-                resolution: curr_res.into(),
-                refresh_rate: curr_refresh_rate,
-            };
-            let new_conf = RefCell::new(curr_conf.clone());
-            let mut output = {
-                let name = name.to_owned();
-                Output {
-                    xid: o,
-                    name,
-                    modes,
-                    mode_curr: None,
-                    mode_pref: None,
-                    curr_conf,
-                    new_conf,
-                }
-            };
+            let mut output = Output::new(o, name.to_owned());
 
             let mut maybe_crtc_info: Option<*mut XRRCrtcInfo> = None;
+            let enabled = is_output_enabled(&mut *res, (*x_output_info).crtc);
+            output.curr_conf.enabled = enabled;
             if enabled {
                 // Otherwise we pass an invalid Crtc to XRRGetCrtcInfo.
                 maybe_crtc_info = Some(XRRGetCrtcInfo(dpy, res, (*x_output_info).crtc));
             }
+            let mode_info: Vec<XRRModeInfo> =
+                get_mode_info_for_output(&mut *res, &mut *x_output_info);
 
             for (i, mode_i) in mode_info.iter().enumerate() {
                 let mode_name = CStr::from_ptr(mode_i.name).to_str().unwrap().to_owned();
                 let refresh_rate = get_refresh_rate(mode_i);
+                output.add_mode(mode_name.to_owned(), refresh_rate.to_owned());
+
+                // Get current resolution and current refresh rate.
                 if let Some(crtc_info) = maybe_crtc_info {
                     if mode_i.id == (*crtc_info).mode {
-                        output.mode_curr = Some((mode_name.to_owned(), refresh_rate.to_owned()));
+                        output.curr_conf.resolution = mode_name.to_owned();
+                        output.curr_conf.refresh_rate = refresh_rate.to_owned();
                     }
                 }
+
+                // Get preferred mode.
                 if i < (*x_output_info).npreferred as usize && output.mode_pref.is_none() {
                     output.mode_pref = Some((mode_name.to_owned(), refresh_rate.to_owned()));
                 }
-                output.add_mode(mode_name, refresh_rate);
+
+                output.new_conf = RefCell::new(output.curr_conf.clone());
             }
             output_info.insert(name.to_owned(), output);
         }
