@@ -51,7 +51,7 @@ struct Output {
     xid: u64,
     name: String,
     modes: HashMap<String, Vec<f64>>,
-    mode_shown: Option<(String, f64)>,
+    mode_curr: Option<(String, f64)>,
     mode_pref: Option<(String, f64)>,
     curr_conf: OutputConfig,
     new_conf: RefCell<OutputConfig>,
@@ -363,7 +363,7 @@ fn get_output_info() -> HashMap<String, Output> {
                     xid: o,
                     name,
                     modes,
-                    mode_shown: None,
+                    mode_curr: None,
                     mode_pref: None,
                     curr_conf,
                     new_conf,
@@ -376,13 +376,16 @@ fn get_output_info() -> HashMap<String, Output> {
                 maybe_crtc_info = Some(XRRGetCrtcInfo(dpy, res, (*x_output_info).crtc));
             }
 
-            for mode_i in mode_info {
+            for (i, mode_i) in mode_info.iter().enumerate() {
                 let mode_name = CStr::from_ptr(mode_i.name).to_str().unwrap().to_owned();
                 let refresh_rate = get_refresh_rate(mode_i);
                 if let Some(crtc_info) = maybe_crtc_info {
                     if mode_i.id == (*crtc_info).mode {
-                        output.mode_shown = Some((mode_name.to_owned(), refresh_rate.to_owned()));
+                        output.mode_curr = Some((mode_name.to_owned(), refresh_rate.to_owned()));
                     }
+                }
+                if i < (*x_output_info).npreferred as usize && output.mode_pref.is_none() {
+                    output.mode_pref = Some((mode_name.to_owned(), refresh_rate.to_owned()));
                 }
                 output.add_mode(mode_name, refresh_rate);
             }
@@ -447,7 +450,7 @@ fn is_output_enabled(res: &XRRScreenResources, output_crtc: RRCrtc) -> bool {
     false
 }
 
-fn get_refresh_rate(mode_info: XRRModeInfo) -> f64 {
+fn get_refresh_rate(mode_info: &XRRModeInfo) -> f64 {
     let mut v_total = mode_info.vTotal;
 
     if mode_info.modeFlags & RR_DoubleScan as u64 == 1 {
