@@ -1,4 +1,5 @@
 use std::cell::RefCell;
+use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::ffi::CStr;
 use std::ptr::null;
@@ -11,11 +12,11 @@ use gtk::{
     Application, ApplicationWindow, Box, Builder, ComboBoxText, RadioButton, Switch,
     NONE_RADIO_BUTTON,
 };
-use std::cmp::Ordering;
 use x11::xlib::{Display, Window, XCloseDisplay, XDefaultScreen, XOpenDisplay, XRootWindow};
 use x11::xrandr::{
-    Connection, RRCrtc, RRMode, RROutput, RR_Connected, RR_DoubleScan, RR_Interlace,
-    XRRGetOutputInfo, XRRGetScreenResourcesCurrent, XRRModeInfo, XRROutputInfo, XRRScreenResources,
+    Connection, RRCrtc, RRMode, RROutput, RR_Connected, RR_DoubleScan, RR_Interlace, XRRCrtcInfo,
+    XRRGetCrtcInfo, XRRGetOutputInfo, XRRGetScreenResourcesCurrent, XRRModeInfo, XRROutputInfo,
+    XRRScreenResources,
 };
 
 // TODO consider using
@@ -50,6 +51,8 @@ struct Output {
     xid: u64,
     name: String,
     modes: HashMap<String, Vec<f64>>,
+    mode_shown: Option<(String, f64)>,
+    mode_pref: Option<(String, f64)>,
     curr_conf: OutputConfig,
     new_conf: RefCell<OutputConfig>,
 }
@@ -64,17 +67,15 @@ impl Output {
 
     fn get_resolutions_sorted(&self) -> Vec<String> {
         let mut resolutions: Vec<String> = self.modes.keys().map(|k| k.to_owned()).collect();
-        resolutions.sort_by(|a, b| {
-            match Self::get_resolution_params(a) {
-                Some((wa, ha)) => match Self::get_resolution_params(b) {
-                    Some((wb, hb)) => wb.cmp(&wa).then(hb.cmp(&ha)),
-                    None => Ordering::Greater,
-                },
-                None => match Self::get_resolution_params(b) {
-                    Some(_) => Ordering::Less,
-                    None => a.cmp(&b),
-                },
-            }
+        resolutions.sort_by(|a, b| match Self::get_resolution_params(a) {
+            Some((wa, ha)) => match Self::get_resolution_params(b) {
+                Some((wb, hb)) => wb.cmp(&wa).then(hb.cmp(&ha)),
+                None => Ordering::Greater,
+            },
+            None => match Self::get_resolution_params(b) {
+                Some(_) => Ordering::Less,
+                None => a.cmp(&b),
+            },
         });
         resolutions
     }
@@ -362,13 +363,28 @@ fn get_output_info() -> HashMap<String, Output> {
                     xid: o,
                     name,
                     modes,
+                    mode_shown: None,
+                    mode_pref: None,
                     curr_conf,
                     new_conf,
                 }
             };
+
+            let mut maybe_crtc_info: Option<*mut XRRCrtcInfo> = None;
+            if enabled {
+                // Otherwise we pass an invalid Crtc to XRRGetCrtcInfo.
+                maybe_crtc_info = Some(XRRGetCrtcInfo(dpy, res, (*x_output_info).crtc));
+            }
+
             for mode_i in mode_info {
                 let mode_name = CStr::from_ptr(mode_i.name).to_str().unwrap().to_owned();
-                output.add_mode(mode_name, get_refresh_rate(mode_i));
+                let refresh_rate = get_refresh_rate(mode_i);
+                if let Some(crtc_info) = maybe_crtc_info {
+                    if mode_i.id == (*crtc_info).mode {
+                        output.mode_shown = Some((mode_name.to_owned(), refresh_rate.to_owned()));
+                    }
+                }
+                output.add_mode(mode_name, refresh_rate);
             }
             output_info.insert(name.to_owned(), output);
         }
