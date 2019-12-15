@@ -9,14 +9,14 @@ use std::{env, slice};
 use gio::prelude::*;
 use gtk::prelude::*;
 use gtk::{
-    Application, ApplicationWindow, Box, Builder, CellRendererText, ComboBox, ComboBoxText,
-    RadioButton, Switch, Type, NONE_RADIO_BUTTON,
+    Application, ApplicationWindow, Box, Builder, CellRendererText, CheckButton, ComboBox,
+    ComboBoxText, RadioButton, Switch, Type, NONE_RADIO_BUTTON,
 };
 use x11::xlib::{Display, Window, XCloseDisplay, XDefaultScreen, XOpenDisplay, XRootWindow};
 use x11::xrandr::{
     Connection, RRCrtc, RRMode, RROutput, RR_Connected, RR_DoubleScan, RR_Interlace, XRRCrtcInfo,
-    XRRGetCrtcInfo, XRRGetOutputInfo, XRRGetScreenResourcesCurrent, XRRModeInfo, XRROutputInfo,
-    XRRScreenResources,
+    XRRGetCrtcInfo, XRRGetOutputInfo, XRRGetOutputPrimary, XRRGetScreenResourcesCurrent,
+    XRRModeInfo, XRROutputInfo, XRRScreenResources,
 };
 
 // TODO consider using
@@ -106,6 +106,7 @@ impl Output {
 #[derive(Debug, Clone, Default)]
 struct OutputConfig {
     enabled: bool,
+    primary: bool,
     resolution: String,
     refresh_rate: (u64, f64),
 }
@@ -118,9 +119,20 @@ enum RefreshRateColumns {
 
 fn main() {
     let outputs = get_output_info();
-    // TODO use primary
-    let selected_output = String::from("DP-2");
-    let output_state = OutputState::new(outputs, selected_output);
+    let get_key_primary = {
+        let outputs = outputs.clone();
+        move || -> String {
+            for (k, o) in &outputs {
+                if o.curr_conf.primary {
+                    return k.to_owned();
+                }
+            }
+            panic!("Failed to find primary output.")
+        }
+    };
+
+    let key_selected = get_key_primary();
+    let output_state = OutputState::new(outputs, key_selected.to_owned());
 
     let application = Application::new(Some("com.github.brofi.rxrandr"), Default::default())
         .expect("Failed to initialize GTK application.");
@@ -174,6 +186,24 @@ fn build_ui(application: &Application, output_state: &Rc<OutputState>) {
         move |sw, state| on_enabled_changed(sw, state, &output_state)
     });
 
+    let ch_primary_name = "ch_primary";
+    let ch_primary: CheckButton = builder
+        .get_object(ch_primary_name)
+        .expect(&format!("Failed to get CheckButton `{}`", ch_primary_name));
+
+    if let Ok(key_selected) = output_state.key_selected.try_borrow() {
+        if let Some(o) = output_state.outputs.get(key_selected.as_str()) {
+            ch_primary.set_active(o.curr_conf.primary);
+        }
+    } else {
+        println!("borrow in build_ui failed.");
+    }
+
+    ch_primary.connect_toggled({
+        let output_state = Rc::clone(output_state);
+        move |ch| on_primary_changed(ch, &output_state)
+    });
+
     let cb_refresh_rate_name = "cb_refresh_rate";
     let cb_refresh_rate: ComboBox = builder.get_object(cb_refresh_rate_name).expect(&format!(
         "Failed to get ComboBox `{}`",
@@ -212,15 +242,25 @@ fn build_ui(application: &Application, output_state: &Rc<OutputState>) {
             let output_state = Rc::clone(output_state);
             let cb_resolution = cb_resolution.clone();
             let sw_enabled = sw_enabled.clone();
+            let ch_primary = ch_primary.clone();
             move |rb| {
-                on_output_selected(rb, &output_state, &cb_resolution, &sw_enabled);
+                on_output_selected(rb, &output_state, &cb_resolution, &sw_enabled, &ch_primary);
             }
         });
-    }
 
-    // TODO set to primary
-    if let Some(rb) = output_radio_buttons.get(0) {
-        rb.set_active(true);
+        let mut rb_for_selected_output = false;
+        if let Some(name) = WidgetExt::get_name(rb) {
+            rb_for_selected_output = name == *output_state.key_selected.borrow();
+        }
+        if rb_for_selected_output {
+            // The first toggle button of a group is already active and a call to `set_active`
+            // wouldn't call the connected listener.
+            if rb.get_active() {
+                rb.toggled();
+            } else {
+                rb.set_active(rb_for_selected_output);
+            }
+        }
     }
 
     window.show_all();
@@ -231,6 +271,7 @@ fn on_output_selected(
     output_state: &OutputState,
     cb_resolution: &ComboBoxText,
     sw_enabled: &Switch,
+    ch_primary: &CheckButton,
 ) {
     if rb.get_active() {
         if let Some(name) = WidgetExt::get_name(rb) {
@@ -250,13 +291,16 @@ fn on_output_selected(
                 // Trying hard to let new_conf go out of scope.
                 let mut active_resolution: String = String::new();
                 let mut enabled = false;
+                let mut primary = false;
                 if let Ok(new_conf) = o.new_conf.try_borrow() {
                     active_resolution = new_conf.resolution.to_owned();
                     enabled = new_conf.enabled;
+                    primary = new_conf.primary;
                 } else {
                     println!("borrow in on_output_selected failed.");
                 }
                 sw_enabled.set_active(enabled);
+                ch_primary.set_active(primary);
                 cb_resolution.set_active_id(Some(active_resolution.as_str()));
             }
         }
@@ -276,6 +320,24 @@ fn on_enabled_changed(_sw: &Switch, state: bool, output_state: &OutputState) -> 
     }
     // Let default handler run to keep state in sync with active property.
     Inhibit(false)
+}
+
+fn on_primary_changed(ch: &CheckButton, output_state: &OutputState) {
+    if let Ok(key_selected) = output_state.key_selected.try_borrow() {
+        for (key, o) in &output_state.outputs {
+            if let Ok(mut new_conf) = o.new_conf.try_borrow_mut() {
+                if key == key_selected.as_str() {
+                    new_conf.primary = ch.get_active();
+                } else if ch.get_active() {
+                    new_conf.primary = false;
+                }
+            } else {
+                println!("borrow_mut in on_primary_changed failed.");
+            }
+        }
+    } else {
+        println!("borrow in on_primary_changed failed.");
+    }
 }
 
 fn on_resolution_changed(
@@ -373,12 +435,15 @@ fn get_output_info() -> HashMap<String, Output> {
 
     unsafe {
         let dpy: *mut Display = XOpenDisplay(null());
+        let screen = XDefaultScreen(dpy);
+        let root: Window = XRootWindow(dpy, screen);
 
         if dpy.is_null() {
             panic!("Failed to open display.");
         }
 
-        let res: *mut XRRScreenResources = get_screen_res(&mut *dpy);
+        let res: *mut XRRScreenResources = XRRGetScreenResourcesCurrent(dpy, root);
+        let primary: RROutput = XRRGetOutputPrimary(dpy, root);
         let outputs: Vec<RROutput> = get_as_vec((*res).outputs, (*res).noutput);
         for o in outputs {
             let x_output_info: *mut XRROutputInfo = XRRGetOutputInfo(dpy, res, o);
@@ -393,6 +458,7 @@ fn get_output_info() -> HashMap<String, Output> {
             let mut maybe_crtc_info: Option<*mut XRRCrtcInfo> = None;
             let enabled = is_output_enabled(&mut *res, (*x_output_info).crtc);
             output.curr_conf.enabled = enabled;
+            output.curr_conf.primary = o == primary;
             if enabled {
                 // Otherwise we pass an invalid Crtc to XRRGetCrtcInfo.
                 maybe_crtc_info = Some(XRRGetCrtcInfo(dpy, res, (*x_output_info).crtc));
@@ -427,16 +493,6 @@ fn get_output_info() -> HashMap<String, Output> {
     }
 
     output_info
-}
-
-fn get_screen_res(dpy: &mut Display) -> *mut XRRScreenResources {
-    unsafe {
-        let screen = XDefaultScreen(dpy);
-        let root: Window = XRootWindow(dpy, screen);
-        let res: *mut XRRScreenResources = XRRGetScreenResourcesCurrent(dpy, root);
-        assert!(!res.is_null());
-        res
-    }
 }
 
 fn get_as_vec<T: Clone>(array: *const T, len: i32) -> Vec<T> {
