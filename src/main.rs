@@ -16,7 +16,7 @@ use x11::xlib::{Display, Window, XCloseDisplay, XDefaultScreen, XOpenDisplay, XR
 use x11::xrandr::{
     Connection, RRCrtc, RRMode, RROutput, RR_Connected, RR_DoubleScan, RR_Interlace, XRRCrtcInfo,
     XRRGetCrtcInfo, XRRGetOutputInfo, XRRGetOutputPrimary, XRRGetScreenResourcesCurrent,
-    XRRModeInfo, XRROutputInfo, XRRScreenResources,
+    XRRModeInfo, XRROutputInfo, XRRScreenResources, XRRSetOutputPrimary,
 };
 
 // TODO consider using
@@ -405,7 +405,24 @@ fn apply_new_conf(output_state: &OutputState) {
 }
 
 fn set_primary_output(output_state: &OutputState) {
-    let _primary = get_primary_output_xid(&output_state.outputs);
+    unsafe {
+        let dpy: *mut Display = XOpenDisplay(null());
+
+        if dpy.is_null() {
+            panic!("Failed to open display.");
+        }
+
+        let screen = XDefaultScreen(dpy);
+        let root: Window = XRootWindow(dpy, screen);
+
+        if let Some(primary) = get_primary_output_xid(&output_state.outputs) {
+            XRRSetOutputPrimary(dpy, root, primary);
+        } else {
+            XRRSetOutputPrimary(dpy, root, 0);
+        }
+
+        XCloseDisplay(dpy);
+    }
 }
 
 fn get_primary_output_xid(output_info: &OutputInfo) -> Option<u64> {
