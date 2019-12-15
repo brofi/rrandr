@@ -236,10 +236,14 @@ fn build_ui(application: &Application, output_state: &Rc<OutputState>) {
         }
     }
 
-    let btn_cancel: Button = get_gtk_object(&builder, "btn_cancel");
-    btn_cancel.connect_clicked({
+    get_gtk_object::<Button>(&builder, "btn_cancel").connect_clicked({
         let window = window.clone();
         move |_| window.destroy()
+    });
+
+    get_gtk_object::<Button>(&builder, "btn_apply").connect_clicked({
+        let output_state = Rc::clone(output_state);
+        move |_| apply_new_conf(&output_state)
     });
 
     window.show_all();
@@ -404,6 +408,8 @@ fn on_refresh_rate_changed(cb: &ComboBox, output_state: &OutputState) {
         }
     }
 }
+
+fn apply_new_conf(_output_state: &OutputState) {}
 
 fn get_output_info() -> HashMap<String, Output> {
     //    let crtcs: Vec<RRCrtc> = get_crtcs_as_vec(&mut *res);
