@@ -30,8 +30,10 @@ macro_rules! enclose {
     };
 }
 
+type OutputInfo = HashMap<String, Output>;
+
 struct OutputState {
-    outputs: HashMap<String, Output>,
+    outputs: OutputInfo,
     key_selected: RefCell<String>,
 }
 
@@ -118,21 +120,9 @@ enum RefreshRateColumns {
 }
 
 fn main() {
-    let outputs = get_output_info();
-    let get_key_primary = {
-        let outputs = outputs.clone();
-        move || -> String {
-            for (k, o) in &outputs {
-                if o.curr_conf.primary {
-                    return k.to_owned();
-                }
-            }
-            panic!("Failed to find primary output.")
-        }
-    };
-
-    let key_selected = get_key_primary();
-    let output_state = OutputState::new(outputs, key_selected.to_owned());
+    let outputs: OutputInfo = get_output_info();
+    let key_primary = get_primary_output_name(&outputs).expect("Failed to get primary output.");
+    let output_state = OutputState::new(outputs, key_primary);
 
     let application = Application::new(Some("com.github.brofi.rxrandr"), Default::default())
         .expect("Failed to initialize GTK application.");
@@ -409,7 +399,39 @@ fn on_refresh_rate_changed(cb: &ComboBox, output_state: &OutputState) {
     }
 }
 
-fn apply_new_conf(_output_state: &OutputState) {}
+fn apply_new_conf(output_state: &OutputState) {
+    set_primary_output(output_state);
+    set_mode(output_state);
+}
+
+fn set_primary_output(output_state: &OutputState) {
+    let _primary = get_primary_output_xid(&output_state.outputs);
+}
+
+fn get_primary_output_xid(output_info: &OutputInfo) -> Option<u64> {
+    if let Some(primary) = get_primary_output(output_info) {
+        return Some(primary.xid);
+    }
+    None
+}
+
+fn get_primary_output_name(output_info: &OutputInfo) -> Option<String> {
+    if let Some(primary) = get_primary_output(output_info) {
+        return Some(primary.name);
+    }
+    None
+}
+
+fn get_primary_output(output_info: &OutputInfo) -> Option<Output> {
+    for o in output_info.values() {
+        if o.new_conf.borrow().primary {
+            return Some(o.clone());
+        }
+    }
+    None
+}
+
+fn set_mode(_output_state: &OutputState) {}
 
 fn get_output_info() -> HashMap<String, Output> {
     //    let crtcs: Vec<RRCrtc> = get_crtcs_as_vec(&mut *res);
