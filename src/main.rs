@@ -9,8 +9,8 @@ use std::{env, slice};
 use gio::prelude::*;
 use gtk::prelude::*;
 use gtk::{
-    Application, ApplicationWindow, Box, Builder, ComboBoxText, RadioButton, Switch,
-    NONE_RADIO_BUTTON,
+    Application, ApplicationWindow, Box, Builder, CellRendererText, ComboBox, ComboBoxText,
+    RadioButton, Switch, Type, NONE_RADIO_BUTTON,
 };
 use x11::xlib::{Display, Window, XCloseDisplay, XDefaultScreen, XOpenDisplay, XRootWindow};
 use x11::xrandr::{
@@ -50,7 +50,7 @@ impl OutputState {
 struct Output {
     xid: u64,
     name: String,
-    modes: HashMap<String, Vec<f64>>,
+    modes: HashMap<String, Vec<(u64, f64)>>,
     mode_pref: Option<(String, f64)>,
     curr_conf: OutputConfig,
     new_conf: RefCell<OutputConfig>,
@@ -68,11 +68,11 @@ impl Output {
         }
     }
 
-    fn add_mode(&mut self, mode_name: String, refresh_rate: f64) {
+    fn add_mode(&mut self, mode_name: String, xid: u64, refresh_rate: f64) {
         self.modes
             .entry(mode_name)
             .or_insert(Vec::new())
-            .push(refresh_rate);
+            .push((xid, refresh_rate));
     }
 
     fn get_resolutions_sorted(&self) -> Vec<String> {
@@ -107,7 +107,13 @@ impl Output {
 struct OutputConfig {
     enabled: bool,
     resolution: String,
-    refresh_rate: f64,
+    refresh_rate: (u64, f64),
+}
+
+#[repr(u32)]
+enum RefreshRateColumns {
+    ModeXID,
+    RefreshRate,
 }
 
 fn main() {
@@ -169,10 +175,16 @@ fn build_ui(application: &Application, output_state: &Rc<OutputState>) {
     });
 
     let cb_refresh_rate_name = "cb_refresh_rate";
-    let cb_refresh_rate: ComboBoxText = builder.get_object(cb_refresh_rate_name).expect(&format!(
+    let cb_refresh_rate: ComboBox = builder.get_object(cb_refresh_rate_name).expect(&format!(
         "Failed to get ComboBox `{}`",
         cb_refresh_rate_name
     ));
+    let cell = CellRendererText::new();
+    cb_refresh_rate.pack_start(&cell, false);
+    cb_refresh_rate.add_attribute(&cell, "text", 1);
+
+    cb_refresh_rate.set_id_column(RefreshRateColumns::ModeXID as i32);
+    cb_refresh_rate.set_entry_text_column(RefreshRateColumns::RefreshRate as i32);
 
     cb_refresh_rate.connect_changed({
         let output_state = Rc::clone(output_state);
@@ -180,8 +192,6 @@ fn build_ui(application: &Application, output_state: &Rc<OutputState>) {
             on_refresh_rate_changed(cb, &output_state);
         }
     });
-
-    cb_refresh_rate.set_id_column(0);
 
     let cb_resolution_name = "cb_resolution";
     let cb_resolution: ComboBoxText = builder
@@ -271,49 +281,75 @@ fn on_enabled_changed(_sw: &Switch, state: bool, output_state: &OutputState) -> 
 fn on_resolution_changed(
     cb: &ComboBoxText,
     output_state: &OutputState,
-    cb_refresh_rate: &ComboBoxText,
+    cb_refresh_rate: &ComboBox,
 ) {
+    let model = gtk::ListStore::new(&[Type::String, Type::String]);
     if let Some(resolution) = cb.get_active_text() {
         if let Ok(key_selected) = output_state.key_selected.try_borrow() {
             let selected_output = output_state.outputs.get(key_selected.as_str()).unwrap();
 
-            let mut active_refresh_rate = 0.0;
+            let mut active_rr_id = 0;
             if let Ok(mut new_conf) = selected_output.new_conf.try_borrow_mut() {
                 new_conf.resolution = resolution.to_string();
-                println!("Selected output with new resolution: {:?}", selected_output);
+                println!("New conf after resolution changed: {:?}", new_conf);
 
                 if let Some(rrs) = selected_output.modes.get(resolution.as_str()) {
-                    cb_refresh_rate.remove_all();
-                    for r in rrs {
-                        cb_refresh_rate.append_text(format!("{:2}", r).as_str());
+                    for (xid, r) in rrs {
+                        if *xid == new_conf.refresh_rate.0
+                            || active_rr_id == 0 && *xid == selected_output.curr_conf.refresh_rate.0
+                        {
+                            active_rr_id = *xid
+                        }
+
+                        model.set(
+                            &model.append(),
+                            &[
+                                RefreshRateColumns::ModeXID as u32,
+                                RefreshRateColumns::RefreshRate as u32,
+                            ],
+                            &[&xid.to_string(), &format!("{:6.2} Hz", r)],
+                        );
                     }
-                    active_refresh_rate = new_conf.refresh_rate.to_owned();
+
+                    if active_rr_id == 0 {
+                        if let Some(first) = rrs.get(0) {
+                            active_rr_id = first.0;
+                        }
+                    }
+
+                    cb_refresh_rate.set_model(Some(&model));
                 }
             } else {
                 println!("borrow_mut in on_resolution_changed failed.");
             }
-            cb_refresh_rate.set_active_id(Some(active_refresh_rate.to_string().as_str()));
+            cb_refresh_rate.set_active_id(Some(active_rr_id.to_string().as_str()));
         } else {
             println!("borrow in on_resolution_changed failed.");
         }
     } else {
-        cb_refresh_rate.remove_all();
+        // Set empty model. Unfortunately we can't set `None` to clear the model.
+        cb_refresh_rate.set_model(Some(&model));
     }
 }
 
-fn on_refresh_rate_changed(cb: &ComboBoxText, output_state: &OutputState) {
-    if let Some(refresh_rate) = cb.get_active_text() {
+fn on_refresh_rate_changed(cb: &ComboBox, output_state: &OutputState) {
+    if let Some(active_id) = cb.get_active_id() {
         if let Ok(key_selected) = output_state.key_selected.try_borrow() {
             let selected_output = output_state.outputs.get(key_selected.as_str()).unwrap();
             if let Ok(mut new_conf) = selected_output.new_conf.try_borrow_mut() {
-                new_conf.refresh_rate = refresh_rate.parse().unwrap();
+                if let Some(ms) = selected_output.modes.get(new_conf.resolution.as_str()) {
+                    let refresh_rate_id = active_id.parse().unwrap();
+                    for m in ms {
+                        if m.0 == refresh_rate_id {
+                            new_conf.refresh_rate = *m;
+                            println!("New conf after refresh rate changed: {:?}", new_conf);
+                            break;
+                        }
+                    }
+                }
             } else {
                 println!("borrow_mut in on_refresh_rate_changed failed.");
             }
-            println!(
-                "Selected output with new refresh rate: {:?}",
-                selected_output
-            );
         } else {
             println!("borrow in on_refresh_rate_changed failed.");
         }
@@ -367,13 +403,13 @@ fn get_output_info() -> HashMap<String, Output> {
             for (i, mode_i) in mode_info.iter().enumerate() {
                 let mode_name = CStr::from_ptr(mode_i.name).to_str().unwrap().to_owned();
                 let refresh_rate = get_refresh_rate(mode_i);
-                output.add_mode(mode_name.to_owned(), refresh_rate.to_owned());
+                output.add_mode(mode_name.to_owned(), mode_i.id, refresh_rate.to_owned());
 
                 // Get current resolution and current refresh rate.
                 if let Some(crtc_info) = maybe_crtc_info {
                     if mode_i.id == (*crtc_info).mode {
                         output.curr_conf.resolution = mode_name.to_owned();
-                        output.curr_conf.refresh_rate = refresh_rate.to_owned();
+                        output.curr_conf.refresh_rate = (mode_i.id, refresh_rate.to_owned());
                     }
                 }
 
