@@ -147,17 +147,10 @@ fn main() {
 fn build_ui(application: &Application, output_state: &Rc<OutputState>) {
     let builder = Builder::new_from_string(include_str!("gui.glade"));
 
-    let window_name = "window";
-    let window: ApplicationWindow = builder.get_object(window_name).expect(&format!(
-        "Failed to get ApplicationWindow `{}`",
-        window_name
-    ));
+    let window: ApplicationWindow = get_gtk_object(&builder, "window");
     window.set_application(Some(application));
 
-    let box_outputs_name = "box_outputs";
-    let box_outputs: Box = builder
-        .get_object(box_outputs_name)
-        .expect(&format!("Failed to get Box `{}`", box_outputs_name));
+    let box_outputs: Box = get_gtk_object(&builder, "box_outputs");
 
     // create radio buttons with output name as label
     let mut output_radio_buttons = Vec::new();
@@ -176,21 +169,13 @@ fn build_ui(application: &Application, output_state: &Rc<OutputState>) {
         prev_rb = Some(rb);
     }
 
-    let sw_enabled_name = "sw_enabled";
-    let sw_enabled: Switch = builder
-        .get_object(sw_enabled_name)
-        .expect(&format!("Failed to get Switch `{}`", sw_enabled_name));
-
+    let sw_enabled: Switch = get_gtk_object(&builder, "sw_enabled");
     sw_enabled.connect_state_set({
         let output_state = Rc::clone(output_state);
         move |sw, state| on_enabled_changed(sw, state, &output_state)
     });
 
-    let ch_primary_name = "ch_primary";
-    let ch_primary: CheckButton = builder
-        .get_object(ch_primary_name)
-        .expect(&format!("Failed to get CheckButton `{}`", ch_primary_name));
-
+    let ch_primary: CheckButton = get_gtk_object(&builder, "ch_primary");
     if let Ok(key_selected) = output_state.key_selected.try_borrow() {
         if let Some(o) = output_state.outputs.get(key_selected.as_str()) {
             ch_primary.set_active(o.curr_conf.primary);
@@ -198,24 +183,17 @@ fn build_ui(application: &Application, output_state: &Rc<OutputState>) {
     } else {
         println!("borrow in build_ui failed.");
     }
-
     ch_primary.connect_toggled({
         let output_state = Rc::clone(output_state);
         move |ch| on_primary_changed(ch, &output_state)
     });
 
-    let cb_refresh_rate_name = "cb_refresh_rate";
-    let cb_refresh_rate: ComboBox = builder.get_object(cb_refresh_rate_name).expect(&format!(
-        "Failed to get ComboBox `{}`",
-        cb_refresh_rate_name
-    ));
+    let cb_refresh_rate: ComboBox = get_gtk_object(&builder, "cb_refresh_rate");
     let cell = CellRendererText::new();
     cb_refresh_rate.pack_start(&cell, false);
     cb_refresh_rate.add_attribute(&cell, "text", 1);
-
     cb_refresh_rate.set_id_column(RefreshRateColumns::ModeXID as i32);
     cb_refresh_rate.set_entry_text_column(RefreshRateColumns::RefreshRate as i32);
-
     cb_refresh_rate.connect_changed({
         let output_state = Rc::clone(output_state);
         move |cb| {
@@ -223,18 +201,13 @@ fn build_ui(application: &Application, output_state: &Rc<OutputState>) {
         }
     });
 
-    let cb_resolution_name = "cb_resolution";
-    let cb_resolution: ComboBoxText = builder
-        .get_object(cb_resolution_name)
-        .expect(&format!("Failed to get ComboBox `{}`", cb_resolution_name));
-
+    let cb_resolution: ComboBoxText = get_gtk_object(&builder, "cb_resolution");
     cb_resolution.connect_changed({
         let output_state = Rc::clone(output_state);
         move |cb| {
             on_resolution_changed(cb, &output_state, &cb_refresh_rate);
         }
     });
-
     cb_resolution.set_id_column(0);
 
     for rb in &output_radio_buttons {
@@ -263,17 +236,21 @@ fn build_ui(application: &Application, output_state: &Rc<OutputState>) {
         }
     }
 
-    let btn_cancel_name = "btn_cancel";
-    let btn_cancel: Button = builder
-        .get_object(btn_cancel_name)
-        .expect(&format!("Failed to get Button `{}`", btn_cancel_name));
-
+    let btn_cancel: Button = get_gtk_object(&builder, "btn_cancel");
     btn_cancel.connect_clicked({
         let window = window.clone();
         move |_| window.destroy()
     });
 
     window.show_all();
+}
+
+fn get_gtk_object<T: IsA<gtk::Object>>(builder: &Builder, name: &str) -> T {
+    builder.get_object(name).expect(&format!(
+        "Failed to get {} `{}`",
+        std::any::type_name::<T>(),
+        name
+    ))
 }
 
 fn on_output_selected(
