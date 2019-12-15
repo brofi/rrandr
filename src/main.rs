@@ -12,6 +12,7 @@ use gtk::{
     Application, ApplicationWindow, Box, Builder, Button, CellRendererText, CheckButton, ComboBox,
     ComboBoxText, RadioButton, Switch, Type, NONE_RADIO_BUTTON,
 };
+use std::os::raw::c_char;
 use x11::xlib::{Display, Window, XCloseDisplay, XDefaultScreen, XOpenDisplay, XRootWindow};
 use x11::xrandr::{
     Connection, RRCrtc, RRMode, RROutput, RR_Connected, RR_DoubleScan, RR_Interlace, XRRCrtcInfo,
@@ -473,8 +474,8 @@ fn get_output_info() -> HashMap<String, Output> {
                 continue;
             }
 
-            let name: &str = CStr::from_ptr((*x_output_info).name).to_str().unwrap();
-            let mut output = Output::new(o, name.to_owned());
+            let name: String = from_x_string((*x_output_info).name);
+            let mut output = Output::new(o, name.clone());
 
             let mut maybe_crtc_info: Option<*mut XRRCrtcInfo> = None;
             let enabled = is_output_enabled(&mut *res, (*x_output_info).crtc);
@@ -488,26 +489,26 @@ fn get_output_info() -> HashMap<String, Output> {
                 get_mode_info_for_output(&mut *res, &mut *x_output_info);
 
             for (i, mode_i) in mode_info.iter().enumerate() {
-                let mode_name = CStr::from_ptr(mode_i.name).to_str().unwrap().to_owned();
+                let mode_name = from_x_string(mode_i.name);
                 let refresh_rate = get_refresh_rate(mode_i);
-                output.add_mode(mode_name.to_owned(), mode_i.id, refresh_rate.to_owned());
+                output.add_mode(mode_name.clone(), mode_i.id, refresh_rate.clone());
 
                 // Get current resolution and current refresh rate.
                 if let Some(crtc_info) = maybe_crtc_info {
                     if mode_i.id == (*crtc_info).mode {
-                        output.curr_conf.resolution = mode_name.to_owned();
-                        output.curr_conf.refresh_rate = (mode_i.id, refresh_rate.to_owned());
+                        output.curr_conf.resolution = mode_name.clone();
+                        output.curr_conf.refresh_rate = (mode_i.id, refresh_rate.clone());
                     }
                 }
 
                 // Get preferred mode.
                 if i < (*x_output_info).npreferred as usize && output.mode_pref.is_none() {
-                    output.mode_pref = Some((mode_name.to_owned(), refresh_rate.to_owned()));
+                    output.mode_pref = Some((mode_name, refresh_rate));
                 }
 
                 output.new_conf = RefCell::new(output.curr_conf.clone());
             }
-            output_info.insert(name.to_owned(), output);
+            output_info.insert(name, output);
         }
 
         close_display(dpy);
@@ -595,4 +596,9 @@ fn get_window(dpy: *mut Display, screen: i32) -> Window {
 
 fn close_display(dpy: *mut Display) -> i32 {
     unsafe { XCloseDisplay(dpy) }
+}
+
+fn from_x_string(ptr: *const c_char) -> String {
+    assert!(!ptr.is_null());
+    unsafe { String::from_utf8_lossy(CStr::from_ptr(ptr).to_bytes()).into_owned() }
 }
