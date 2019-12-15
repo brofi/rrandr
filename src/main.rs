@@ -400,28 +400,22 @@ fn on_refresh_rate_changed(cb: &ComboBox, output_state: &OutputState) {
 }
 
 fn apply_new_conf(output_state: &OutputState) {
-    set_primary_output(output_state);
+    let dpy = get_display();
+    let root: Window = get_window(dpy, get_screen(dpy));
+
+    set_primary_output(dpy, root, output_state);
     set_mode(output_state);
+
+    close_display(dpy);
 }
 
-fn set_primary_output(output_state: &OutputState) {
+fn set_primary_output(dpy: *mut Display, window: Window, output_state: &OutputState) {
     unsafe {
-        let dpy: *mut Display = XOpenDisplay(null());
-
-        if dpy.is_null() {
-            panic!("Failed to open display.");
-        }
-
-        let screen = XDefaultScreen(dpy);
-        let root: Window = XRootWindow(dpy, screen);
-
         if let Some(primary) = get_primary_output_xid(&output_state.outputs) {
-            XRRSetOutputPrimary(dpy, root, primary);
+            XRRSetOutputPrimary(dpy, window, primary);
         } else {
-            XRRSetOutputPrimary(dpy, root, 0);
+            XRRSetOutputPrimary(dpy, window, 0);
         }
-
-        XCloseDisplay(dpy);
     }
 }
 
@@ -465,15 +459,10 @@ fn get_output_info() -> HashMap<String, Output> {
 
     let mut output_info: HashMap<String, Output> = HashMap::new();
 
+    let dpy = get_display();
+    let root: Window = get_window(dpy, get_screen(dpy));
+
     unsafe {
-        let dpy: *mut Display = XOpenDisplay(null());
-        let screen = XDefaultScreen(dpy);
-        let root: Window = XRootWindow(dpy, screen);
-
-        if dpy.is_null() {
-            panic!("Failed to open display.");
-        }
-
         let res: *mut XRRScreenResources = XRRGetScreenResourcesCurrent(dpy, root);
         let primary: RROutput = XRRGetOutputPrimary(dpy, root);
         let outputs: Vec<RROutput> = get_as_vec((*res).outputs, (*res).noutput);
@@ -521,7 +510,7 @@ fn get_output_info() -> HashMap<String, Output> {
             output_info.insert(name.to_owned(), output);
         }
 
-        XCloseDisplay(dpy);
+        close_display(dpy);
     }
 
     output_info
@@ -584,4 +573,26 @@ fn get_refresh_rate(mode_info: &XRRModeInfo) -> f64 {
     } else {
         0.0
     }
+}
+
+fn get_display() -> *mut Display {
+    unsafe {
+        let dpy: *mut Display = XOpenDisplay(null());
+        if dpy.is_null() {
+            panic!("Failed to open display.");
+        }
+        dpy
+    }
+}
+
+fn get_screen(dpy: *mut Display) -> i32 {
+    unsafe { XDefaultScreen(dpy) }
+}
+
+fn get_window(dpy: *mut Display, screen: i32) -> Window {
+    unsafe { XRootWindow(dpy, screen) }
+}
+
+fn close_display(dpy: *mut Display) -> i32 {
+    unsafe { XCloseDisplay(dpy) }
 }
