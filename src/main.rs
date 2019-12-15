@@ -9,7 +9,7 @@ use std::{env, slice};
 use gio::prelude::*;
 use gtk::prelude::*;
 use gtk::{
-    Application, ApplicationWindow, Box, Builder, CellRendererText, CheckButton, ComboBox,
+    Application, ApplicationWindow, Box, Builder, Button, CellRendererText, CheckButton, ComboBox,
     ComboBoxText, RadioButton, Switch, Type, NONE_RADIO_BUTTON,
 };
 use x11::xlib::{Display, Window, XCloseDisplay, XDefaultScreen, XOpenDisplay, XRootWindow};
@@ -262,6 +262,16 @@ fn build_ui(application: &Application, output_state: &Rc<OutputState>) {
             }
         }
     }
+
+    let btn_cancel_name = "btn_cancel";
+    let btn_cancel: Button = builder
+        .get_object(btn_cancel_name)
+        .expect(&format!("Failed to get Button `{}`", btn_cancel_name));
+
+    btn_cancel.connect_clicked({
+        let window = window.clone();
+        move |_| window.destroy()
+    });
 
     window.show_all();
 }
