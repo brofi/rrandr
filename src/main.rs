@@ -13,7 +13,9 @@ use gtk::{
     ComboBoxText, RadioButton, Switch, Type, NONE_RADIO_BUTTON,
 };
 use std::os::raw::c_char;
-use x11::xlib::{Display, Window, XCloseDisplay, XDefaultScreen, XOpenDisplay, XRootWindow};
+use x11::xlib::{
+    Display, Window, XCloseDisplay, XDefaultScreen, XDisplayName, XOpenDisplay, XRootWindow,
+};
 use x11::xrandr::{
     Connection, RRCrtc, RRMode, RROutput, RR_Connected, RR_DoubleScan, RR_Interlace, XRRCrtcInfo,
     XRRGetCrtcInfo, XRRGetOutputInfo, XRRGetOutputPrimary, XRRGetScreenResourcesCurrent,
@@ -578,9 +580,13 @@ fn get_refresh_rate(mode_info: &XRRModeInfo) -> f64 {
 
 fn get_display() -> *mut Display {
     unsafe {
-        let dpy: *mut Display = XOpenDisplay(null());
+        let dpy_name: *const c_char = null();
+        let dpy: *mut Display = XOpenDisplay(dpy_name);
         if dpy.is_null() {
-            panic!("Failed to open display.");
+            panic!(
+                "Failed to open display {}",
+                from_x_string(XDisplayName(dpy_name))
+            );
         }
         dpy
     }
