@@ -56,7 +56,7 @@ struct Output {
     xid: u64,
     name: String,
     modes: HashMap<String, Vec<OutputMode>>,
-    mode_pref: Option<(String, f64)>,
+    mode_pref: Option<OutputMode>,
     curr_conf: OutputConfig,
     new_conf: RefCell<OutputConfig>,
 }
@@ -121,8 +121,7 @@ struct OutputMode {
 struct OutputConfig {
     enabled: bool,
     primary: bool,
-    resolution: String,
-    refresh_rate: (u64, f64),
+    mode: OutputMode,
 }
 
 #[repr(u32)]
@@ -286,7 +285,7 @@ fn on_output_selected(
                 let mut enabled = false;
                 let mut primary = false;
                 if let Ok(new_conf) = o.new_conf.try_borrow() {
-                    active_resolution = new_conf.resolution.to_owned();
+                    active_resolution = new_conf.mode.name.to_owned();
                     enabled = new_conf.enabled;
                     primary = new_conf.primary;
                 } else {
@@ -345,13 +344,13 @@ fn on_resolution_changed(
 
             let mut active_rr_id = 0;
             if let Ok(mut new_conf) = selected_output.new_conf.try_borrow_mut() {
-                new_conf.resolution = resolution.to_string();
+                new_conf.mode.name = resolution.to_string();
                 println!("New conf after resolution changed: {:?}", new_conf);
 
                 if let Some(modes) = selected_output.modes.get(resolution.as_str()) {
                     for m in modes {
-                        if m.xid == new_conf.refresh_rate.0
-                            || active_rr_id == 0 && m.xid == selected_output.curr_conf.refresh_rate.0
+                        if m.xid == new_conf.mode.xid
+                            || active_rr_id == 0 && m.xid == selected_output.curr_conf.mode.xid
                         {
                             active_rr_id = m.xid
                         }
@@ -392,11 +391,14 @@ fn on_refresh_rate_changed(cb: &ComboBox, output_state: &OutputState) {
         if let Ok(key_selected) = output_state.key_selected.try_borrow() {
             let selected_output = output_state.outputs.get(key_selected.as_str()).unwrap();
             if let Ok(mut new_conf) = selected_output.new_conf.try_borrow_mut() {
-                if let Some(modes) = selected_output.modes.get(new_conf.resolution.as_str()) {
+                if let Some(modes) = selected_output.modes.get(new_conf.mode.name.as_str()) {
                     let refresh_rate_id = active_id.parse().unwrap();
                     for m in modes {
                         if m.xid == refresh_rate_id {
-                            new_conf.refresh_rate = (m.xid, m.refresh_rate);
+                            new_conf.mode.xid = m.xid;
+                            new_conf.mode.refresh_rate = m.refresh_rate;
+                            new_conf.mode.width = m.width;
+                            new_conf.mode.height = m.height;
                             println!("New conf after refresh rate changed: {:?}", new_conf);
                             break;
                         }
@@ -512,14 +514,13 @@ fn get_output_info() -> HashMap<String, Output> {
                 // Get current resolution and current refresh rate.
                 if let Some(crtc_info) = maybe_crtc_info {
                     if mode_i.id == (*crtc_info).mode {
-                        output.curr_conf.resolution = mode.name.clone();
-                        output.curr_conf.refresh_rate = (mode.xid, mode.refresh_rate.clone());
+                        output.curr_conf.mode = mode.clone();
                     }
                 }
 
                 // Get preferred mode.
                 if i < (*x_output_info).npreferred as usize && output.mode_pref.is_none() {
-                    output.mode_pref = Some((mode.name.clone(), mode.refresh_rate.clone()));
+                    output.mode_pref = Some(mode.clone());
                 }
 
                 output.new_conf = RefCell::new(output.curr_conf.clone());
