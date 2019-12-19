@@ -2,9 +2,11 @@ use std::cell::RefCell;
 use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::ffi::CStr;
-use std::ptr::null;
+use std::os::raw::c_char;
+use std::process::exit;
+use std::ptr::{null, null_mut};
 use std::rc::Rc;
-use std::{env, slice};
+use std::{env, mem, slice};
 
 use gio::prelude::*;
 use gtk::prelude::*;
@@ -12,14 +14,22 @@ use gtk::{
     Application, ApplicationWindow, Box, Builder, Button, CellRendererText, CheckButton, ComboBox,
     ComboBoxText, RadioButton, Switch, Type, NONE_RADIO_BUTTON,
 };
-use std::os::raw::c_char;
 use x11::xlib::{
-    Display, Window, XCloseDisplay, XDefaultScreen, XDisplayName, XOpenDisplay, XRootWindow,
+    CurrentTime, Display, False, Status, True, Window, XCloseDisplay, XDefaultScreen,
+    XDisplayHeight, XDisplayHeightMM, XDisplayName, XDisplayWidth, XDisplayWidthMM, XErrorEvent,
+    XGetErrorText, XGrabServer, XOpenDisplay, XRootWindow, XSetErrorHandler, XSync, XSynchronize,
+    XUngrabServer,
 };
 use x11::xrandr::{
-    Connection, RRCrtc, RRMode, RROutput, RR_Connected, RR_DoubleScan, RR_Interlace, XRRCrtcInfo,
-    XRRGetCrtcInfo, XRRGetOutputInfo, XRRGetOutputPrimary, XRRGetScreenResourcesCurrent,
-    XRRModeInfo, XRROutputInfo, XRRScreenResources, XRRSetOutputPrimary,
+    Connection, RRCrtc, RRMode, RROutput, RRSetConfigFailed, RRSetConfigInvalidConfigTime,
+    RRSetConfigInvalidTime, RRSetConfigSuccess, RR_Connected, RR_DoubleScan, RR_Interlace,
+    RR_Rotate_0, XRRCrtcInfo, XRRGetCrtcInfo, XRRGetOutputInfo, XRRGetOutputPrimary,
+    XRRGetScreenResourcesCurrent, XRRGetScreenSizeRange, XRRModeInfo, XRROutputInfo,
+    XRRScreenResources, XRRSetCrtcConfig, XRRSetOutputPrimary, XRRSetScreenSize,
+};
+use x11::xrandr::{
+    X_RRGetCrtcInfo, X_RRGetOutputInfo, X_RRGetOutputPrimary, X_RRGetScreenResourcesCurrent,
+    X_RRSetCrtcConfig, X_RRSetOutputPrimary, X_RRSetScreenSize,
 };
 
 // TODO consider using
@@ -48,6 +58,31 @@ impl OutputState {
             key_selected: selected,
         })
     }
+
+    fn get_outputs_ordered_horizontal(&self) -> Vec<&Output> {
+        let mut outputs: Vec<&Output> = self.outputs.values().collect();
+        outputs.sort_by(|&o1, &o2| {
+            if let (Ok(new_conf1), Ok(new_conf2)) =
+                (o1.new_conf.try_borrow(), o2.new_conf.try_borrow())
+            {
+                return new_conf1.pos.0.cmp(&new_conf2.pos.0);
+            }
+            panic!("Failed to get outputs in horizontal order.");
+        });
+        outputs
+    }
+
+    fn get_enabled_outputs(&self) -> Vec<&Output> {
+        self.outputs
+            .values()
+            .filter(|o| {
+                if let Ok(new_conf) = o.new_conf.try_borrow() {
+                    return new_conf.enabled;
+                }
+                false
+            })
+            .collect()
+    }
 }
 
 // TODO Display Trait?
@@ -57,10 +92,14 @@ struct Output {
     name: String,
     modes: HashMap<String, Vec<OutputMode>>,
     mode_pref: Option<OutputMode>,
+    mm_size: (u64, u64),
     curr_conf: OutputConfig,
     new_conf: RefCell<OutputConfig>,
+    crtc_xid: RefCell<Option<u64>>, // TODO move to config? is enabled even necessary?
+    crtc_xids: Vec<u64>,
 }
 
+// TODO disabled outputs don't have a current mode nor a crtc_xid => fn disable
 impl Output {
     fn new(xid: u64, name: String) -> Output {
         Output {
@@ -68,16 +107,16 @@ impl Output {
             name,
             modes: HashMap::new(),
             mode_pref: None,
+            mm_size: (0, 0),
             curr_conf: Default::default(),
             new_conf: RefCell::new(Default::default()),
+            crtc_xid: RefCell::new(None),
+            crtc_xids: Vec::new(),
         }
     }
 
     fn add_mode(&mut self, mode_name: String, mode: OutputMode) {
-        self.modes
-            .entry(mode_name)
-            .or_insert(Vec::new())
-            .push(mode);
+        self.modes.entry(mode_name).or_insert(Vec::new()).push(mode);
     }
 
     fn get_resolutions_sorted(&self) -> Vec<String> {
@@ -122,6 +161,7 @@ struct OutputConfig {
     enabled: bool,
     primary: bool,
     mode: OutputMode,
+    pos: (i32, i32),
 }
 
 #[repr(u32)]
@@ -155,7 +195,7 @@ fn build_ui(application: &Application, output_state: &Rc<OutputState>) {
 
     // create radio buttons with output name as label
     let mut output_radio_buttons = Vec::new();
-    for o in output_state.outputs.values() {
+    for o in output_state.get_outputs_ordered_horizontal() {
         let rb = RadioButton::new_with_label(&format!("Output: {}", o.name));
         WidgetExt::set_name(&rb, o.name.as_str());
         output_radio_buttons.push(rb);
@@ -302,8 +342,69 @@ fn on_output_selected(
 fn on_enabled_changed(_sw: &Switch, state: bool, output_state: &OutputState) -> Inhibit {
     if let Ok(key_selected) = output_state.key_selected.try_borrow() {
         let selected_output = output_state.outputs.get(key_selected.as_str()).unwrap();
+        let ordered_outputs = output_state.get_outputs_ordered_horizontal();
         if let Ok(mut new_conf) = selected_output.new_conf.try_borrow_mut() {
-            new_conf.enabled = state;
+            // TODO refactor
+            if new_conf.enabled != state {
+                new_conf.enabled = state;
+
+                if state {
+                    // set mode to preferred mode
+                    if new_conf.mode.xid == 0 {
+                        if let Some(pref) = &selected_output.mode_pref {
+                            new_conf.mode = pref.clone();
+                        }
+                    }
+
+                    // update output position to match the position in ordered_outputs
+                    new_conf.pos.0 = ordered_outputs
+                        .iter()
+                        .take_while(|o| o.name != *key_selected)
+                        .fold(0, |acc, o| acc + o.new_conf.borrow().mode.width as i32);
+
+                    // update positions for outputs right of the selected one
+                    for o in ordered_outputs
+                        .iter()
+                        .skip_while(|o| o.name != *key_selected)
+                        .skip(1)
+                    // TODO map()
+                    {
+                        if let Ok(mut other_conf) = o.new_conf.try_borrow_mut() {
+                            other_conf.pos.0 += new_conf.mode.width as i32;
+                            println!("Other conf after enabled changed: {:?}", other_conf);
+                        } else {
+                            println!("borrow_mut for other conf in on_enabled_changed failed.")
+                        }
+                    }
+                } else {
+                    new_conf.pos = (0, 0);
+
+                    // update positions for outputs right of the selected one
+                    for o in ordered_outputs
+                        .iter()
+                        .skip_while(|o| o.name != *key_selected)
+                        .skip(1)
+                    // TODO map()
+                    {
+                        if let Ok(mut other_conf) = o.new_conf.try_borrow_mut() {
+                            if other_conf.enabled {
+                                other_conf.pos.0 -= new_conf.mode.width as i32;
+                            }
+                            println!(
+                                "Config of {} after enabled changed: {:?}",
+                                o.name, other_conf
+                            );
+                        } else {
+                            println!("borrow_mut for other conf in on_enabled_changed failed.")
+                        }
+                    }
+
+                    // TODO there should be an Option<OutputMode>
+                    new_conf.mode = Default::default();
+                }
+            }
+
+            println!("New conf after enabled changed: {:?}", new_conf);
         } else {
             println!("borrow_mut in on_enabled_changed failed.");
         }
@@ -390,6 +491,7 @@ fn on_refresh_rate_changed(cb: &ComboBox, output_state: &OutputState) {
     if let Some(active_id) = cb.get_active_id() {
         if let Ok(key_selected) = output_state.key_selected.try_borrow() {
             let selected_output = output_state.outputs.get(key_selected.as_str()).unwrap();
+            let ordered_outputs = output_state.get_outputs_ordered_horizontal();
             if let Ok(mut new_conf) = selected_output.new_conf.try_borrow_mut() {
                 if let Some(modes) = selected_output.modes.get(new_conf.mode.name.as_str()) {
                     let refresh_rate_id = active_id.parse().unwrap();
@@ -397,6 +499,24 @@ fn on_refresh_rate_changed(cb: &ComboBox, output_state: &OutputState) {
                         if m.xid == refresh_rate_id {
                             new_conf.mode.xid = m.xid;
                             new_conf.mode.refresh_rate = m.refresh_rate;
+
+                            // TODO move positioning somewhere else
+                            if m.width != new_conf.mode.width {
+                                for o in ordered_outputs
+                                    .iter()
+                                    .skip_while(|o| o.name != *key_selected)
+                                    .skip(1)
+                                // TODO map()
+                                {
+                                    if let Ok(mut other_conf) = o.new_conf.try_borrow_mut() {
+                                        other_conf.pos.0 -=
+                                            new_conf.mode.width as i32 - m.width as i32;
+                                    } else {
+                                        println!("borrow_mut for other conf in on_refresh_rate_changed failed.")
+                                    }
+                                }
+                            }
+
                             new_conf.mode.width = m.width;
                             new_conf.mode.height = m.height;
                             println!("New conf after refresh rate changed: {:?}", new_conf);
@@ -415,13 +535,263 @@ fn on_refresh_rate_changed(cb: &ComboBox, output_state: &OutputState) {
 
 fn apply_new_conf(output_state: &OutputState) {
     let dpy = get_display();
-    let root: Window = get_window(dpy, get_screen(dpy));
+    let screen = get_screen(dpy);
+    let root: Window = get_window(dpy, screen);
+    let res = get_resources(dpy, root);
 
-    set_primary_output(dpy, root, output_state);
-    set_mode(output_state);
+    #[allow(unused_assignments)]
+    let mut previous_handler = None;
+    unsafe {
+        previous_handler = XSetErrorHandler(Some(x_error_handler));
+        XGrabServer(dpy);
+        XSynchronize(dpy, True);
+    }
+
+    let screen_size = get_screen_size(dpy, screen, root, &output_state);
+
+    for o in output_state.outputs.values() {
+        if let (Ok(mut new_conf), Ok(mut crtc_xid)) =
+            (o.new_conf.try_borrow_mut(), o.crtc_xid.try_borrow_mut())
+        {
+            if let Some(crtc) = *crtc_xid {
+                if !new_conf.enabled {
+                    // Disable outputs that were enabled before
+                    let s: Status = disable_crtc(dpy, res, crtc);
+                    print_config_status(o.name.clone(), s);
+                    // TODO see above: disable
+                    new_conf.enabled = false;
+                    new_conf.pos = (0, 0);
+                    new_conf.mode = Default::default();
+                    *crtc_xid = None;
+                } else {
+                    // Disable outputs that are still enabled but don't fit the new screen size.
+                    if o.curr_conf.pos.0 as u32 + o.curr_conf.mode.width > screen_size.0 as u32
+                        || o.curr_conf.pos.1 as u32 + o.curr_conf.mode.height > screen_size.1 as u32
+                    {
+                        let s: Status = disable_crtc(dpy, res, crtc);
+                        print_config_status(o.name.clone(), s);
+                        *crtc_xid = None;
+                    }
+                }
+            }
+        } else {
+            println!("borrow in apply_new_conf failed.");
+        }
+    }
+
+    set_screen_size(dpy, screen, root, screen_size);
+
+    for o in output_state.outputs.values() {
+        if let (Ok(new_conf), Ok(mut crtc_xid)) =
+            (o.new_conf.try_borrow(), o.crtc_xid.try_borrow_mut())
+        {
+            if new_conf.enabled {
+                if let Some(crtc) = *crtc_xid {
+                    let s: Status = modify_crtc(dpy, res, crtc, &new_conf.clone());
+                    print_config_status(o.name.clone(), s);
+                } else {
+                    if let Some(crtc) = get_empty_crtc(dpy, res, o) {
+                        // TODO check if this works
+                        *crtc_xid = Some(crtc);
+                        let s: Status = enable_crtc(dpy, res, crtc, o, &new_conf.clone());
+                        print_config_status(o.name.clone(), s);
+                    } else {
+                        println!("Failed to find available CRTC.");
+                    }
+                }
+                set_panning();
+            }
+        } else {
+            println!("borrow in apply_new_conf failed.")
+        }
+    }
+
+    set_primary_output(dpy, root, &output_state);
+
+    unsafe {
+        XUngrabServer(dpy);
+        XSynchronize(dpy, False);
+        XSync(dpy, False);
+        XSetErrorHandler(mem::transmute(previous_handler));
+    }
 
     close_display(dpy);
+
+    // TODO if successful: curr_conf should be new_conf
+    // TODO make sure state is correct so we don't have to restart the application
+    // TODO revert if not successful
 }
+
+#[allow(non_upper_case_globals)]
+fn print_config_status(output_name: String, status: Status) {
+    println!(
+        "Applying new configuration for output {} {}",
+        output_name,
+        match status {
+            RRSetConfigSuccess => "successful.",
+            RRSetConfigFailed => "failed.",
+            RRSetConfigInvalidTime => "failed: invalid time.",
+            RRSetConfigInvalidConfigTime => "failed: invalid config time.",
+            _ => "failed: unknown.",
+        }
+    );
+}
+
+fn set_screen_size(
+    dpy: *mut Display,
+    screen: i32,
+    window: Window,
+    screen_size: (i32, i32, i32, i32),
+) {
+    let width = screen_size.0;
+    let height = screen_size.1;
+    let mm_width = screen_size.2;
+    let mm_height = screen_size.3;
+
+    unsafe {
+        if width == XDisplayWidth(dpy, screen)
+            && height == XDisplayHeight(dpy, screen)
+            && mm_width == XDisplayWidthMM(dpy, screen)
+            && mm_height == XDisplayHeightMM(dpy, screen)
+        {
+            return;
+        }
+
+        println!(
+            "Setting screen size to (width,height,mmWidth,mmHeight) = ({},{},{},{})",
+            width, height, mm_width, mm_height
+        );
+        XRRSetScreenSize(dpy, window, width, height, mm_width, mm_height);
+    }
+}
+
+fn get_screen_size(
+    dpy: *mut Display,
+    screen: i32,
+    window: Window,
+    output_state: &OutputState,
+) -> (i32, i32, i32, i32) {
+    let mut width: i32 = 0;
+    let mut height: i32 = 0;
+
+    // TODO merge
+    // Calculate width and height from modes
+    for o in output_state.outputs.values() {
+        if let Ok(new_conf) = o.new_conf.try_borrow() {
+            width += new_conf.mode.width as i32;
+            if new_conf.mode.height as i32 > height {
+                height = new_conf.mode.height as i32;
+            }
+        } else {
+            println!("borrow in get_screen_size failed.");
+        }
+    }
+
+    // TODO merge
+    // Check if outputs fit the calculated size
+    for o in output_state.outputs.values() {
+        let new_conf = o
+            .new_conf
+            .try_borrow()
+            .expect("Failed to obtain new configuration.");
+
+        if new_conf.pos.0 as u32 + new_conf.mode.width > width as u32
+            || new_conf.pos.1 as u32 + new_conf.mode.height > height as u32
+        {
+            panic!(
+                "Output {} at position ({}, {}) with mode size ({}, {}) exceeds calculated screen boundaries ({}, {})",
+                o.name, new_conf.pos.0, new_conf.pos.1, new_conf.mode.width, new_conf.mode.height, width, height);
+        }
+    }
+
+    // Check if width and height are within range
+    let bounds = get_screen_size_range(dpy, window);
+    if width < bounds.0 || height < bounds.1 {
+        panic!(
+            "Screen size must be bigger than ({},{})",
+            bounds.0, bounds.1
+        );
+    }
+    if width > bounds.2 || height > bounds.3 {
+        panic!(
+            "Screen size must be smaller than ({},{})",
+            bounds.2, bounds.3
+        );
+    }
+
+    let mut dpi = 0.0;
+    // TODO const
+    let mm_per_inch = 25.4;
+
+    let mut mm_width = 0;
+    let mut mm_height = 0;
+
+    // TODO maybe only if explicitly specified by the user
+    let enabled_outputs = output_state.get_enabled_outputs();
+    if enabled_outputs.len() == 1 {
+        let &single_output = enabled_outputs.get(0).unwrap();
+        if let Ok(new_conf) = single_output.new_conf.try_borrow() {
+            if width as u32 == new_conf.mode.width && height as u32 == new_conf.mode.height {
+                mm_width = single_output.mm_size.0 as i32;
+                mm_height = single_output.mm_size.1 as i32;
+                println!(
+                    "Using mm_size {:?} of output {}",
+                    single_output.mm_size, single_output.name
+                );
+            } else {
+                dpi = (mm_per_inch * new_conf.mode.height as f64) / single_output.mm_size.1 as f64;
+            }
+        }
+    }
+
+    // TODO check
+    unsafe {
+        if mm_width == 0 || mm_height == 0 {
+            if width != XDisplayWidth(dpy, screen)
+                || height != XDisplayHeight(dpy, screen)
+                || dpi != 0.0
+            {
+                if dpi <= 0.0 {
+                    dpi = (mm_per_inch * XDisplayHeight(dpy, screen) as f64)
+                        / XDisplayHeightMM(dpy, screen) as f64;
+                }
+                mm_width = ((mm_per_inch * width as f64) / dpi) as i32;
+                mm_height = ((mm_per_inch * height as f64) / dpi) as i32;
+                println!(
+                    "Calculated mm_size ({}, {}) with display dpi = {}",
+                    mm_width, mm_height, dpi
+                );
+            } else {
+                mm_width = XDisplayHeightMM(dpy, screen);
+                mm_height = XDisplayHeightMM(dpy, screen);
+                println!("Using display mm_size ({}, {})", mm_width, mm_height);
+            }
+        }
+    }
+
+    (width, height, mm_width, mm_height)
+}
+
+fn get_screen_size_range(dpy: *mut Display, window: Window) -> (i32, i32, i32, i32) {
+    let mut min_width = 0;
+    let mut min_height = 0;
+    let mut max_width = 0;
+    let mut max_height = 0;
+    unsafe {
+        XRRGetScreenSizeRange(
+            dpy,
+            window,
+            &mut min_width,
+            &mut min_height,
+            &mut max_width,
+            &mut max_height,
+        );
+    }
+    (min_width, min_height, max_width, max_height)
+}
+
+// TODO explicitly disable panning?
+fn set_panning() {}
 
 fn set_primary_output(dpy: *mut Display, window: Window, output_state: &OutputState) {
     unsafe {
@@ -456,7 +826,102 @@ fn get_primary_output(output_info: &OutputInfo) -> Option<Output> {
     None
 }
 
-fn set_mode(_output_state: &OutputState) {}
+fn modify_crtc(
+    dpy: *mut Display,
+    resources: *mut XRRScreenResources,
+    crtc: u64,
+    config: &OutputConfig,
+) -> Status {
+    unsafe {
+        let crtc_info = XRRGetCrtcInfo(dpy, resources, crtc);
+        XRRSetCrtcConfig(
+            dpy,
+            resources,
+            crtc,
+            CurrentTime,
+            config.pos.0,
+            config.pos.1,
+            config.mode.xid,
+            (*crtc_info).rotation,
+            (*crtc_info).outputs,
+            (*crtc_info).noutput,
+        )
+    }
+}
+
+fn enable_crtc(
+    dpy: *mut Display,
+    resources: *mut XRRScreenResources,
+    crtc: u64,
+    output: &Output,
+    config: &OutputConfig,
+) -> Status {
+    unsafe {
+        // TODO does x need ownership?
+        // https://stackoverflow.com/questions/39224904/how-to-expose-a-rust-vect-to-ffi
+        let mut outputs: Vec<RROutput> = Vec::new();
+        outputs.push(output.xid);
+        outputs.shrink_to_fit();
+        assert_eq!(outputs.len(), outputs.capacity());
+        let outputs_ptr = outputs.as_mut_ptr();
+        let outputs_len = outputs.len() as i32;
+        mem::forget(outputs);
+
+        println!("Enabling CRTC {}", crtc);
+
+        XRRSetCrtcConfig(
+            dpy,
+            resources,
+            crtc,
+            CurrentTime,
+            config.pos.0,
+            config.pos.1,
+            config.mode.xid,
+            RR_Rotate_0 as u16,
+            outputs_ptr,
+            outputs_len,
+        )
+    }
+}
+
+fn disable_crtc(dpy: *mut Display, resources: *mut XRRScreenResources, crtc: u64) -> Status {
+    println!("Disabling CRTC {}", crtc);
+    unsafe {
+        XRRSetCrtcConfig(
+            dpy,
+            resources,
+            crtc,
+            CurrentTime,
+            0,
+            0,
+            0,
+            RR_Rotate_0 as u16,
+            null_mut(),
+            0,
+        )
+    }
+}
+
+fn get_empty_crtc(dpy: *mut Display, res: *mut XRRScreenResources, output: &Output) -> Option<u64> {
+    for crtc in &output.crtc_xids {
+        println!("Looking up CRTC {} for Output {}", crtc, output.xid);
+        unsafe {
+            let crtc_info = XRRGetCrtcInfo(dpy, res, *crtc);
+            if (*crtc_info).noutput == 0 {
+                println!("Returning CRTC {}", *crtc);
+                return Some(*crtc);
+            } else {
+                println!(
+                    "CRTC {} has {} outputs. First: {}",
+                    crtc,
+                    (*crtc_info).noutput,
+                    *(*crtc_info).outputs.offset(0)
+                );
+            }
+        }
+    }
+    None
+}
 
 fn get_output_info() -> HashMap<String, Output> {
     //    let crtcs: Vec<RRCrtc> = get_crtcs_as_vec(&mut *res);
@@ -477,7 +942,7 @@ fn get_output_info() -> HashMap<String, Output> {
     let root: Window = get_window(dpy, get_screen(dpy));
 
     unsafe {
-        let res: *mut XRRScreenResources = XRRGetScreenResourcesCurrent(dpy, root);
+        let res = get_resources(dpy, root);
         let primary: RROutput = XRRGetOutputPrimary(dpy, root);
         let outputs: Vec<RROutput> = get_as_vec((*res).outputs, (*res).noutput);
         for o in outputs {
@@ -489,15 +954,21 @@ fn get_output_info() -> HashMap<String, Output> {
 
             let name: String = from_x_string((*x_output_info).name);
             let mut output = Output::new(o, name.clone());
+            output.mm_size = ((*x_output_info).mm_width, (*x_output_info).mm_height);
 
             let mut maybe_crtc_info: Option<*mut XRRCrtcInfo> = None;
             let enabled = is_output_enabled(&mut *res, (*x_output_info).crtc);
             output.curr_conf.enabled = enabled;
             output.curr_conf.primary = o == primary;
+            // TODO should be if (*x_output_info).crtc != 0 (None)
             if enabled {
                 // Otherwise we pass an invalid Crtc to XRRGetCrtcInfo.
-                maybe_crtc_info = Some(XRRGetCrtcInfo(dpy, res, (*x_output_info).crtc));
+                let crtc_info = XRRGetCrtcInfo(dpy, res, (*x_output_info).crtc);
+                maybe_crtc_info = Some(crtc_info);
+                output.crtc_xid = RefCell::new(Some((*x_output_info).crtc));
+                output.curr_conf.pos = ((*crtc_info).x, (*crtc_info).y);
             }
+            output.crtc_xids = get_as_vec((*x_output_info).crtcs, (*x_output_info).ncrtc);
             let mode_info: Vec<XRRModeInfo> =
                 get_mode_info_for_output(&mut *res, &mut *x_output_info);
 
@@ -511,7 +982,7 @@ fn get_output_info() -> HashMap<String, Output> {
 
                 output.add_mode(mode.name.clone(), mode.clone());
 
-                // Get current resolution and current refresh rate.
+                // Get current mode.
                 if let Some(crtc_info) = maybe_crtc_info {
                     if mode_i.id == (*crtc_info).mode {
                         output.curr_conf.mode = mode.clone();
@@ -615,6 +1086,10 @@ fn get_window(dpy: *mut Display, screen: i32) -> Window {
     unsafe { XRootWindow(dpy, screen) }
 }
 
+fn get_resources(dpy: *mut Display, window: Window) -> *mut XRRScreenResources {
+    unsafe { XRRGetScreenResourcesCurrent(dpy, window) }
+}
+
 fn close_display(dpy: *mut Display) -> i32 {
     unsafe { XCloseDisplay(dpy) }
 }
@@ -622,4 +1097,41 @@ fn close_display(dpy: *mut Display) -> i32 {
 fn from_x_string(ptr: *const c_char) -> String {
     assert!(!ptr.is_null());
     unsafe { String::from_utf8_lossy(CStr::from_ptr(ptr).to_bytes()).into_owned() }
+}
+
+unsafe extern "C" fn x_error_handler(dpy: *mut Display, event: *mut XErrorEvent) -> i32 {
+    print_x_error(dpy, "X Error", event);
+    exit(1);
+}
+
+#[allow(non_upper_case_globals)]
+unsafe fn print_x_error(dpy: *mut Display, prefix: &str, event: *mut XErrorEvent) {
+    let mut error_text = [0i8; 2048];
+    XGetErrorText(
+        dpy,
+        (*event).error_code as i32,
+        error_text.as_mut_ptr(),
+        error_text.len() as i32,
+    );
+    print!("{}: {}", prefix, from_x_string(error_text.as_ptr()));
+
+    // TODO the 140 is dynamically assigned, so it is different on each system.
+    // see https://www.x.org/wiki/Development/Documentation/Protocol/OpCodes/
+    if (*event).request_code as i32 == 140 {
+        println!(
+            " in {}.",
+            match (*event).minor_code as i32 {
+                X_RRGetCrtcInfo => "RRGetCrtcInfo",
+                X_RRGetOutputInfo => "RRGetOutputInfo",
+                X_RRGetOutputPrimary => "RRGetOutputPrimary",
+                X_RRGetScreenResourcesCurrent => "RRGetScreenResourcesCurrent",
+                X_RRSetCrtcConfig => "RRSetCrtcConfig",
+                X_RRSetOutputPrimary => "RRSetOutputPrimary",
+                X_RRSetScreenSize => "RRSetScreenSize",
+                _ => "unknown minor opcode",
+            }
+        );
+    } else {
+        println!();
+    }
 }
