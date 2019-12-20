@@ -25,7 +25,7 @@ use x11::xrandr::{
     RRSetConfigInvalidTime, RRSetConfigSuccess, RR_Connected, RR_DoubleScan, RR_Interlace,
     RR_Rotate_0, XRRCrtcInfo, XRRGetCrtcInfo, XRRGetOutputInfo, XRRGetOutputPrimary,
     XRRGetScreenResourcesCurrent, XRRGetScreenSizeRange, XRRModeInfo, XRROutputInfo,
-    XRRScreenResources, XRRSetCrtcConfig, XRRSetOutputPrimary, XRRSetScreenSize,
+    XRRScreenResources, XRRScreenSize, XRRSetCrtcConfig, XRRSetOutputPrimary, XRRSetScreenSize,
 };
 use x11::xrandr::{
     X_RRGetCrtcInfo, X_RRGetOutputInfo, X_RRGetOutputPrimary, X_RRGetScreenResourcesCurrent,
@@ -169,6 +169,8 @@ enum RefreshRateColumns {
     ModeXID,
     RefreshRate,
 }
+
+const MM_PER_INCH: f64 = 25.4;
 
 fn main() {
     let outputs: OutputInfo = get_output_info();
@@ -547,7 +549,7 @@ fn apply_new_conf(output_state: &OutputState) {
         XSynchronize(dpy, True);
     }
 
-    let screen_size = get_screen_size(dpy, screen, root, &output_state);
+    let screen_size = get_screen_size_mm(dpy, screen, root, &output_state);
 
     for o in output_state.outputs.values() {
         if let (Ok(mut new_conf), Ok(mut crtc_xid)) =
@@ -565,8 +567,9 @@ fn apply_new_conf(output_state: &OutputState) {
                     *crtc_xid = None;
                 } else {
                     // Disable outputs that are still enabled but don't fit the new screen size.
-                    if o.curr_conf.pos.0 as u32 + o.curr_conf.mode.width > screen_size.0 as u32
-                        || o.curr_conf.pos.1 as u32 + o.curr_conf.mode.height > screen_size.1 as u32
+                    if o.curr_conf.pos.0 as u32 + o.curr_conf.mode.width > screen_size.width as u32
+                        || o.curr_conf.pos.1 as u32 + o.curr_conf.mode.height
+                            > screen_size.height as u32
                     {
                         let s: Status = disable_crtc(dpy, res, crtc);
                         print_config_status(o.name.clone(), s);
@@ -637,92 +640,38 @@ fn print_config_status(output_name: String, status: Status) {
     );
 }
 
-fn set_screen_size(
-    dpy: *mut Display,
-    screen: i32,
-    window: Window,
-    screen_size: (i32, i32, i32, i32),
-) {
-    let width = screen_size.0;
-    let height = screen_size.1;
-    let mm_width = screen_size.2;
-    let mm_height = screen_size.3;
-
+fn set_screen_size(dpy: *mut Display, screen: i32, window: Window, screen_size: XRRScreenSize) {
     unsafe {
-        if width == XDisplayWidth(dpy, screen)
-            && height == XDisplayHeight(dpy, screen)
-            && mm_width == XDisplayWidthMM(dpy, screen)
-            && mm_height == XDisplayHeightMM(dpy, screen)
+        if screen_size.width == XDisplayWidth(dpy, screen)
+            && screen_size.height == XDisplayHeight(dpy, screen)
+            && screen_size.mwidth == XDisplayWidthMM(dpy, screen)
+            && screen_size.mheight == XDisplayHeightMM(dpy, screen)
         {
             return;
         }
-
-        println!(
-            "Setting screen size to (width,height,mmWidth,mmHeight) = ({},{},{},{})",
-            width, height, mm_width, mm_height
+        XRRSetScreenSize(
+            dpy,
+            window,
+            screen_size.width,
+            screen_size.height,
+            screen_size.mwidth,
+            screen_size.mheight,
         );
-        XRRSetScreenSize(dpy, window, width, height, mm_width, mm_height);
     }
 }
 
-fn get_screen_size(
+fn get_screen_size_mm(
     dpy: *mut Display,
     screen: i32,
     window: Window,
     output_state: &OutputState,
-) -> (i32, i32, i32, i32) {
-    let mut width: i32 = 0;
-    let mut height: i32 = 0;
+) -> XRRScreenSize {
+    let screen_size =
+        get_screen_size(dpy, window, &output_state).expect("Failed to get screen size");
 
-    // TODO merge
-    // Calculate width and height from modes
-    for o in output_state.outputs.values() {
-        if let Ok(new_conf) = o.new_conf.try_borrow() {
-            width += new_conf.mode.width as i32;
-            if new_conf.mode.height as i32 > height {
-                height = new_conf.mode.height as i32;
-            }
-        } else {
-            println!("borrow in get_screen_size failed.");
-        }
-    }
-
-    // TODO merge
-    // Check if outputs fit the calculated size
-    for o in output_state.outputs.values() {
-        let new_conf = o
-            .new_conf
-            .try_borrow()
-            .expect("Failed to obtain new configuration.");
-
-        if new_conf.pos.0 as u32 + new_conf.mode.width > width as u32
-            || new_conf.pos.1 as u32 + new_conf.mode.height > height as u32
-        {
-            panic!(
-                "Output {} at position ({}, {}) with mode size ({}, {}) exceeds calculated screen boundaries ({}, {})",
-                o.name, new_conf.pos.0, new_conf.pos.1, new_conf.mode.width, new_conf.mode.height, width, height);
-        }
-    }
-
-    // Check if width and height are within range
-    let bounds = get_screen_size_range(dpy, window);
-    if width < bounds.0 || height < bounds.1 {
-        panic!(
-            "Screen size must be bigger than ({},{})",
-            bounds.0, bounds.1
-        );
-    }
-    if width > bounds.2 || height > bounds.3 {
-        panic!(
-            "Screen size must be smaller than ({},{})",
-            bounds.2, bounds.3
-        );
-    }
-
+    let width = screen_size.0;
+    let height = screen_size.1;
     let mut dpi = 0.0;
-    // TODO const
-    let mm_per_inch = 25.4;
-
     let mut mm_width = 0;
     let mut mm_height = 0;
 
@@ -730,17 +679,16 @@ fn get_screen_size(
     let enabled_outputs = output_state.get_enabled_outputs();
     if enabled_outputs.len() == 1 {
         let &single_output = enabled_outputs.get(0).unwrap();
-        if let Ok(new_conf) = single_output.new_conf.try_borrow() {
-            if width as u32 == new_conf.mode.width && height as u32 == new_conf.mode.height {
-                mm_width = single_output.mm_size.0 as i32;
-                mm_height = single_output.mm_size.1 as i32;
-                println!(
-                    "Using mm_size {:?} of output {}",
-                    single_output.mm_size, single_output.name
-                );
-            } else {
-                dpi = (mm_per_inch * new_conf.mode.height as f64) / single_output.mm_size.1 as f64;
-            }
+        let new_conf = single_output
+            .new_conf
+            .try_borrow()
+            .expect("Failed to obtain new configuration");
+
+        if width as u32 == new_conf.mode.width && height as u32 == new_conf.mode.height {
+            mm_width = single_output.mm_size.0 as i32;
+            mm_height = single_output.mm_size.1 as i32;
+        } else {
+            dpi = (MM_PER_INCH * new_conf.mode.height as f64) / single_output.mm_size.1 as f64;
         }
     }
 
@@ -752,24 +700,86 @@ fn get_screen_size(
                 || dpi != 0.0
             {
                 if dpi <= 0.0 {
-                    dpi = (mm_per_inch * XDisplayHeight(dpy, screen) as f64)
+                    dpi = (MM_PER_INCH * XDisplayHeight(dpy, screen) as f64)
                         / XDisplayHeightMM(dpy, screen) as f64;
                 }
-                mm_width = ((mm_per_inch * width as f64) / dpi) as i32;
-                mm_height = ((mm_per_inch * height as f64) / dpi) as i32;
-                println!(
-                    "Calculated mm_size ({}, {}) with display dpi = {}",
-                    mm_width, mm_height, dpi
-                );
+                mm_width = ((MM_PER_INCH * width as f64) / dpi) as i32;
+                mm_height = ((MM_PER_INCH * height as f64) / dpi) as i32;
             } else {
                 mm_width = XDisplayHeightMM(dpy, screen);
                 mm_height = XDisplayHeightMM(dpy, screen);
-                println!("Using display mm_size ({}, {})", mm_width, mm_height);
             }
         }
     }
 
-    (width, height, mm_width, mm_height)
+    XRRScreenSize {
+        width,
+        height,
+        mwidth: mm_width,
+        mheight: mm_height,
+    }
+}
+
+fn get_screen_size(
+    dpy: *mut Display,
+    window: Window,
+    output_state: &OutputState,
+) -> Result<(i32, i32), String> {
+    let mut width = 0;
+    let mut height = 0;
+
+    // Calculate width and height from modes
+    for o in output_state.outputs.values() {
+        let new_conf = o
+            .new_conf
+            .try_borrow()
+            .expect("Failed to obtain new configuration");
+
+        width += new_conf.mode.width as i32;
+        if new_conf.mode.height as i32 > height {
+            height = new_conf.mode.height as i32;
+        }
+    }
+
+    // Check if outputs fit the calculated size
+    for o in output_state.outputs.values() {
+        let new_conf = o
+            .new_conf
+            .try_borrow()
+            .expect("Failed to obtain new configuration");
+
+        if new_conf.pos.0 as u32 + new_conf.mode.width > width as u32
+            || new_conf.pos.1 as u32 + new_conf.mode.height > height as u32
+        {
+            return Err(format!(
+                "Output {} at ({}, {}) with size ({}, {}) exceeds screen boundaries ({}, {})",
+                o.name,
+                new_conf.pos.0,
+                new_conf.pos.1,
+                new_conf.mode.width,
+                new_conf.mode.height,
+                width,
+                height
+            ));
+        }
+    }
+
+    // Check if width and height are within range
+    let bounds = get_screen_size_range(dpy, window);
+    if width < bounds.0 || height < bounds.1 {
+        return Err(format!(
+            "Screen size must be bigger than ({},{})",
+            bounds.0, bounds.1
+        ));
+    }
+    if width > bounds.2 || height > bounds.3 {
+        return Err(format!(
+            "Screen size must be smaller than ({},{})",
+            bounds.2, bounds.3
+        ));
+    }
+
+    Ok((width, height))
 }
 
 fn get_screen_size_range(dpy: *mut Display, window: Window) -> (i32, i32, i32, i32) {
