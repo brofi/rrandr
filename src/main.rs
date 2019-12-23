@@ -420,8 +420,8 @@ fn build_ui(application: &Application, output_state: &Rc<OutputState>) {
             move |widget, _context, x, y, _time| -> Inhibit {
                 let w = widget.get_allocation().width;
                 let h = widget.get_allocation().height;
-                let t_x = 40.;
-                let t_y = 40.;
+                let t_x = w as f64 * 0.25;
+                let t_y = h as f64 * 0.25;
 
                 let mut position = DragPosition::Swap;
 
