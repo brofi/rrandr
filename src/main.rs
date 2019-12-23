@@ -15,7 +15,7 @@ use gtk::prelude::*;
 use gtk::{
     Align, Application, ApplicationWindow, Box, Builder, Button, CellRendererText, CheckButton,
     ComboBox, ComboBoxText, CssProvider, DestDefaults, Grid, PositionType, RadioButton, StateFlags,
-    Switch, TargetEntry, TargetFlags, NONE_BUTTON, NONE_RADIO_BUTTON,
+    Switch, TargetEntry, TargetFlags, Widget, NONE_BUTTON, NONE_RADIO_BUTTON,
     STYLE_PROVIDER_PRIORITY_APPLICATION,
 };
 use x11::xlib::{
@@ -174,7 +174,7 @@ enum RefreshRateColumns {
     RefreshRate,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 enum DragPosition {
     Swap,
     Top,
@@ -369,14 +369,56 @@ fn build_ui(application: &Application, output_state: &Rc<OutputState>) {
                 if let Some(name) = widget.get_widget_name() {
                     widget_name = name.to_string();
                 }
+
+                let src_name = data.get_text().expect("Failed to receive drag data");
+                let target_pos_type = curr_drag_pos
+                    .try_borrow()
+                    .expect("Failed to get drag position");
+
                 println!(
                     "Widget {} received position `{:?}` from {}",
-                    widget_name,
-                    curr_drag_pos
-                        .try_borrow()
-                        .expect("Failed to get drag position"),
-                    data.get_text().expect("Failed to receive drag data")
+                    widget_name, target_pos_type, src_name
                 );
+
+                if let Some(parent) = WidgetExt::get_parent(widget) {
+                    if let Ok(grid) = parent.downcast::<Grid>() {
+                        for c in grid.get_children() {
+                            if let Some(child_name) = c.get_widget_name() {
+                                if child_name == src_name {
+                                    if *target_pos_type != DragPosition::Swap {
+                                        grid.remove(&c);
+                                        let target_pos =
+                                            get_pos_next_to(&grid, widget, *target_pos_type);
+                                        if grid.get_child_at(target_pos.0, target_pos.1).is_some() {
+                                            grid.insert_next_to(
+                                                widget,
+                                                get_gtk_pos_type(*target_pos_type),
+                                            );
+                                        }
+                                        grid.attach_next_to(
+                                            &c,
+                                            Some(widget),
+                                            get_gtk_pos_type(*target_pos_type),
+                                            1,
+                                            1,
+                                        );
+                                    } else {
+                                        let src_left = grid.get_cell_left_attach(&c);
+                                        let src_top = grid.get_cell_top_attach(&c);
+                                        let target_left = grid.get_cell_left_attach(widget);
+                                        let target_top = grid.get_cell_top_attach(widget);
+                                        grid.remove(&c);
+                                        grid.remove(widget);
+                                        grid.attach(&c, target_left, target_top, 1, 1);
+                                        grid.attach(widget, src_left, src_top, 1, 1);
+                                    }
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+
                 context.drag_finish(true, true, time);
             }
         });
@@ -495,6 +537,30 @@ fn get_gtk_object<T: IsA<Object>>(builder: &Builder, name: &str) -> T {
         std::any::type_name::<T>(),
         name
     ))
+}
+
+fn get_gtk_pos_type(position: DragPosition) -> PositionType {
+    match position {
+        DragPosition::Left => PositionType::Left,
+        DragPosition::Right => PositionType::Right,
+        DragPosition::Top => PositionType::Top,
+        DragPosition::Bottom => PositionType::Bottom,
+        DragPosition::Swap => panic!("Cannot translate {:?} to a GTK PositionType", position),
+    }
+}
+
+// Assuming row or column spans for every child in given grid are always 1
+fn get_pos_next_to<S: IsA<Widget>>(grid: &Grid, sibling: &S, position: DragPosition) -> (i32, i32) {
+    let left_attach = grid.get_cell_left_attach(sibling);
+    let top_attach = grid.get_cell_top_attach(sibling);
+
+    match position {
+        DragPosition::Left => (left_attach - 1, top_attach),
+        DragPosition::Right => (left_attach + 1, top_attach),
+        DragPosition::Top => (left_attach, top_attach - 1),
+        DragPosition::Bottom => (left_attach, top_attach + 1),
+        DragPosition::Swap => (left_attach, top_attach),
+    }
 }
 
 fn on_output_selected(
