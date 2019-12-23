@@ -14,8 +14,8 @@ use glib::{Object, Type};
 use gtk::prelude::*;
 use gtk::{
     Align, Application, ApplicationWindow, Box, Builder, Button, CellRendererText, CheckButton,
-    ComboBox, ComboBoxText, CssProvider, DestDefaults, Grid, PositionType, RadioButton, StateFlags,
-    Switch, TargetEntry, TargetFlags, Widget, NONE_BUTTON, NONE_RADIO_BUTTON,
+    ComboBox, ComboBoxText, Container, CssProvider, DestDefaults, Grid, PositionType, RadioButton,
+    StateFlags, Switch, TargetEntry, TargetFlags, Widget, NONE_BUTTON, NONE_RADIO_BUTTON,
     STYLE_PROVIDER_PRIORITY_APPLICATION,
 };
 use x11::xlib::{
@@ -382,38 +382,11 @@ fn build_ui(application: &Application, output_state: &Rc<OutputState>) {
 
                 if let Some(parent) = WidgetExt::get_parent(widget) {
                     if let Ok(grid) = parent.downcast::<Grid>() {
-                        for c in grid.get_children() {
-                            if let Some(child_name) = c.get_widget_name() {
-                                if child_name == src_name {
-                                    if *target_pos_type != DragPosition::Swap {
-                                        grid.remove(&c);
-                                        let target_pos =
-                                            get_pos_next_to(&grid, widget, *target_pos_type);
-                                        if grid.get_child_at(target_pos.0, target_pos.1).is_some() {
-                                            grid.insert_next_to(
-                                                widget,
-                                                get_gtk_pos_type(*target_pos_type),
-                                            );
-                                        }
-                                        grid.attach_next_to(
-                                            &c,
-                                            Some(widget),
-                                            get_gtk_pos_type(*target_pos_type),
-                                            1,
-                                            1,
-                                        );
-                                    } else {
-                                        let src_left = grid.get_cell_left_attach(&c);
-                                        let src_top = grid.get_cell_top_attach(&c);
-                                        let target_left = grid.get_cell_left_attach(widget);
-                                        let target_top = grid.get_cell_top_attach(widget);
-                                        grid.remove(&c);
-                                        grid.remove(widget);
-                                        grid.attach(&c, target_left, target_top, 1, 1);
-                                        grid.attach(widget, src_left, src_top, 1, 1);
-                                    }
-                                    break;
-                                }
+                        if let Some(c) = find_widget_by_name(&grid, src_name.as_str()) {
+                            if DragPosition::Swap == *target_pos_type {
+                                grid_swap(&grid, &c, widget);
+                            } else {
+                                grid_insert_next_to(&grid, &c, widget, *target_pos_type);
                             }
                         }
                     }
@@ -537,6 +510,52 @@ fn get_gtk_object<T: IsA<Object>>(builder: &Builder, name: &str) -> T {
         std::any::type_name::<T>(),
         name
     ))
+}
+
+fn find_widget_by_name<C: IsA<Container>>(container: &C, widget_name: &str) -> Option<Widget> {
+    let mut widget = None;
+    for c in container.get_children() {
+        if let Some(name) = c.get_widget_name() {
+            if name.as_str() == widget_name {
+                widget = Some(c);
+                break;
+            }
+        }
+    }
+    widget
+}
+
+fn grid_insert_next_to<W: IsA<Widget>, S: IsA<Widget>>(
+    grid: &Grid,
+    widget: &W,
+    sibling: &S,
+    position: DragPosition,
+) {
+    let target_pos = get_pos_next_to(&grid, sibling, position);
+
+    if target_pos.0 == grid.get_cell_left_attach(widget)
+        && target_pos.1 == grid.get_cell_top_attach(widget)
+    {
+        return;
+    }
+
+    let gtk_pos_type = get_gtk_pos_type(position);
+    grid.remove(widget);
+    if grid.get_child_at(target_pos.0, target_pos.1).is_some() {
+        grid.insert_next_to(sibling, gtk_pos_type);
+    }
+    grid.attach_next_to(widget, Some(sibling), gtk_pos_type, 1, 1);
+}
+
+fn grid_swap<S: IsA<Widget>, T: IsA<Widget>>(grid: &Grid, w1: &S, w2: &T) {
+    let src_left = grid.get_cell_left_attach(w1);
+    let src_top = grid.get_cell_top_attach(w1);
+    let target_left = grid.get_cell_left_attach(w2);
+    let target_top = grid.get_cell_top_attach(w2);
+    grid.remove(w1);
+    grid.remove(w2);
+    grid.attach(w1, target_left, target_top, 1, 1);
+    grid.attach(w2, src_left, src_top, 1, 1);
 }
 
 fn get_gtk_pos_type(position: DragPosition) -> PositionType {
