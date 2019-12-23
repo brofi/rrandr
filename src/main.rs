@@ -308,6 +308,7 @@ fn build_ui(application: &Application, output_state: &Rc<OutputState>) {
     });
 
     let grid_outputs: Grid = get_gtk_object(&builder, "grid_outputs");
+    let curr_drag_pos = Rc::new(RefCell::new(DragPosition::Swap));
     let mut output_buttons = Vec::new();
     for o in output_state.get_outputs_ordered_horizontal() {
         let btn: Button = Button::new_with_label(&format!("Output: {}", o.name));
@@ -360,17 +361,23 @@ fn build_ui(application: &Application, output_state: &Rc<OutputState>) {
         });
 
         btn.drag_dest_set(DestDefaults::all(), targets, DragAction::MOVE);
-        btn.connect_drag_data_received(|widget, context, _x, _y, data, _info, time| {
-            let mut widget_name = String::from("unknown");
-            if let Some(name) = WidgetExt::get_name(widget) {
-                widget_name = name.to_string();
+        btn.connect_drag_data_received({
+            let curr_drag_pos = Rc::clone(&curr_drag_pos);
+            move |widget, context, _x, _y, data, _info, time| {
+                let mut widget_name = String::from("unknown");
+                if let Some(name) = WidgetExt::get_name(widget) {
+                    widget_name = name.to_string();
+                }
+                println!(
+                    "Widget {} received position `{:?}` from {}",
+                    widget_name,
+                    curr_drag_pos
+                        .try_borrow()
+                        .expect("Failed to get drag position"),
+                    data.get_text().expect("Failed to receive drag data")
+                );
+                context.drag_finish(true, true, time);
             }
-            println!(
-                "Widget {} received drop from: {}",
-                widget_name,
-                data.get_text().unwrap()
-            );
-            context.drag_finish(true, true, time);
         });
 
         btn.connect_drag_drop(|widget, _context, _x, _y, _time| -> Inhibit {
@@ -407,50 +414,61 @@ fn build_ui(application: &Application, output_state: &Rc<OutputState>) {
             println!("Drag left widget `{}`", widget_name);
         });
 
-        btn.connect_drag_motion(move |widget, _context, x, y, _time| -> Inhibit {
-            let w = widget.get_allocation().width;
-            let h = widget.get_allocation().height;
-            let t_x = 40.;
-            let t_y = 40.;
+        btn.connect_drag_motion({
+            let curr_drag_pos = Rc::clone(&curr_drag_pos);
+            move |widget, _context, x, y, _time| -> Inhibit {
+                let w = widget.get_allocation().width;
+                let h = widget.get_allocation().height;
+                let t_x = 40.;
+                let t_y = 40.;
 
-            let mut position = DragPosition::Swap;
+                let mut position = DragPosition::Swap;
 
-            let xf = x as f64;
-            let yf = y as f64;
+                let xf = x as f64;
+                let yf = y as f64;
 
-            let t_diag = |x: f64| (t_y / t_x) * x;
-            let t_top_left = t_diag(xf);
-            let t_bottom_left = -t_diag(xf) + h as f64;
-            let t_top_right = -t_diag(xf - w as f64);
-            let t_bottom_right = t_diag(xf - w as f64) + h as f64;
+                let t_diag = |x: f64| (t_y / t_x) * x;
+                let t_top_left = t_diag(xf);
+                let t_bottom_left = -t_diag(xf) + h as f64;
+                let t_top_right = -t_diag(xf - w as f64);
+                let t_bottom_right = t_diag(xf - w as f64) + h as f64;
 
-            if xf <= t_x && x >= 0 && yf >= t_top_left && yf <= t_bottom_left {
-                position = DragPosition::Left;
-            } else if x <= w && xf >= w as f64 - t_x && yf >= t_top_right && yf <= t_bottom_right {
-                position = DragPosition::Right;
-            } else if yf <= t_y && y >= 0 {
-                position = DragPosition::Top;
-            } else if y <= h && yf >= h as f64 - t_y {
-                position = DragPosition::Bottom;
+                if xf <= t_x && x >= 0 && yf >= t_top_left && yf <= t_bottom_left {
+                    position = DragPosition::Left;
+                } else if x <= w
+                    && xf >= w as f64 - t_x
+                    && yf >= t_top_right
+                    && yf <= t_bottom_right
+                {
+                    position = DragPosition::Right;
+                } else if yf <= t_y && y >= 0 {
+                    position = DragPosition::Top;
+                } else if y <= h && yf >= h as f64 - t_y {
+                    position = DragPosition::Bottom;
+                }
+
+                style_context.remove_class("drop-left");
+                style_context.remove_class("drop-right");
+                style_context.remove_class("drop-top");
+                style_context.remove_class("drop-bottom");
+                style_context.remove_class("drop-swap");
+
+                let css_class = match position {
+                    DragPosition::Left => "drop-left",
+                    DragPosition::Right => "drop-right",
+                    DragPosition::Top => "drop-top",
+                    DragPosition::Bottom => "drop-bottom",
+                    DragPosition::Swap => "drop-swap",
+                };
+
+                style_context.add_class(css_class);
+
+                if let Ok(mut curr_drag_pos) = curr_drag_pos.try_borrow_mut() {
+                    *curr_drag_pos = position;
+                }
+
+                Inhibit(true)
             }
-
-            style_context.remove_class("drop-left");
-            style_context.remove_class("drop-right");
-            style_context.remove_class("drop-top");
-            style_context.remove_class("drop-bottom");
-            style_context.remove_class("drop-swap");
-
-            let css_class = match position {
-                DragPosition::Left => "drop-left",
-                DragPosition::Right => "drop-right",
-                DragPosition::Top => "drop-top",
-                DragPosition::Bottom => "drop-bottom",
-                DragPosition::Swap => "drop-swap",
-            };
-
-            style_context.add_class(css_class);
-
-            Inhibit(true)
         });
 
         if size.0 > 0 && size.1 > 0 {
