@@ -10,11 +10,12 @@ use std::{env, mem, slice};
 
 use gdk::{DragAction, ModifierType, TARGET_STRING};
 use gio::prelude::*;
+use glib::{Object, Type};
 use gtk::prelude::*;
 use gtk::{
     Align, Application, ApplicationWindow, Box, Builder, Button, CellRendererText, CheckButton,
     ComboBox, ComboBoxText, CssProvider, DestDefaults, Grid, PositionType, RadioButton, StateFlags,
-    Switch, TargetEntry, TargetFlags, Type, NONE_BUTTON, NONE_RADIO_BUTTON,
+    Switch, TargetEntry, TargetFlags, NONE_BUTTON, NONE_RADIO_BUTTON,
     STYLE_PROVIDER_PRIORITY_APPLICATION,
 };
 use x11::xlib::{
@@ -211,7 +212,7 @@ fn build_ui(application: &Application, output_state: &Rc<OutputState>) {
     let mut output_radio_buttons = Vec::new();
     for o in output_state.get_outputs_ordered_horizontal() {
         let rb = RadioButton::new_with_label(&format!("Output: {}", o.name));
-        WidgetExt::set_name(&rb, o.name.as_str());
+        rb.set_widget_name(o.name.as_str());
         output_radio_buttons.push(rb);
     }
 
@@ -283,7 +284,7 @@ fn build_ui(application: &Application, output_state: &Rc<OutputState>) {
         });
 
         let mut rb_for_selected_output = false;
-        if let Some(name) = WidgetExt::get_name(rb) {
+        if let Some(name) = rb.get_widget_name() {
             rb_for_selected_output = name == *output_state.key_selected.borrow();
         }
         if rb_for_selected_output {
@@ -355,7 +356,7 @@ fn build_ui(application: &Application, output_state: &Rc<OutputState>) {
 
         btn.drag_source_set(ModifierType::BUTTON1_MASK, targets, DragAction::MOVE);
         btn.connect_drag_data_get(|widget, _context, data, _info, _time| {
-            if let Some(name) = WidgetExt::get_name(widget) {
+            if let Some(name) = widget.get_widget_name() {
                 data.set_text(name.as_str());
             }
         });
@@ -365,7 +366,7 @@ fn build_ui(application: &Application, output_state: &Rc<OutputState>) {
             let curr_drag_pos = Rc::clone(&curr_drag_pos);
             move |widget, context, _x, _y, data, _info, time| {
                 let mut widget_name = String::from("unknown");
-                if let Some(name) = WidgetExt::get_name(widget) {
+                if let Some(name) = widget.get_widget_name() {
                     widget_name = name.to_string();
                 }
                 println!(
@@ -382,7 +383,7 @@ fn build_ui(application: &Application, output_state: &Rc<OutputState>) {
 
         btn.connect_drag_drop(|widget, _context, _x, _y, _time| -> Inhibit {
             let mut widget_name = String::from("unknown");
-            if let Some(name) = WidgetExt::get_name(widget) {
+            if let Some(name) = widget.get_widget_name() {
                 widget_name = name.to_string();
             }
             println!("Drag dropped on widget `{}`", widget_name);
@@ -391,7 +392,7 @@ fn build_ui(application: &Application, output_state: &Rc<OutputState>) {
 
         btn.connect_drag_failed(|widget, _context, _result| -> Inhibit {
             let mut widget_name = String::from("unknown");
-            if let Some(name) = WidgetExt::get_name(widget) {
+            if let Some(name) = widget.get_widget_name() {
                 widget_name = name.to_string();
             }
             println!("Drag failed for widget `{}`", widget_name);
@@ -400,7 +401,7 @@ fn build_ui(application: &Application, output_state: &Rc<OutputState>) {
 
         btn.connect_drag_begin(|widget, _context| {
             let mut widget_name = String::from("unknown");
-            if let Some(name) = WidgetExt::get_name(widget) {
+            if let Some(name) = widget.get_widget_name() {
                 widget_name = name.to_string();
             }
             println!("Drag began for widget `{}`", widget_name);
@@ -408,7 +409,7 @@ fn build_ui(application: &Application, output_state: &Rc<OutputState>) {
 
         btn.connect_drag_leave(|widget, _context, _time| {
             let mut widget_name = String::from("unknown");
-            if let Some(name) = WidgetExt::get_name(widget) {
+            if let Some(name) = widget.get_widget_name() {
                 widget_name = name.to_string();
             }
             println!("Drag left widget `{}`", widget_name);
@@ -475,7 +476,7 @@ fn build_ui(application: &Application, output_state: &Rc<OutputState>) {
             btn.set_size_request(size.0, size.1);
         }
         println!("requested size: {:?}", size);
-        WidgetExt::set_name(&btn, o.name.as_str());
+        btn.set_widget_name(o.name.as_str());
         output_buttons.push(btn);
     }
 
@@ -488,7 +489,7 @@ fn build_ui(application: &Application, output_state: &Rc<OutputState>) {
     window.show_all();
 }
 
-fn get_gtk_object<T: IsA<gtk::Object>>(builder: &Builder, name: &str) -> T {
+fn get_gtk_object<T: IsA<Object>>(builder: &Builder, name: &str) -> T {
     builder.get_object(name).expect(&format!(
         "Failed to get {} `{}`",
         std::any::type_name::<T>(),
@@ -503,7 +504,7 @@ fn on_output_selected(
     sw_enabled: &Switch,
     ch_primary: &CheckButton,
 ) {
-    if let Some(name) = WidgetExt::get_name(btn) {
+    if let Some(name) = btn.get_widget_name() {
         if let Some(o) = output_state.outputs.get(name.as_str()) {
             if let Ok(mut key_selected) = output_state.key_selected.try_borrow_mut() {
                 *key_selected = name.as_str().to_string();
@@ -543,7 +544,7 @@ fn on_output_radio_selected(
     ch_primary: &CheckButton,
 ) {
     if rb.get_active() {
-        if let Some(name) = WidgetExt::get_name(rb) {
+        if let Some(name) = rb.get_widget_name() {
             if let Some(o) = output_state.outputs.get(name.as_str()) {
                 if let Ok(mut key_selected) = output_state.key_selected.try_borrow_mut() {
                     *key_selected = name.as_str().to_string();

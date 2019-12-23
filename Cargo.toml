@@ -4,10 +4,9 @@ version = "0.1.0"
 authors = ["Andy B. <brofi.archlinux@gmail.com>"]
 edition = "2018"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [dependencies]
 x11 = { version = "2.18.1", features = ["xlib", "xrandr"] }
-gtk = { version = "0.7.0", features = ["embed-lgpl-docs"] }
-gio = "0.7.0"
-gdk = "0.11.0"
+gtk = { version = "0.8.0", features = ["embed-lgpl-docs"] }
+gio = "0.8.0"
+gdk = "0.12.0"
+glib = "0.9.0"
