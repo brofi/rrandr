@@ -8,11 +8,14 @@ use std::ptr::{null, null_mut};
 use std::rc::Rc;
 use std::{env, mem, slice};
 
+use gdk::{DragAction, ModifierType, TARGET_STRING};
 use gio::prelude::*;
 use gtk::prelude::*;
 use gtk::{
-    Application, ApplicationWindow, Box, Builder, Button, CellRendererText, CheckButton, ComboBox,
-    ComboBoxText, RadioButton, Switch, Type, NONE_RADIO_BUTTON,
+    Align, Application, ApplicationWindow, Box, Builder, Button, CellRendererText, CheckButton,
+    ComboBox, ComboBoxText, CssProvider, DestDefaults, Grid, PositionType, RadioButton, StateFlags,
+    Switch, TargetEntry, TargetFlags, Type, NONE_BUTTON, NONE_RADIO_BUTTON,
+    STYLE_PROVIDER_PRIORITY_APPLICATION,
 };
 use x11::xlib::{
     CurrentTime, Display, False, Status, True, Window, XCloseDisplay, XDefaultScreen,
@@ -170,6 +173,15 @@ enum RefreshRateColumns {
     RefreshRate,
 }
 
+#[derive(Debug, PartialEq)]
+enum DragPosition {
+    Swap,
+    Top,
+    Bottom,
+    Left,
+    Right,
+}
+
 const MM_PER_INCH: f64 = 25.4;
 
 fn main() {
@@ -260,7 +272,13 @@ fn build_ui(application: &Application, output_state: &Rc<OutputState>) {
             let sw_enabled = sw_enabled.clone();
             let ch_primary = ch_primary.clone();
             move |rb| {
-                on_output_selected(rb, &output_state, &cb_resolution, &sw_enabled, &ch_primary);
+                on_output_radio_selected(
+                    rb,
+                    &output_state,
+                    &cb_resolution,
+                    &sw_enabled,
+                    &ch_primary,
+                );
             }
         });
 
@@ -289,6 +307,166 @@ fn build_ui(application: &Application, output_state: &Rc<OutputState>) {
         move |_| apply_new_conf(&output_state)
     });
 
+    let grid_outputs: Grid = get_gtk_object(&builder, "grid_outputs");
+    let mut output_buttons = Vec::new();
+    for o in output_state.get_outputs_ordered_horizontal() {
+        let btn: Button = Button::new_with_label(&format!("Output: {}", o.name));
+
+        let style_context = btn.get_style_context();
+        let color = style_context.get_border_color(StateFlags::DROP_ACTIVE);
+        let provider = CssProvider::new();
+
+        let css: String = format!("
+                .text-button.drop-left:drop(active) {{ border-left: 5px solid {0}; border-right-width: 0px; border-top-width: 0px; border-bottom-width: 0px; }}
+                .text-button.drop-right:drop(active) {{ border-right: 5px solid {0}; border-left-width: 0px; border-top-width: 0px; border-bottom-width: 0px; }}
+                .text-button.drop-top:drop(active) {{ border-top: 5px solid {0}; border-left-width: 0px; border-right-width: 0px; border-bottom-width: 0px; }}
+                .text-button.drop-bottom:drop(active) {{ border-bottom: 5px solid {0}; border-left-width: 0px; border-right-width: 0px; border-top-width: 0px; }}
+                .text-button.drop-swap:drop(active) {{ border: 5px solid {0}; }}", color);
+
+        match provider.load_from_data(css.as_str().as_ref()) {
+            Ok(_) => style_context.add_provider(&provider, STYLE_PROVIDER_PRIORITY_APPLICATION),
+            Err(e) => println!("Error while loading CSS data: {}", e),
+        }
+
+        btn.connect_clicked({
+            let output_state = Rc::clone(output_state);
+            let cb_resolution = cb_resolution.clone();
+            let sw_enabled = sw_enabled.clone();
+            let ch_primary = ch_primary.clone();
+            move |btn| {
+                on_output_selected(btn, &output_state, &cb_resolution, &sw_enabled, &ch_primary)
+            }
+        });
+
+        let size: (i32, i32) = (
+            o.curr_conf.mode.width as i32 / 10,
+            o.curr_conf.mode.height as i32 / 10,
+        );
+
+        let targets = &[TargetEntry::new(
+            TARGET_STRING.name().as_str(),
+            TargetFlags::OTHER_WIDGET,
+            0,
+        )];
+
+        btn.set_valign(Align::Center);
+        btn.set_halign(Align::Center);
+
+        btn.drag_source_set(ModifierType::BUTTON1_MASK, targets, DragAction::MOVE);
+        btn.connect_drag_data_get(|widget, _context, data, _info, _time| {
+            if let Some(name) = WidgetExt::get_name(widget) {
+                data.set_text(name.as_str());
+            }
+        });
+
+        btn.drag_dest_set(DestDefaults::all(), targets, DragAction::MOVE);
+        btn.connect_drag_data_received(|widget, context, _x, _y, data, _info, time| {
+            let mut widget_name = String::from("unknown");
+            if let Some(name) = WidgetExt::get_name(widget) {
+                widget_name = name.to_string();
+            }
+            println!(
+                "Widget {} received drop from: {}",
+                widget_name,
+                data.get_text().unwrap()
+            );
+            context.drag_finish(true, true, time);
+        });
+
+        btn.connect_drag_drop(|widget, _context, _x, _y, _time| -> Inhibit {
+            let mut widget_name = String::from("unknown");
+            if let Some(name) = WidgetExt::get_name(widget) {
+                widget_name = name.to_string();
+            }
+            println!("Drag dropped on widget `{}`", widget_name);
+            Inhibit(true)
+        });
+
+        btn.connect_drag_failed(|widget, _context, _result| -> Inhibit {
+            let mut widget_name = String::from("unknown");
+            if let Some(name) = WidgetExt::get_name(widget) {
+                widget_name = name.to_string();
+            }
+            println!("Drag failed for widget `{}`", widget_name);
+            Inhibit(true)
+        });
+
+        btn.connect_drag_begin(|widget, _context| {
+            let mut widget_name = String::from("unknown");
+            if let Some(name) = WidgetExt::get_name(widget) {
+                widget_name = name.to_string();
+            }
+            println!("Drag began for widget `{}`", widget_name);
+        });
+
+        btn.connect_drag_leave(|widget, _context, _time| {
+            let mut widget_name = String::from("unknown");
+            if let Some(name) = WidgetExt::get_name(widget) {
+                widget_name = name.to_string();
+            }
+            println!("Drag left widget `{}`", widget_name);
+        });
+
+        btn.connect_drag_motion(move |widget, _context, x, y, _time| -> Inhibit {
+            let w = widget.get_allocation().width;
+            let h = widget.get_allocation().height;
+            let t_x = 40.;
+            let t_y = 40.;
+
+            let mut position = DragPosition::Swap;
+
+            let xf = x as f64;
+            let yf = y as f64;
+
+            let t_diag = |x: f64| (t_y / t_x) * x;
+            let t_top_left = t_diag(xf);
+            let t_bottom_left = -t_diag(xf) + h as f64;
+            let t_top_right = -t_diag(xf - w as f64);
+            let t_bottom_right = t_diag(xf - w as f64) + h as f64;
+
+            if xf <= t_x && x >= 0 && yf >= t_top_left && yf <= t_bottom_left {
+                position = DragPosition::Left;
+            } else if x <= w && xf >= w as f64 - t_x && yf >= t_top_right && yf <= t_bottom_right {
+                position = DragPosition::Right;
+            } else if yf <= t_y && y >= 0 {
+                position = DragPosition::Top;
+            } else if y <= h && yf >= h as f64 - t_y {
+                position = DragPosition::Bottom;
+            }
+
+            style_context.remove_class("drop-left");
+            style_context.remove_class("drop-right");
+            style_context.remove_class("drop-top");
+            style_context.remove_class("drop-bottom");
+            style_context.remove_class("drop-swap");
+
+            let css_class = match position {
+                DragPosition::Left => "drop-left",
+                DragPosition::Right => "drop-right",
+                DragPosition::Top => "drop-top",
+                DragPosition::Bottom => "drop-bottom",
+                DragPosition::Swap => "drop-swap",
+            };
+
+            style_context.add_class(css_class);
+
+            Inhibit(true)
+        });
+
+        if size.0 > 0 && size.1 > 0 {
+            btn.set_size_request(size.0, size.1);
+        }
+        println!("requested size: {:?}", size);
+        WidgetExt::set_name(&btn, o.name.as_str());
+        output_buttons.push(btn);
+    }
+
+    let mut prev_btn = NONE_BUTTON;
+    for btn in &output_buttons {
+        grid_outputs.attach_next_to(btn, prev_btn, PositionType::Right, 1, 1);
+        prev_btn = Some(btn);
+    }
+
     window.show_all();
 }
 
@@ -301,6 +479,45 @@ fn get_gtk_object<T: IsA<gtk::Object>>(builder: &Builder, name: &str) -> T {
 }
 
 fn on_output_selected(
+    btn: &Button,
+    output_state: &OutputState,
+    cb_resolution: &ComboBoxText,
+    sw_enabled: &Switch,
+    ch_primary: &CheckButton,
+) {
+    if let Some(name) = WidgetExt::get_name(btn) {
+        if let Some(o) = output_state.outputs.get(name.as_str()) {
+            if let Ok(mut key_selected) = output_state.key_selected.try_borrow_mut() {
+                *key_selected = name.as_str().to_string();
+                println!("Selected output key changed to: {:?}", key_selected);
+            } else {
+                println!("borrow_mut in on_output_selected failed.");
+            }
+
+            cb_resolution.remove_all();
+            for m in o.get_resolutions_sorted() {
+                cb_resolution.append_text(m.as_str());
+            }
+
+            // Trying hard to let new_conf go out of scope.
+            let mut active_resolution: String = String::new();
+            let mut enabled = false;
+            let mut primary = false;
+            if let Ok(new_conf) = o.new_conf.try_borrow() {
+                active_resolution = new_conf.mode.name.to_owned();
+                enabled = new_conf.enabled;
+                primary = new_conf.primary;
+            } else {
+                println!("borrow in on_output_selected failed.");
+            }
+            sw_enabled.set_active(enabled);
+            ch_primary.set_active(primary);
+            cb_resolution.set_active_id(Some(active_resolution.as_str()));
+        }
+    }
+}
+
+fn on_output_radio_selected(
     rb: &RadioButton,
     output_state: &OutputState,
     cb_resolution: &ComboBoxText,

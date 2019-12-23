@@ -10,3 +10,4 @@ edition = "2018"
 x11 = { version = "2.18.1", features = ["xlib", "xrandr"] }
 gtk = { version = "0.7.0", features = ["embed-lgpl-docs"] }
 gio = "0.7.0"
+gdk = "0.11.0"
