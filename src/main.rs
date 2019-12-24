@@ -310,25 +310,9 @@ fn build_ui(application: &Application, output_state: &Rc<OutputState>) {
 
     let grid_outputs: Grid = get_gtk_object(&builder, "grid_outputs");
     let grid_outputs_disabled: Grid = get_gtk_object(&builder, "grid_outputs_disabled");
-    let curr_drag_pos = Rc::new(RefCell::new(DragPosition::Swap));
     for o in output_state.get_outputs_ordered_horizontal() {
         let btn: Button = Button::new_with_label(&format!("Output: {}", o.name));
-
-        let style_context = btn.get_style_context();
-        let color = style_context.get_border_color(StateFlags::DROP_ACTIVE);
-        let provider = CssProvider::new();
-
-        let css: String = format!("
-                .text-button.drop-left:drop(active) {{ border-left: 5px solid {0}; border-right-width: 0px; border-top-width: 0px; border-bottom-width: 0px; }}
-                .text-button.drop-right:drop(active) {{ border-right: 5px solid {0}; border-left-width: 0px; border-top-width: 0px; border-bottom-width: 0px; }}
-                .text-button.drop-top:drop(active) {{ border-top: 5px solid {0}; border-left-width: 0px; border-right-width: 0px; border-bottom-width: 0px; }}
-                .text-button.drop-bottom:drop(active) {{ border-bottom: 5px solid {0}; border-left-width: 0px; border-right-width: 0px; border-top-width: 0px; }}
-                .text-button.drop-swap:drop(active) {{ border: 5px solid {0}; }}", color);
-
-        match provider.load_from_data(css.as_str().as_ref()) {
-            Ok(_) => style_context.add_provider(&provider, STYLE_PROVIDER_PRIORITY_APPLICATION),
-            Err(e) => println!("Error while loading CSS data: {}", e),
-        }
+        add_drag_drop_style(&btn);
 
         btn.connect_clicked({
             let output_state = Rc::clone(output_state);
@@ -345,55 +329,13 @@ fn build_ui(application: &Application, output_state: &Rc<OutputState>) {
             o.curr_conf.mode.height as i32 / 10,
         );
 
-        let targets = &[TargetEntry::new(
-            TARGET_STRING.name().as_str(),
-            TargetFlags::OTHER_WIDGET,
-            0,
-        )];
-
         btn.set_valign(Align::Center);
         btn.set_halign(Align::Center);
 
-        btn.drag_source_set(ModifierType::BUTTON1_MASK, targets, DragAction::MOVE);
-        btn.connect_drag_data_get(|widget, _context, data, _info, _time| {
-            if let Some(name) = widget.get_widget_name() {
-                data.set_text(name.as_str());
-            }
-        });
-
+        connect_drag_source(&btn);
         if o.curr_conf.enabled {
-            btn.drag_dest_set(DestDefaults::all(), targets, DragAction::MOVE);
-            btn.connect_drag_data_received({
-                let curr_drag_pos = Rc::clone(&curr_drag_pos);
-                move |widget, context, _x, _y, data, _info, time| {
-                    on_drag_data_received(widget, context, data, time, &curr_drag_pos)
-                }
-            });
-
-            btn.connect_drag_motion({
-                let curr_drag_pos = Rc::clone(&curr_drag_pos);
-                move |widget, _context, x, y, _time| -> Inhibit {
-                    on_drag_motion(&widget, x, y, &curr_drag_pos, &style_context)
-                }
-            });
+            connect_drop_target(&btn, &grid_outputs_disabled);
         }
-
-        btn.connect_drag_failed(|widget, _context, _result| -> Inhibit {
-            let mut widget_name = String::from("unknown");
-            if let Some(name) = widget.get_widget_name() {
-                widget_name = name.to_string();
-            }
-            println!("Drag failed for widget `{}`", widget_name);
-            Inhibit(true)
-        });
-
-        btn.connect_drag_begin(|widget, _context| {
-            let mut widget_name = String::from("unknown");
-            if let Some(name) = widget.get_widget_name() {
-                widget_name = name.to_string();
-            }
-            println!("Drag began for widget `{}`", widget_name);
-        });
 
         if size.0 > 0 && size.1 > 0 {
             btn.set_size_request(size.0, size.1);
@@ -430,6 +372,22 @@ fn find_widget_by_name<C: IsA<Container>>(container: &C, widget_name: &str) -> O
         }
     }
     widget
+}
+
+fn grid_insert_from_other_grid_next_to<W: IsA<Widget>, S: IsA<Widget>>(
+    other_grid: &Grid,
+    widget: &W,
+    grid: &Grid,
+    sibling: &S,
+    position: DragPosition,
+) {
+    let target_pos = get_pos_next_to(&grid, sibling, position);
+    let gtk_pos_type = get_gtk_pos_type(position);
+    other_grid.remove(widget);
+    if grid.get_child_at(target_pos.0, target_pos.1).is_some() {
+        grid.insert_next_to(sibling, gtk_pos_type);
+    }
+    grid.attach_next_to(widget, Some(sibling), gtk_pos_type, 1, 1);
 }
 
 fn grid_insert_next_to<W: IsA<Widget>, S: IsA<Widget>>(
@@ -489,12 +447,97 @@ fn get_pos_next_to<S: IsA<Widget>>(grid: &Grid, sibling: &S, position: DragPosit
     }
 }
 
-fn on_drag_data_received(
-    widget: &Button,
+fn add_drag_drop_style(btn: &Button) -> StyleContext {
+    let style_context = btn.get_style_context();
+    let color = style_context.get_border_color(StateFlags::DROP_ACTIVE);
+    let provider = CssProvider::new();
+
+    let css: String = format!("
+                .text-button.drop-left:drop(active) {{ border-left: 5px solid {0}; border-right-width: 0px; border-top-width: 0px; border-bottom-width: 0px; }}
+                .text-button.drop-right:drop(active) {{ border-right: 5px solid {0}; border-left-width: 0px; border-top-width: 0px; border-bottom-width: 0px; }}
+                .text-button.drop-top:drop(active) {{ border-top: 5px solid {0}; border-left-width: 0px; border-right-width: 0px; border-bottom-width: 0px; }}
+                .text-button.drop-bottom:drop(active) {{ border-bottom: 5px solid {0}; border-left-width: 0px; border-right-width: 0px; border-top-width: 0px; }}
+                .text-button.drop-swap:drop(active) {{ border: 5px solid {0}; }}", color);
+
+    match provider.load_from_data(css.as_str().as_ref()) {
+        Ok(_) => style_context.add_provider(&provider, STYLE_PROVIDER_PRIORITY_APPLICATION),
+        Err(e) => println!("Error while loading CSS data: {}", e),
+    }
+
+    style_context
+}
+
+fn connect_drag_source(btn: &Button) {
+    let targets = &[TargetEntry::new(
+        TARGET_STRING.name().as_str(),
+        TargetFlags::OTHER_WIDGET,
+        0,
+    )];
+
+    btn.drag_source_set(ModifierType::BUTTON1_MASK, targets, DragAction::MOVE);
+    btn.connect_drag_data_get(|widget, _context, data, _info, _time| {
+        if let Some(name) = widget.get_widget_name() {
+            data.set_text(name.as_str());
+        }
+    });
+
+    btn.connect_drag_failed(|widget, _context, _result| -> Inhibit {
+        let mut widget_name = String::from("unknown");
+        if let Some(name) = widget.get_widget_name() {
+            widget_name = name.to_string();
+        }
+        println!("Drag failed for widget `{}`", widget_name);
+        Inhibit(true)
+    });
+
+    btn.connect_drag_begin(|widget, _context| {
+        let mut widget_name = String::from("unknown");
+        if let Some(name) = widget.get_widget_name() {
+            widget_name = name.to_string();
+        }
+        println!("Drag began for widget `{}`", widget_name);
+    });
+}
+
+fn connect_drop_target<W: IsA<Widget>>(widget: &W, grid_outputs_disabled: &Grid) {
+    let curr_drag_pos = Rc::new(RefCell::new(DragPosition::Swap));
+    let targets = &[TargetEntry::new(
+        TARGET_STRING.name().as_str(),
+        TargetFlags::OTHER_WIDGET,
+        0,
+    )];
+
+    widget.drag_dest_set(DestDefaults::all(), targets, DragAction::MOVE);
+    widget.connect_drag_data_received({
+        let curr_drag_pos = Rc::clone(&curr_drag_pos);
+        let grid_outputs_disabled = grid_outputs_disabled.clone();
+        move |widget, context, _x, _y, data, _info, time| {
+            on_drag_data_received(
+                widget,
+                context,
+                data,
+                time,
+                &curr_drag_pos,
+                &grid_outputs_disabled,
+            )
+        }
+    });
+
+    widget.connect_drag_motion({
+        let curr_drag_pos = Rc::clone(&curr_drag_pos);
+        move |widget, _context, x, y, _time| -> Inhibit {
+            on_drag_motion(widget, x, y, &curr_drag_pos)
+        }
+    });
+}
+
+fn on_drag_data_received<W: IsA<Widget>>(
+    widget: &W,
     context: &DragContext,
     data: &SelectionData,
     time: u32,
     curr_drag_pos: &Rc<RefCell<DragPosition>>,
+    grid_outputs_disabled: &Grid,
 ) {
     let mut widget_name = String::from("unknown");
     if let Some(name) = widget.get_widget_name() {
@@ -519,18 +562,28 @@ fn on_drag_data_received(
                 } else {
                     grid_insert_next_to(&grid, &c, widget, *target_pos_type);
                 }
+            } else if let Some(c) = find_widget_by_name(grid_outputs_disabled, src_name.as_str()) {
+                if DragPosition::Swap != *target_pos_type {
+                    grid_insert_from_other_grid_next_to(
+                        &grid_outputs_disabled,
+                        &c,
+                        &grid,
+                        widget,
+                        *target_pos_type,
+                    );
+                    connect_drop_target(&c, &grid_outputs_disabled);
+                }
             }
         }
     }
     context.drag_finish(true, true, time);
 }
 
-fn on_drag_motion(
-    widget: &Button,
+fn on_drag_motion<W: IsA<Widget>>(
+    widget: &W,
     x: i32,
     y: i32,
     curr_drag_pos: &Rc<RefCell<DragPosition>>,
-    style_context: &StyleContext,
 ) -> Inhibit {
     let w = widget.get_allocation().width;
     let h = widget.get_allocation().height;
@@ -558,6 +611,7 @@ fn on_drag_motion(
         position = DragPosition::Bottom;
     }
 
+    let style_context = widget.get_style_context();
     style_context.remove_class("drop-left");
     style_context.remove_class("drop-right");
     style_context.remove_class("drop-top");
