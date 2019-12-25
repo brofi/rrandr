@@ -9,6 +9,10 @@ use gtk::{
     STYLE_PROVIDER_PRIORITY_APPLICATION,
 };
 
+trait ToGtk {
+    fn to_gtk(&self) -> PositionType;
+}
+
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub enum DragPosition {
     Swap,
@@ -16,6 +20,18 @@ pub enum DragPosition {
     Bottom,
     Left,
     Right,
+}
+
+impl ToGtk for DragPosition {
+    fn to_gtk(&self) -> PositionType {
+        match *self {
+            DragPosition::Left => PositionType::Left,
+            DragPosition::Right => PositionType::Right,
+            DragPosition::Top => PositionType::Top,
+            DragPosition::Bottom => PositionType::Bottom,
+            _ => PositionType::__Unknown(std::i32::MAX),
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -123,16 +139,15 @@ impl OutputView {
         position: DragPosition,
     ) {
         let target_pos = self.get_pos_next_to(sibling, position);
-        let gtk_pos_type = get_gtk_pos_type(position);
         if self
             .grid_outputs
             .get_child_at(target_pos.0, target_pos.1)
             .is_some()
         {
-            self.grid_outputs.insert_next_to(sibling, gtk_pos_type);
+            self.grid_outputs.insert_next_to(sibling, position.to_gtk());
         }
         self.grid_outputs
-            .attach_next_to(widget, Some(sibling), gtk_pos_type, 1, 1);
+            .attach_next_to(widget, Some(sibling), position.to_gtk(), 1, 1);
     }
 
     fn swap_output<S: IsA<Widget>, T: IsA<Widget>>(&self, w1: &S, w2: &T) {
@@ -352,14 +367,4 @@ fn find_widget_by_name<C: IsA<Container>>(container: &C, widget_name: &str) -> O
         }
     }
     widget
-}
-
-fn get_gtk_pos_type(position: DragPosition) -> PositionType {
-    match position {
-        DragPosition::Left => PositionType::Left,
-        DragPosition::Right => PositionType::Right,
-        DragPosition::Top => PositionType::Top,
-        DragPosition::Bottom => PositionType::Bottom,
-        DragPosition::Swap => panic!("Cannot translate {:?} to a GTK PositionType", position),
-    }
 }
