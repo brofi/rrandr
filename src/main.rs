@@ -8,15 +8,12 @@ use std::ptr::{null, null_mut};
 use std::rc::Rc;
 use std::{env, mem, slice};
 
-use gdk::{DragAction, DragContext, ModifierType, TARGET_STRING};
 use gio::prelude::*;
 use glib::{Object, Type};
 use gtk::prelude::*;
 use gtk::{
-    Align, Application, ApplicationWindow, Box, Builder, Button, CellRendererText, CheckButton,
-    ComboBox, ComboBoxText, Container, CssProvider, DestDefaults, Grid, PositionType, RadioButton,
-    SelectionData, StateFlags, StyleContext, Switch, TargetEntry, TargetFlags, Widget, NONE_BUTTON,
-    NONE_RADIO_BUTTON, STYLE_PROVIDER_PRIORITY_APPLICATION,
+    Application, ApplicationWindow, Box, Builder, Button, CellRendererText, CheckButton, ComboBox,
+    ComboBoxText, Grid, RadioButton, Switch, NONE_RADIO_BUTTON,
 };
 use x11::xlib::{
     CurrentTime, Display, False, Status, True, Window, XCloseDisplay, XDefaultScreen,
@@ -35,6 +32,10 @@ use x11::xrandr::{
     X_RRGetCrtcInfo, X_RRGetOutputInfo, X_RRGetOutputPrimary, X_RRGetScreenResourcesCurrent,
     X_RRSetCrtcConfig, X_RRSetOutputPrimary, X_RRSetScreenSize,
 };
+
+use output_view::OutputView;
+
+mod output_view;
 
 // TODO consider using
 #[allow(unused_macros)]
@@ -174,15 +175,6 @@ enum RefreshRateColumns {
     RefreshRate,
 }
 
-#[derive(Debug, Copy, Clone, PartialEq)]
-enum DragPosition {
-    Swap,
-    Top,
-    Bottom,
-    Left,
-    Right,
-}
-
 const MM_PER_INCH: f64 = 25.4;
 
 fn main() {
@@ -310,44 +302,36 @@ fn build_ui(application: &Application, output_state: &Rc<OutputState>) {
 
     let grid_outputs: Grid = get_gtk_object(&builder, "grid_outputs");
     let grid_outputs_disabled: Grid = get_gtk_object(&builder, "grid_outputs_disabled");
+    let mut output_view = OutputView::new(grid_outputs, grid_outputs_disabled);
+    output_view.set_output_selected_callback({
+        let output_state = Rc::clone(output_state);
+        let cb_resolution = cb_resolution.clone();
+        let sw_enabled = sw_enabled.clone();
+        let ch_primary = ch_primary.clone();
+        move |name| {
+            on_output_selected(
+                name,
+                &output_state,
+                &cb_resolution,
+                &sw_enabled,
+                &ch_primary,
+            )
+        }
+    });
+    output_view.set_output_moved_callback(|src, pos, target| {
+        println!(
+            "FROM OUTPUT VIEW: {} dragged to {:?} of {}",
+            src, pos, target
+        )
+    });
+
     for o in output_state.get_outputs_ordered_horizontal() {
-        let btn: Button = Button::new_with_label(&format!("Output: {}", o.name));
-        add_drag_drop_style(&btn);
-
-        btn.connect_clicked({
-            let output_state = Rc::clone(output_state);
-            let cb_resolution = cb_resolution.clone();
-            let sw_enabled = sw_enabled.clone();
-            let ch_primary = ch_primary.clone();
-            move |btn| {
-                on_output_selected(btn, &output_state, &cb_resolution, &sw_enabled, &ch_primary)
-            }
-        });
-
-        let size: (i32, i32) = (
+        output_view.add_output(
+            o.name.as_str(),
             o.curr_conf.mode.width as i32 / 10,
             o.curr_conf.mode.height as i32 / 10,
+            o.curr_conf.enabled,
         );
-
-        btn.set_valign(Align::Center);
-        btn.set_halign(Align::Center);
-
-        connect_drag_source(&btn);
-        if o.curr_conf.enabled {
-            connect_drop_target(&btn, &grid_outputs_disabled);
-        }
-
-        if size.0 > 0 && size.1 > 0 {
-            btn.set_size_request(size.0, size.1);
-        }
-        println!("requested size: {:?}", size);
-        btn.set_widget_name(o.name.as_str());
-
-        if o.curr_conf.enabled {
-            grid_outputs.attach_next_to(&btn, NONE_BUTTON, PositionType::Right, 1, 1);
-        } else {
-            grid_outputs_disabled.attach_next_to(&btn, NONE_BUTTON, PositionType::Bottom, 1, 1);
-        }
     }
 
     window.show_all();
@@ -361,316 +345,40 @@ fn get_gtk_object<T: IsA<Object>>(builder: &Builder, name: &str) -> T {
     ))
 }
 
-fn find_widget_by_name<C: IsA<Container>>(container: &C, widget_name: &str) -> Option<Widget> {
-    let mut widget = None;
-    for c in container.get_children() {
-        if let Some(name) = c.get_widget_name() {
-            if name.as_str() == widget_name {
-                widget = Some(c);
-                break;
-            }
-        }
-    }
-    widget
-}
-
-fn grid_insert_from_other_grid_next_to<W: IsA<Widget>, S: IsA<Widget>>(
-    other_grid: &Grid,
-    widget: &W,
-    grid: &Grid,
-    sibling: &S,
-    position: DragPosition,
-) {
-    let target_pos = get_pos_next_to(&grid, sibling, position);
-    let gtk_pos_type = get_gtk_pos_type(position);
-    other_grid.remove(widget);
-    if grid.get_child_at(target_pos.0, target_pos.1).is_some() {
-        grid.insert_next_to(sibling, gtk_pos_type);
-    }
-    grid.attach_next_to(widget, Some(sibling), gtk_pos_type, 1, 1);
-}
-
-fn grid_insert_next_to<W: IsA<Widget>, S: IsA<Widget>>(
-    grid: &Grid,
-    widget: &W,
-    sibling: &S,
-    position: DragPosition,
-) {
-    let target_pos = get_pos_next_to(&grid, sibling, position);
-
-    if target_pos.0 == grid.get_cell_left_attach(widget)
-        && target_pos.1 == grid.get_cell_top_attach(widget)
-    {
-        return;
-    }
-
-    let gtk_pos_type = get_gtk_pos_type(position);
-    grid.remove(widget);
-    if grid.get_child_at(target_pos.0, target_pos.1).is_some() {
-        grid.insert_next_to(sibling, gtk_pos_type);
-    }
-    grid.attach_next_to(widget, Some(sibling), gtk_pos_type, 1, 1);
-}
-
-fn grid_swap<S: IsA<Widget>, T: IsA<Widget>>(grid: &Grid, w1: &S, w2: &T) {
-    let src_left = grid.get_cell_left_attach(w1);
-    let src_top = grid.get_cell_top_attach(w1);
-    let target_left = grid.get_cell_left_attach(w2);
-    let target_top = grid.get_cell_top_attach(w2);
-    grid.remove(w1);
-    grid.remove(w2);
-    grid.attach(w1, target_left, target_top, 1, 1);
-    grid.attach(w2, src_left, src_top, 1, 1);
-}
-
-fn get_gtk_pos_type(position: DragPosition) -> PositionType {
-    match position {
-        DragPosition::Left => PositionType::Left,
-        DragPosition::Right => PositionType::Right,
-        DragPosition::Top => PositionType::Top,
-        DragPosition::Bottom => PositionType::Bottom,
-        DragPosition::Swap => panic!("Cannot translate {:?} to a GTK PositionType", position),
-    }
-}
-
-// Assuming row or column spans for every child in given grid are always 1
-fn get_pos_next_to<S: IsA<Widget>>(grid: &Grid, sibling: &S, position: DragPosition) -> (i32, i32) {
-    let left_attach = grid.get_cell_left_attach(sibling);
-    let top_attach = grid.get_cell_top_attach(sibling);
-
-    match position {
-        DragPosition::Left => (left_attach - 1, top_attach),
-        DragPosition::Right => (left_attach + 1, top_attach),
-        DragPosition::Top => (left_attach, top_attach - 1),
-        DragPosition::Bottom => (left_attach, top_attach + 1),
-        DragPosition::Swap => (left_attach, top_attach),
-    }
-}
-
-fn add_drag_drop_style(btn: &Button) -> StyleContext {
-    let style_context = btn.get_style_context();
-    let color = style_context.get_border_color(StateFlags::DROP_ACTIVE);
-    let provider = CssProvider::new();
-
-    let css: String = format!("
-                .text-button.drop-left:drop(active) {{ border-left: 5px solid {0}; border-right-width: 0px; border-top-width: 0px; border-bottom-width: 0px; }}
-                .text-button.drop-right:drop(active) {{ border-right: 5px solid {0}; border-left-width: 0px; border-top-width: 0px; border-bottom-width: 0px; }}
-                .text-button.drop-top:drop(active) {{ border-top: 5px solid {0}; border-left-width: 0px; border-right-width: 0px; border-bottom-width: 0px; }}
-                .text-button.drop-bottom:drop(active) {{ border-bottom: 5px solid {0}; border-left-width: 0px; border-right-width: 0px; border-top-width: 0px; }}
-                .text-button.drop-swap:drop(active) {{ border: 5px solid {0}; }}", color);
-
-    match provider.load_from_data(css.as_str().as_ref()) {
-        Ok(_) => style_context.add_provider(&provider, STYLE_PROVIDER_PRIORITY_APPLICATION),
-        Err(e) => println!("Error while loading CSS data: {}", e),
-    }
-
-    style_context
-}
-
-fn connect_drag_source(btn: &Button) {
-    let targets = &[TargetEntry::new(
-        TARGET_STRING.name().as_str(),
-        TargetFlags::OTHER_WIDGET,
-        0,
-    )];
-
-    btn.drag_source_set(ModifierType::BUTTON1_MASK, targets, DragAction::MOVE);
-    btn.connect_drag_data_get(|widget, _context, data, _info, _time| {
-        if let Some(name) = widget.get_widget_name() {
-            data.set_text(name.as_str());
-        }
-    });
-
-    btn.connect_drag_failed(|widget, _context, _result| -> Inhibit {
-        let mut widget_name = String::from("unknown");
-        if let Some(name) = widget.get_widget_name() {
-            widget_name = name.to_string();
-        }
-        println!("Drag failed for widget `{}`", widget_name);
-        Inhibit(true)
-    });
-
-    btn.connect_drag_begin(|widget, _context| {
-        let mut widget_name = String::from("unknown");
-        if let Some(name) = widget.get_widget_name() {
-            widget_name = name.to_string();
-        }
-        println!("Drag began for widget `{}`", widget_name);
-    });
-}
-
-fn connect_drop_target<W: IsA<Widget>>(widget: &W, grid_outputs_disabled: &Grid) {
-    let curr_drag_pos = Rc::new(RefCell::new(DragPosition::Swap));
-    let targets = &[TargetEntry::new(
-        TARGET_STRING.name().as_str(),
-        TargetFlags::OTHER_WIDGET,
-        0,
-    )];
-
-    widget.drag_dest_set(DestDefaults::all(), targets, DragAction::MOVE);
-    widget.connect_drag_data_received({
-        let curr_drag_pos = Rc::clone(&curr_drag_pos);
-        let grid_outputs_disabled = grid_outputs_disabled.clone();
-        move |widget, context, _x, _y, data, _info, time| {
-            on_drag_data_received(
-                widget,
-                context,
-                data,
-                time,
-                &curr_drag_pos,
-                &grid_outputs_disabled,
-            )
-        }
-    });
-
-    widget.connect_drag_motion({
-        let curr_drag_pos = Rc::clone(&curr_drag_pos);
-        move |widget, _context, x, y, _time| -> Inhibit {
-            on_drag_motion(widget, x, y, &curr_drag_pos)
-        }
-    });
-}
-
-fn on_drag_data_received<W: IsA<Widget>>(
-    widget: &W,
-    context: &DragContext,
-    data: &SelectionData,
-    time: u32,
-    curr_drag_pos: &Rc<RefCell<DragPosition>>,
-    grid_outputs_disabled: &Grid,
-) {
-    let mut widget_name = String::from("unknown");
-    if let Some(name) = widget.get_widget_name() {
-        widget_name = name.to_string();
-    }
-
-    let src_name = data.get_text().expect("Failed to receive drag data");
-    let target_pos_type = curr_drag_pos
-        .try_borrow()
-        .expect("Failed to get drag position");
-
-    println!(
-        "Widget {} received position `{:?}` from {}",
-        widget_name, target_pos_type, src_name
-    );
-
-    if let Some(parent) = WidgetExt::get_parent(widget) {
-        if let Ok(grid) = parent.downcast::<Grid>() {
-            if let Some(c) = find_widget_by_name(&grid, src_name.as_str()) {
-                if DragPosition::Swap == *target_pos_type {
-                    grid_swap(&grid, &c, widget);
-                } else {
-                    grid_insert_next_to(&grid, &c, widget, *target_pos_type);
-                }
-            } else if let Some(c) = find_widget_by_name(grid_outputs_disabled, src_name.as_str()) {
-                if DragPosition::Swap != *target_pos_type {
-                    grid_insert_from_other_grid_next_to(
-                        &grid_outputs_disabled,
-                        &c,
-                        &grid,
-                        widget,
-                        *target_pos_type,
-                    );
-                    connect_drop_target(&c, &grid_outputs_disabled);
-                }
-            }
-        }
-    }
-    context.drag_finish(true, true, time);
-}
-
-fn on_drag_motion<W: IsA<Widget>>(
-    widget: &W,
-    x: i32,
-    y: i32,
-    curr_drag_pos: &Rc<RefCell<DragPosition>>,
-) -> Inhibit {
-    let w = widget.get_allocation().width;
-    let h = widget.get_allocation().height;
-    let t_x = w as f64 * 0.25;
-    let t_y = h as f64 * 0.25;
-
-    let mut position = DragPosition::Swap;
-
-    let xf = x as f64;
-    let yf = y as f64;
-
-    let t_diag = |x: f64| (t_y / t_x) * x;
-    let t_top_left = t_diag(xf);
-    let t_bottom_left = -t_diag(xf) + h as f64;
-    let t_top_right = -t_diag(xf - w as f64);
-    let t_bottom_right = t_diag(xf - w as f64) + h as f64;
-
-    if xf <= t_x && x >= 0 && yf >= t_top_left && yf <= t_bottom_left {
-        position = DragPosition::Left;
-    } else if x <= w && xf >= w as f64 - t_x && yf >= t_top_right && yf <= t_bottom_right {
-        position = DragPosition::Right;
-    } else if yf <= t_y && y >= 0 {
-        position = DragPosition::Top;
-    } else if y <= h && yf >= h as f64 - t_y {
-        position = DragPosition::Bottom;
-    }
-
-    let style_context = widget.get_style_context();
-    style_context.remove_class("drop-left");
-    style_context.remove_class("drop-right");
-    style_context.remove_class("drop-top");
-    style_context.remove_class("drop-bottom");
-    style_context.remove_class("drop-swap");
-
-    let css_class = match position {
-        DragPosition::Left => "drop-left",
-        DragPosition::Right => "drop-right",
-        DragPosition::Top => "drop-top",
-        DragPosition::Bottom => "drop-bottom",
-        DragPosition::Swap => "drop-swap",
-    };
-
-    style_context.add_class(css_class);
-
-    if let Ok(mut curr_drag_pos) = curr_drag_pos.try_borrow_mut() {
-        *curr_drag_pos = position;
-    }
-
-    Inhibit(true)
-}
-
 fn on_output_selected(
-    btn: &Button,
+    name: &str,
     output_state: &OutputState,
     cb_resolution: &ComboBoxText,
     sw_enabled: &Switch,
     ch_primary: &CheckButton,
 ) {
-    if let Some(name) = btn.get_widget_name() {
-        if let Some(o) = output_state.outputs.get(name.as_str()) {
-            if let Ok(mut key_selected) = output_state.key_selected.try_borrow_mut() {
-                *key_selected = name.as_str().to_string();
-                println!("Selected output key changed to: {:?}", key_selected);
-            } else {
-                println!("borrow_mut in on_output_selected failed.");
-            }
-
-            cb_resolution.remove_all();
-            for m in o.get_resolutions_sorted() {
-                cb_resolution.append_text(m.as_str());
-            }
-
-            // Trying hard to let new_conf go out of scope.
-            let mut active_resolution: String = String::new();
-            let mut enabled = false;
-            let mut primary = false;
-            if let Ok(new_conf) = o.new_conf.try_borrow() {
-                active_resolution = new_conf.mode.name.to_owned();
-                enabled = new_conf.enabled;
-                primary = new_conf.primary;
-            } else {
-                println!("borrow in on_output_selected failed.");
-            }
-            sw_enabled.set_active(enabled);
-            ch_primary.set_active(primary);
-            cb_resolution.set_active_id(Some(active_resolution.as_str()));
+    if let Some(o) = output_state.outputs.get(name) {
+        if let Ok(mut key_selected) = output_state.key_selected.try_borrow_mut() {
+            *key_selected = String::from(name);
+            println!("Selected output key changed to: {:?}", key_selected);
+        } else {
+            println!("borrow_mut in on_output_selected failed.");
         }
+
+        cb_resolution.remove_all();
+        for m in o.get_resolutions_sorted() {
+            cb_resolution.append_text(m.as_str());
+        }
+
+        // Trying hard to let new_conf go out of scope.
+        let mut active_resolution: String = String::new();
+        let mut enabled = false;
+        let mut primary = false;
+        if let Ok(new_conf) = o.new_conf.try_borrow() {
+            active_resolution = new_conf.mode.name.to_owned();
+            enabled = new_conf.enabled;
+            primary = new_conf.primary;
+        } else {
+            println!("borrow in on_output_selected failed.");
+        }
+        sw_enabled.set_active(enabled);
+        ch_primary.set_active(primary);
+        cb_resolution.set_active_id(Some(active_resolution.as_str()));
     }
 }
 
