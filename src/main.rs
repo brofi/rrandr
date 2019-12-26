@@ -198,6 +198,10 @@ fn build_ui(application: &Application, output_state: &Rc<OutputState>) {
     let window: ApplicationWindow = get_gtk_object(&builder, "window");
     window.set_application(Some(application));
 
+    let grid_outputs: Grid = get_gtk_object(&builder, "grid_outputs");
+    let grid_outputs_disabled: Grid = get_gtk_object(&builder, "grid_outputs_disabled");
+    let mut output_view = OutputView::new(grid_outputs, grid_outputs_disabled);
+
     let box_outputs: Box = get_gtk_object(&builder, "box_outputs");
 
     // create radio buttons with output name as label
@@ -244,8 +248,9 @@ fn build_ui(application: &Application, output_state: &Rc<OutputState>) {
     cb_refresh_rate.set_entry_text_column(RefreshRateColumns::RefreshRate as i32);
     cb_refresh_rate.connect_changed({
         let output_state = Rc::clone(output_state);
+        let output_view = output_view.clone();
         move |cb| {
-            on_refresh_rate_changed(cb, &output_state);
+            on_refresh_rate_changed(cb, &output_state, &output_view);
         }
     });
 
@@ -300,9 +305,6 @@ fn build_ui(application: &Application, output_state: &Rc<OutputState>) {
         move |_| apply_new_conf(&output_state)
     });
 
-    let grid_outputs: Grid = get_gtk_object(&builder, "grid_outputs");
-    let grid_outputs_disabled: Grid = get_gtk_object(&builder, "grid_outputs_disabled");
-    let mut output_view = OutputView::new(grid_outputs, grid_outputs_disabled);
     output_view.set_output_selected_callback({
         let output_state = Rc::clone(output_state);
         let cb_resolution = cb_resolution.clone();
@@ -328,8 +330,8 @@ fn build_ui(application: &Application, output_state: &Rc<OutputState>) {
     for o in output_state.get_outputs_ordered_horizontal() {
         output_view.add_output(
             o.name.as_str(),
-            o.curr_conf.mode.width as i32 / 10,
-            o.curr_conf.mode.height as i32 / 10,
+            o.curr_conf.mode.width as i32 / 7,
+            o.curr_conf.mode.height as i32 / 7,
             o.curr_conf.enabled,
         );
     }
@@ -571,7 +573,7 @@ fn on_resolution_changed(
     }
 }
 
-fn on_refresh_rate_changed(cb: &ComboBox, output_state: &OutputState) {
+fn on_refresh_rate_changed(cb: &ComboBox, output_state: &OutputState, output_view: &OutputView) {
     if let Some(active_id) = cb.get_active_id() {
         if let Ok(key_selected) = output_state.key_selected.try_borrow() {
             let selected_output = output_state.outputs.get(key_selected.as_str()).unwrap();
@@ -599,6 +601,14 @@ fn on_refresh_rate_changed(cb: &ComboBox, output_state: &OutputState) {
                                         println!("borrow_mut for other conf in on_refresh_rate_changed failed.")
                                     }
                                 }
+                            }
+
+                            if m.width != new_conf.mode.width || m.height != new_conf.mode.height {
+                                output_view.resize_output(
+                                    key_selected.as_str(),
+                                    m.width as i32 / 7,
+                                    m.height as i32 / 7,
+                                );
                             }
 
                             new_conf.mode.width = m.width;

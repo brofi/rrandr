@@ -4,8 +4,8 @@ use std::rc::Rc;
 use gdk::{DragAction, DragContext, ModifierType, TARGET_STRING};
 use gtk::prelude::*;
 use gtk::{
-    Align, Button, Container, CssProvider, DestDefaults, Grid, PositionType, SelectionData,
-    StateFlags, StyleContext, TargetEntry, TargetFlags, Widget, NONE_BUTTON,
+    Align, Button, ButtonBuilder, Container, CssProvider, DestDefaults, Grid, PositionType,
+    SelectionData, StateFlags, StyleContext, TargetEntry, TargetFlags, Widget, NONE_BUTTON,
     STYLE_PROVIDER_PRIORITY_APPLICATION,
 };
 
@@ -53,7 +53,7 @@ impl OutputView {
     }
 
     pub fn add_output(&self, name: &str, width: i32, height: i32, enabled: bool) {
-        let btn = Self::create_output_button(name, width, height);
+        let btn = Self::create_output_button(name);
 
         if let Some(callback) = &self.output_selected_callback {
             let callback = Rc::clone(callback);
@@ -64,6 +64,11 @@ impl OutputView {
             });
         }
 
+        if width > 0 && height > 0 {
+            btn.set_size_request(width, height);
+        }
+
+        Self::add_drag_drop_style(&btn);
         Self::connect_drag_source(&btn);
         if enabled {
             self.connect_drop_target(&btn);
@@ -77,6 +82,12 @@ impl OutputView {
                 1,
                 1,
             );
+        }
+    }
+
+    pub fn resize_output(&self, name: &str, width: i32, height: i32) {
+        if let Some(output_widget) = self.find_enabled_output_widget(name) {
+            output_widget.set_size_request(width, height);
         }
     }
 
@@ -175,16 +186,13 @@ impl OutputView {
         }
     }
 
-    fn create_output_button(name: &str, width: i32, height: i32) -> Button {
-        let btn: Button = Button::new_with_label(&format!("Output: {}", name));
-        btn.set_widget_name(name);
-        Self::add_drag_drop_style(&btn);
-        if width > 0 && height > 0 {
-            btn.set_size_request(width, height);
-        }
-        btn.set_valign(Align::Center);
-        btn.set_halign(Align::Center);
-        btn
+    fn create_output_button(name: &str) -> Button {
+        ButtonBuilder::new()
+            .name(name)
+            .label(&format!("{}", name))
+            .valign(Align::Center)
+            .halign(Align::Center)
+            .build()
     }
 
     fn add_drag_drop_style(btn: &Button) -> StyleContext {
