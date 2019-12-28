@@ -34,7 +34,9 @@ use x11::xrandr::{
 };
 
 use output_view::OutputView;
+use g_math::{Rect, OutputNode, ToOutputNode};
 
+mod g_math;
 mod output_view;
 
 // TODO consider using
@@ -152,6 +154,20 @@ impl Output {
     }
 }
 
+impl ToOutputNode for Output {
+    fn to_output_node(&self) -> OutputNode {
+        OutputNode {
+            name: self.name.to_owned(),
+            rect: Rect {
+                x: self.curr_conf.pos.0,
+                y: self.curr_conf.pos.1,
+                width: self.curr_conf.mode.width,
+                height: self.curr_conf.mode.height,
+            },
+        }
+    }
+}
+
 #[derive(Debug, Clone, Default)]
 struct OutputMode {
     xid: u64,
@@ -181,6 +197,8 @@ fn main() {
     let outputs: OutputInfo = get_output_info();
     let key_primary = get_primary_output_name(&outputs).expect("Failed to get primary output.");
     let output_state = OutputState::new(outputs, key_primary);
+
+    remove_overlap(&*output_state.to_owned());
 
     let application = Application::new(Some("com.github.brofi.rxrandr"), Default::default())
         .expect("Failed to initialize GTK application.");
@@ -625,6 +643,45 @@ fn on_refresh_rate_changed(cb: &ComboBox, output_state: &OutputState, output_vie
             println!("borrow in on_refresh_rate_changed failed.");
         }
     }
+}
+
+fn remove_overlap(output_state: &OutputState) {
+    let mut nodes: Vec<OutputNode> = output_state
+        .outputs
+        .values()
+        .filter(|o| o.curr_conf.enabled)
+        .map(|o| o.to_output_node())
+        .collect::<Vec<OutputNode>>();
+    nodes.sort_by(|n1, n2| {
+        n1.rect
+            .x
+            .cmp(&n2.rect.x)
+            .then_with(|| n1.rect.y.cmp(&n2.rect.y))
+    });
+
+    // TODO check proper bounds: union is too small (overlap)...
+    let _bounds = nodes
+        .iter()
+        .fold(Rect::default(), |acc, n| acc.union(&n.rect));
+
+    let mut new_nodes: Vec<OutputNode> = Vec::new();
+    for mut n in nodes {
+        // TODO adjust
+        let a = 1. / (2. * std::f64::consts::PI);
+        assert!(a > 0.);
+        let mut t: f64 = 0.; // angle
+        let r = |t: f64| a as f64 * t; // radius of archimedes spiral
+        while n.has_overlap(&new_nodes) {
+            n.rect.x += (r(t) * t.cos()) as i32;
+            n.rect.y -= (r(t) * t.sin()) as i32;
+            // TODO adjust step
+            t += std::f64::consts::PI / 8.;
+        }
+        new_nodes.push(n);
+        // TODO re-center?
+    }
+
+    println!("{:?}", new_nodes);
 }
 
 fn apply_new_conf(output_state: &OutputState) {
