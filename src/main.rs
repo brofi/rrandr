@@ -33,22 +33,13 @@ use x11::xrandr::{
     X_RRSetCrtcConfig, X_RRSetOutputPrimary, X_RRSetScreenSize,
 };
 
+use g_math::{OutputNode, Rect, ToOutputNode};
 use output_view::OutputView;
-use g_math::{Rect, OutputNode, ToOutputNode};
 
 mod g_math;
 mod output_view;
 
-// TODO consider using
-#[allow(unused_macros)]
-macro_rules! enclose {
-    ( ($( $x:ident ),*) $y:expr ) => {
-        {
-            $(let $x = $x.clone();)*
-            $y
-        }
-    };
-}
+// TODO consider using clone macro which is now part of gtk-rs
 
 type OutputInfo = HashMap<String, Output>;
 
