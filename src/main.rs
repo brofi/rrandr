@@ -12,8 +12,9 @@ use gio::prelude::*;
 use glib::{Object, Type};
 use gtk::prelude::*;
 use gtk::{
-    Application, ApplicationWindow, Box, Builder, Button, CellRendererText, CheckButton, ComboBox,
-    ComboBoxText, Grid, RadioButton, Switch, NONE_RADIO_BUTTON,
+    Align, Application, ApplicationWindow, Box, Builder, Button, ButtonBox, CellRendererText,
+    CheckButton, ComboBox, ComboBoxText, DrawingArea, Grid, Orientation, PositionType, RadioButton,
+    Switch, WindowType, NONE_RADIO_BUTTON, NONE_WIDGET,
 };
 use x11::xlib::{
     CurrentTime, Display, False, Status, True, Window, XCloseDisplay, XDefaultScreen,
@@ -33,9 +34,13 @@ use x11::xrandr::{
     X_RRSetCrtcConfig, X_RRSetOutputPrimary, X_RRSetScreenSize,
 };
 
-use g_math::{OutputNode, Rect, ToOutputNode};
+#[cfg(debug_assertions)]
+use debug_draw::on_debug_draw;
+use g_math::{OutputNode, OverlapDebugInfo, Rect, ToOutputNode};
 use output_view::OutputView;
 
+#[cfg(debug_assertions)]
+mod debug_draw;
 mod g_math;
 mod output_view;
 
@@ -189,8 +194,6 @@ fn main() {
     let key_primary = get_primary_output_name(&outputs).expect("Failed to get primary output.");
     let output_state = OutputState::new(outputs, key_primary);
 
-    remove_overlap(&*output_state.to_owned());
-
     let application = Application::new(Some("com.github.brofi.rxrandr"), Default::default())
         .expect("Failed to initialize GTK application.");
 
@@ -343,6 +346,13 @@ fn build_ui(application: &Application, output_state: &Rc<OutputState>) {
             o.curr_conf.mode.height as i32 / 7,
             o.curr_conf.enabled,
         );
+    }
+
+    if cfg!(debug_assertions) {
+        debug_create_button(&builder).connect_clicked({
+            let output_state = Rc::clone(output_state);
+            move |_| on_debug_button_clicked(&output_state)
+        });
     }
 
     window.show_all();
@@ -636,7 +646,7 @@ fn on_refresh_rate_changed(cb: &ComboBox, output_state: &OutputState, output_vie
     }
 }
 
-fn remove_overlap(output_state: &OutputState) {
+fn remove_overlap(output_state: &OutputState, debug_info: Option<&OverlapDebugInfo>) {
     let mut nodes: Vec<OutputNode> = output_state
         .outputs
         .values()
@@ -665,6 +675,15 @@ fn remove_overlap(output_state: &OutputState) {
         while n.has_overlap(&new_nodes) {
             n.rect.x += (r(t) * t.cos()) as i32;
             n.rect.y -= (r(t) * t.sin()) as i32;
+
+            if cfg!(debug_assertions) {
+                if let Some(debug_info) = debug_info {
+                    if let Ok(mut step_nodes) = debug_info.step_nodes.try_borrow_mut() {
+                        step_nodes.push(n.clone());
+                    }
+                }
+            }
+
             // TODO adjust step
             t += std::f64::consts::PI / 8.;
         }
@@ -1284,4 +1303,49 @@ unsafe fn print_x_error(dpy: *mut Display, prefix: &str, event: *mut XErrorEvent
     } else {
         println!();
     }
+}
+
+#[cfg(debug_assertions)]
+fn debug_create_button(builder: &Builder) -> Button {
+    let bb_buttons = get_gtk_object::<Box>(&builder, "bb_buttons");
+    let btn_debug = Button::new_with_label("Debug");
+    bb_buttons.pack_start(&btn_debug, true, true, 0);
+    bb_buttons.reorder_child(&btn_debug, 0);
+    btn_debug
+}
+
+#[cfg(debug_assertions)]
+fn on_debug_button_clicked(output_state: &OutputState) {
+    let debug_window = gtk::Window::new(WindowType::Toplevel);
+    debug_window.set_title("Debug");
+    debug_window.set_default_size(320, 200);
+    debug_window.set_border_width(20);
+
+    let debug_grid = Grid::new();
+    debug_grid.set_orientation(Orientation::Vertical);
+    debug_grid.set_column_homogeneous(true);
+
+    let debug_drawing_area = DrawingArea::new();
+    debug_drawing_area.set_hexpand(true);
+    debug_drawing_area.set_vexpand(true);
+    debug_drawing_area.connect_draw({
+        let debug_info = OverlapDebugInfo::new();
+        remove_overlap(&output_state, Some(&debug_info));
+        move |widget, cr| on_debug_draw(widget, cr, &debug_info)
+    });
+    debug_grid.attach_next_to(&debug_drawing_area, NONE_WIDGET, PositionType::Bottom, 1, 1);
+
+    let debug_bb_buttons = ButtonBox::new(Orientation::Horizontal);
+    debug_bb_buttons.set_orientation(Orientation::Horizontal);
+    debug_bb_buttons.set_halign(Align::End);
+    let debug_close_button = Button::new_with_label("Close");
+    debug_close_button.connect_clicked({
+        let debug_window = debug_window.clone();
+        move |_| debug_window.destroy()
+    });
+    debug_bb_buttons.pack_start(&debug_close_button, true, true, 0);
+    debug_grid.attach_next_to(&debug_bb_buttons, NONE_WIDGET, PositionType::Bottom, 1, 1);
+
+    debug_window.add(&debug_grid);
+    debug_window.show_all();
 }

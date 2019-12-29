@@ -1,3 +1,5 @@
+use std::cell::RefCell;
+
 #[derive(Default, Debug, Copy, Clone)]
 pub struct Rect {
     pub x: i32,
@@ -119,4 +121,16 @@ impl OutputNode {
 
 pub trait ToOutputNode {
     fn to_output_node(&self) -> OutputNode;
+}
+
+pub struct OverlapDebugInfo {
+    pub step_nodes: RefCell<Vec<OutputNode>>,
+}
+
+impl OverlapDebugInfo {
+    pub fn new() -> Self {
+        OverlapDebugInfo {
+            step_nodes: RefCell::new(Vec::new()),
+        }
+    }
 }
