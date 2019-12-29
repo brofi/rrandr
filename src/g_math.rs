@@ -100,7 +100,7 @@ pub struct OutputNode {
 }
 
 impl OutputNode {
-    pub fn has_overlap(&self, nodes: &Vec<Self>) -> bool {
+    pub fn overlaps(&self, nodes: &Vec<Self>) -> bool {
         for n in nodes {
             if self.rect.intersects(&n.rect) {
                 return true;

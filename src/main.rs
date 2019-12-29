@@ -86,6 +86,14 @@ impl OutputState {
             })
             .collect()
     }
+
+    fn get_enabled_outputs_as_nodes(&self) -> Vec<OutputNode> {
+        self.outputs
+            .values()
+            .filter(|o| o.curr_conf.enabled)
+            .map(|o| o.to_output_node())
+            .collect::<Vec<OutputNode>>()
+    }
 }
 
 // TODO Display Trait?
@@ -193,6 +201,7 @@ fn main() {
     let outputs: OutputInfo = get_output_info();
     let key_primary = get_primary_output_name(&outputs).expect("Failed to get primary output.");
     let output_state = OutputState::new(outputs, key_primary);
+    normalize_output_positions(&output_state);
 
     let application = Application::new(Some("com.github.brofi.rxrandr"), Default::default())
         .expect("Failed to initialize GTK application.");
@@ -646,13 +655,31 @@ fn on_refresh_rate_changed(cb: &ComboBox, output_state: &OutputState, output_vie
     }
 }
 
-fn remove_overlap(output_state: &OutputState, debug_info: Option<&OverlapDebugInfo>) {
-    let mut nodes: Vec<OutputNode> = output_state
-        .outputs
-        .values()
-        .filter(|o| o.curr_conf.enabled)
-        .map(|o| o.to_output_node())
-        .collect::<Vec<OutputNode>>();
+fn normalize_output_positions(output_state: &OutputState) {
+    let mut nodes: Vec<OutputNode> = output_state.get_enabled_outputs_as_nodes();
+
+    remove_overlap(nodes.as_mut(), None);
+
+    let bounds = nodes
+        .iter()
+        .fold(Rect::default(), |acc, n| acc.union(&n.rect));
+
+    for n in nodes {
+        if let Some(o) = output_state.outputs.get(n.name.as_str()) {
+            if let Ok(mut new_conf) = o.new_conf.try_borrow_mut() {
+                new_conf.pos.0 = n.rect.x - bounds.x;
+                new_conf.pos.1 = n.rect.y - bounds.y;
+
+                println!(
+                    "New normalized position for output {}: ({}, {})",
+                    o.name, new_conf.pos.0, new_conf.pos.1
+                );
+            }
+        }
+    }
+}
+
+fn remove_overlap(nodes: &mut Vec<OutputNode>, debug_info: Option<&OverlapDebugInfo>) {
     nodes.sort_by(|n1, n2| {
         n1.rect
             .x
@@ -672,7 +699,7 @@ fn remove_overlap(output_state: &OutputState, debug_info: Option<&OverlapDebugIn
         assert!(a > 0.);
         let mut t: f64 = 0.; // angle
         let r = |t: f64| a as f64 * t; // radius of archimedes spiral
-        while n.has_overlap(&new_nodes) {
+        while n.overlaps(&new_nodes) {
             n.rect.x += (r(t) * t.cos()) as i32;
             n.rect.y -= (r(t) * t.sin()) as i32;
 
@@ -687,7 +714,7 @@ fn remove_overlap(output_state: &OutputState, debug_info: Option<&OverlapDebugIn
             // TODO adjust step
             t += std::f64::consts::PI / 8.;
         }
-        new_nodes.push(n);
+        new_nodes.push(n.clone());
         // TODO re-center?
     }
 
@@ -1330,7 +1357,10 @@ fn on_debug_button_clicked(output_state: &OutputState) {
     debug_drawing_area.set_vexpand(true);
     debug_drawing_area.connect_draw({
         let debug_info = OverlapDebugInfo::new();
-        remove_overlap(&output_state, Some(&debug_info));
+        remove_overlap(
+            output_state.get_enabled_outputs_as_nodes().as_mut(),
+            Some(&debug_info),
+        );
         move |widget, cr| on_debug_draw(widget, cr, &debug_info)
     });
     debug_grid.attach_next_to(&debug_drawing_area, NONE_WIDGET, PositionType::Bottom, 1, 1);
