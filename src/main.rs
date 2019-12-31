@@ -94,6 +94,40 @@ impl OutputState {
             .map(|o| o.to_output_node())
             .collect::<Vec<OutputNode>>()
     }
+
+    fn get_grid_positions(&self) -> HashMap<String, (i32, i32)> {
+        let mut grid_positions = HashMap::new();
+
+        let bounds = self
+            .get_enabled_outputs_as_nodes()
+            .iter()
+            .fold(Rect::default(), |acc, n| acc.union(&n.rect));
+
+        let len_enabled = self.get_enabled_outputs().len() as f64;
+        let cell_width = bounds.width as f64 / len_enabled;
+        let cell_height = bounds.height as f64 / len_enabled;
+
+        for (k, o) in &self.outputs {
+            let mut grid_pos = (0, 0);
+
+            let new_conf = o
+                .new_conf
+                .try_borrow()
+                .expect("Failed to get configuration");
+
+            if new_conf.enabled {
+                let c_x = new_conf.pos.0 as f64 + (new_conf.mode.width as f64 / 2.);
+                let c_y = new_conf.pos.1 as f64 + (new_conf.mode.height as f64 / 2.);
+
+                grid_pos.0 = ((c_x - 1.) / cell_width) as i32;
+                grid_pos.1 = ((c_y - 1.) / cell_height) as i32;
+            }
+
+            grid_positions.insert(k.to_owned(), grid_pos);
+        }
+
+        grid_positions
+    }
 }
 
 // TODO Display Trait?
@@ -348,9 +382,13 @@ fn build_ui(application: &Application, output_state: &Rc<OutputState>) {
         )
     });
 
-    for o in output_state.get_outputs_ordered_horizontal() {
+    let grid_positions = output_state.get_grid_positions();
+    for o in output_state.outputs.values() {
+        let grid_pos = grid_positions.get(o.name.as_str()).expect("Failed to get grid position");
         output_view.add_output(
             o.name.as_str(),
+            grid_pos.0,
+            grid_pos.1,
             o.curr_conf.mode.width as i32 / 7,
             o.curr_conf.mode.height as i32 / 7,
             o.curr_conf.enabled,

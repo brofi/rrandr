@@ -52,7 +52,7 @@ impl OutputView {
         }
     }
 
-    pub fn add_output(&self, name: &str, width: i32, height: i32, enabled: bool) {
+    pub fn add_output(&self, name: &str, left: i32, top: i32, width: i32, height: i32, enabled: bool) {
         let btn = Self::create_output_button(name);
 
         if let Some(callback) = &self.output_selected_callback {
@@ -72,8 +72,7 @@ impl OutputView {
         Self::connect_drag_source(&btn);
         if enabled {
             self.connect_drop_target(&btn);
-            self.grid_outputs
-                .attach_next_to(&btn, NONE_BUTTON, PositionType::Right, 1, 1);
+            self.grid_outputs.attach(&btn, left, top, 1, 1);
         } else {
             self.grid_outputs_disabled.attach_next_to(
                 &btn,
