@@ -1,7 +1,7 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use gdk::{DragAction, DragContext, ModifierType, TARGET_STRING};
+use gdk::{DragAction, DragContext, EventButton, EventType, ModifierType, TARGET_STRING};
 use gtk::prelude::*;
 use gtk::{
     Align, Button, ButtonBuilder, Container, CssProvider, DestDefaults, Grid, PositionType,
@@ -52,7 +52,15 @@ impl OutputView {
         }
     }
 
-    pub fn add_output(&self, name: &str, left: i32, top: i32, width: i32, height: i32, enabled: bool) {
+    pub fn add_output(
+        &self,
+        name: &str,
+        left: i32,
+        top: i32,
+        width: i32,
+        height: i32,
+        enabled: bool,
+    ) {
         let btn = Self::create_output_button(name);
 
         if let Some(callback) = &self.output_selected_callback {
@@ -63,6 +71,11 @@ impl OutputView {
                 }
             });
         }
+
+        btn.connect_button_press_event({
+            let output_view = self.clone();
+            move |widget, event| Self::on_button_pressed(&output_view, widget, event)
+        });
 
         if width > 0 && height > 0 {
             btn.set_size_request(width, height);
@@ -158,6 +171,30 @@ impl OutputView {
         }
         self.grid_outputs
             .attach_next_to(widget, Some(sibling), position.to_gtk(), 1, 1);
+
+        match position {
+            DragPosition::Left => {
+                sibling.set_halign(Align::Start);
+                widget.set_halign(Align::End);
+                widget.set_valign(sibling.get_valign());
+            }
+            DragPosition::Right => {
+                sibling.set_halign(Align::End);
+                widget.set_halign(Align::Start);
+                widget.set_valign(sibling.get_valign());
+            }
+            DragPosition::Top => {
+                sibling.set_valign(Align::Start);
+                widget.set_valign(Align::End);
+                widget.set_halign(sibling.get_halign());
+            }
+            DragPosition::Bottom => {
+                sibling.set_valign(Align::End);
+                widget.set_valign(Align::Start);
+                widget.set_halign(sibling.get_halign());
+            }
+            _ => (),
+        }
     }
 
     fn swap_output<S: IsA<Widget>, T: IsA<Widget>>(&self, w1: &S, w2: &T) {
@@ -169,6 +206,12 @@ impl OutputView {
         self.grid_outputs.remove(w2);
         self.grid_outputs.attach(w1, target_left, target_top, 1, 1);
         self.grid_outputs.attach(w2, src_left, src_top, 1, 1);
+        let h_align = w1.get_halign();
+        let v_align = w1.get_valign();
+        w1.set_halign(w2.get_halign());
+        w1.set_valign(w2.get_valign());
+        w2.set_halign(h_align);
+        w2.set_valign(v_align);
     }
 
     // Assuming row or column spans for every child in given grid are always 1
@@ -183,6 +226,78 @@ impl OutputView {
             DragPosition::Bottom => (left_attach, top_attach + 1),
             DragPosition::Swap => (left_attach, top_attach),
         }
+    }
+
+    fn get_row_height(&self, row: i32) -> i32 {
+        let mut row_height = 0;
+        for w in self.grid_outputs.get_children() {
+            let top = self.grid_outputs.get_cell_top_attach(&w);
+            if top == row {
+                let height = w.get_allocation().height;
+                if height > row_height {
+                    row_height = height;
+                }
+            }
+        }
+        row_height
+    }
+
+    fn get_column_width(&self, column: i32) -> i32 {
+        let mut column_width = 0;
+        for w in self.grid_outputs.get_children() {
+            let left = self.grid_outputs.get_cell_left_attach(&w);
+            if left == column {
+                let width = w.get_allocation().width;
+                if width > column_width {
+                    column_width = width;
+                }
+            }
+        }
+        column_width
+    }
+
+    fn on_button_pressed(&self, btn: &Button, event: &EventButton) -> Inhibit {
+        if event.get_event_type() == EventType::ButtonPress && event.get_button() == 3 {
+            let alloc = btn.get_allocation();
+
+            let next_alignment = |align: Align| -> Align {
+                let alignments = [Align::Start, Align::Center, Align::End];
+                for (i, a) in alignments.iter().enumerate() {
+                    if *a == align {
+                        return alignments[(i + 1) % alignments.len()];
+                    }
+                }
+                Align::Center
+            };
+
+            let left = self.grid_outputs.get_cell_left_attach(btn);
+            if alloc.width < self.get_column_width(left) {
+                btn.set_halign(next_alignment(btn.get_halign()));
+            } else {
+                for c in self.grid_outputs.get_children() {
+                    if get_widget_name(&c) != get_widget_name(btn)
+                        && self.grid_outputs.get_cell_left_attach(&c) == left
+                    {
+                        c.set_halign(next_alignment(c.get_halign()));
+                    }
+                }
+            }
+
+            let top = self.grid_outputs.get_cell_top_attach(btn);
+            if alloc.height < self.get_row_height(top) {
+                btn.set_valign(next_alignment(btn.get_valign()));
+            } else {
+                for c in self.grid_outputs.get_children() {
+                    if get_widget_name(&c) != get_widget_name(btn)
+                        && self.grid_outputs.get_cell_top_attach(&c) == top
+                    {
+                        c.set_valign(next_alignment(c.get_valign()));
+                    }
+                }
+            }
+        }
+
+        Inhibit(false)
     }
 
     fn create_output_button(name: &str) -> Button {
@@ -374,4 +489,8 @@ fn find_widget_by_name<C: IsA<Container>>(container: &C, widget_name: &str) -> O
         }
     }
     widget
+}
+
+fn get_widget_name<W: IsA<Widget>>(w: &W) -> String {
+    String::from(w.get_widget_name().expect("Widget doesn't have a name"))
 }
