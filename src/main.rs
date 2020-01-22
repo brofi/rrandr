@@ -697,6 +697,7 @@ fn normalize_output_positions(output_state: &OutputState) {
     let mut nodes: Vec<OutputNode> = output_state.get_enabled_outputs_as_nodes();
 
     remove_overlap(nodes.as_mut(), None);
+    remove_gaps(nodes.as_mut());
 
     let bounds = nodes
         .iter()
@@ -713,6 +714,59 @@ fn normalize_output_positions(output_state: &OutputState) {
                     o.name, new_conf.pos.0, new_conf.pos.1
                 );
             }
+        }
+    }
+}
+
+fn remove_gaps(nodes: &mut Vec<OutputNode>) {
+    for i in 0..nodes.len() {
+        let mut min_t_x = std::i32::MAX;
+        let mut min_t_y = std::i32::MAX;
+
+        let top1 = nodes[i].rect.y;
+        let bottom1 = nodes[i].rect.y + nodes[i].rect.height as i32;
+        let left1 = nodes[i].rect.x;
+        let right1 = nodes[i].rect.x + nodes[i].rect.width as i32;
+
+        for j in 0..nodes.len() {
+            if nodes[i].name == nodes[j].name {
+                continue;
+            }
+
+            let top2 = nodes[j].rect.y;
+            let bottom2 = nodes[j].rect.y + nodes[j].rect.height as i32;
+            let left2 = nodes[j].rect.x;
+            let right2 = nodes[j].rect.x + nodes[j].rect.width as i32;
+
+            let mut t_y = 0;
+            if bottom1 <= top2 {
+                t_y = top2 - bottom1;
+            } else if bottom2 <= top1 {
+                t_y = bottom2 - top1;
+            }
+
+            if t_y.abs() < min_t_y.abs() {
+                min_t_y = t_y;
+            }
+
+            let mut t_x = 0;
+            if right1 <= left2 {
+                t_x = left2 - right1;
+            } else if right2 <= left1 {
+                t_x = right2 - left1;
+            }
+
+            if t_x.abs() < min_t_x.abs() {
+                min_t_x = t_x;
+            }
+        }
+
+        if min_t_x != std::i32::MAX {
+            nodes[i].rect.x += min_t_x;
+        }
+
+        if min_t_y != std::i32::MAX {
+            nodes[i].rect.y += min_t_y;
         }
     }
 }
