@@ -1,13 +1,29 @@
 [package]
-name = "rxrandr"
-version = "0.1.0"
+name = "rrandr"
+version = "0.2.0"
 authors = ["Andy B. <brofi.archlinux@gmail.com>"]
-edition = "2018"
+edition = "2021"
 
 [dependencies]
-x11 = { version = "2.18.1", features = ["xlib", "xrandr"] }
-gtk = { version = "0.8.0", features = ["embed-lgpl-docs"] }
-gio = "0.8.0"
-gdk = "0.12.0"
-glib = "0.9.0"
-cairo-rs = "0.8.0"
+x11rb = { version = "0.13.1", features = ["randr"] }
+gtk = { version = "0.8.2", package = "gtk4", features = [
+    "v4_2",
+    "v4_4",
+    "v4_6",
+    "v4_8",
+    "v4_10",
+    "v4_12",
+    "v4_14",
+] }
+gdk = { version = "0.8.2", package = "gdk4", features = [
+    "v4_2",
+    "v4_4",
+    "v4_6",
+    "v4_8",
+    "v4_10",
+    "v4_12",
+    "v4_14",
+] }
+cairo-rs = "0.19.4"
+pango = "0.19.5"
+pangocairo = "0.19.2"
