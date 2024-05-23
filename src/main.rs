@@ -6,6 +6,7 @@ use gtk::prelude::*;
 use gtk::{Application, ApplicationWindow};
 use std::collections::HashMap;
 use std::error::Error;
+use x11rb::protocol::xproto::Screen;
 
 use std::rc::Rc;
 use view::View;
@@ -13,9 +14,9 @@ use x11rb::cookie::Cookie;
 use x11rb::errors::{ConnectionError, ReplyError};
 use x11rb::protocol::randr::{
     get_crtc_info, get_output_primary, get_screen_size_range, set_crtc_config, set_output_primary,
-    Connection, Crtc as CrtcId, GetCrtcInfoReply, GetScreenResourcesCurrentReply,
+    set_screen_size, Connection, Crtc as CrtcId, GetCrtcInfoReply, GetScreenResourcesCurrentReply,
     GetScreenSizeRangeReply, Mode as ModeId, ModeFlag, ModeInfo, Output as OutputId, Rotation,
-    SetConfig,
+    ScreenSize, SetConfig,
 };
 
 use x11rb::CURRENT_TIME;
@@ -32,6 +33,7 @@ type Resolution = [u16; 2];
 
 const APP_ID: &str = "com.github.brofi.rrandr";
 const RESOLUTION_JOIN_CHAR: char = 'x';
+const MM_PER_INCH: f32 = 25.4;
 
 #[derive(Clone, Debug)]
 pub struct Output {
@@ -190,6 +192,16 @@ impl From<ModeInfo> for Mode {
     }
 }
 
+fn get_bounds(outputs: &Vec<Output>) -> Rect {
+    let enabled_outputs = outputs.iter().filter(|&o| o.enabled).collect::<Vec<_>>();
+    if enabled_outputs.is_empty() {
+        return Rect::zero();
+    }
+    enabled_outputs
+        .iter()
+        .fold(enabled_outputs[0].rect(), |acc, &o| acc.union(&o.rect()))
+}
+
 fn main() -> ExitCode {
     let (conn, screen_num) = x11rb::connect(None).expect("connection to X Server");
     let screen = &conn.setup().roots[screen_num];
@@ -241,7 +253,7 @@ fn main() -> ExitCode {
     app.connect_activate(move |app| {
         build_ui(app, outputs.clone(), screen_size_range, {
             let conn = Rc::clone(&conn);
-            move |outputs| on_apply_clicked(&conn, screen_num, &outputs)
+            move |outputs| on_apply_clicked(&conn, screen_num, &screen_size_range, &outputs)
         })
     });
     app.run()
@@ -265,7 +277,12 @@ fn build_ui(
     window.present();
 }
 
-fn on_apply_clicked(conn: &RustConnection, screen_num: usize, outputs: &Vec<Output>) -> bool {
+fn on_apply_clicked(
+    conn: &RustConnection,
+    screen_num: usize,
+    screen_size_range: &ScreenSizeRange,
+    outputs: &Vec<Output>,
+) -> bool {
     let screen = &conn.setup().roots[screen_num];
     let res = get_screen_resources_current(&conn, screen.root)
         .expect("cookie to request screen resources");
@@ -276,11 +293,74 @@ fn on_apply_clicked(conn: &RustConnection, screen_num: usize, outputs: &Vec<Outp
         get_outputs(rr_outputs).expect("reply for outputs");
     let rr_crtcs: HashMap<CrtcId, CrtcInfo> = get_crtcs(rr_crtcs).expect("reply for crtcs");
 
+    let screen_size = get_screen_size(screen, outputs);
+    if screen_size.width < screen_size_range.min_width
+        || screen_size.height < screen_size_range.min_height
+    {
+        println!(
+            "Screen size must be bigger than {}x{}",
+            screen_size_range.min_width, screen_size_range.min_height
+        );
+        return false;
+    }
+    if screen_size.width > screen_size_range.max_width
+        || screen_size.height > screen_size_range.max_height
+    {
+        println!(
+            "Screen size must be smaller than {}x{}",
+            screen_size_range.max_width, screen_size_range.max_height
+        );
+        return false;
+    }
+
+    println!(
+        "Setting screen size to {}x{} px, {}x{} mm",
+        screen_size.width, screen_size.height, screen_size.mwidth, screen_size.mheight
+    );
+    if set_screen_size(
+        conn,
+        screen.root,
+        screen_size.width,
+        screen_size.height,
+        screen_size.mwidth.into(),
+        screen_size.mheight.into(),
+    )
+    .is_err()
+    {
+        println!("Failed to set screen size");
+        return false;
+    };
+
     for output in outputs {
+        if let (Some(pos), Some(mode)) = (output.pos, &output.mode) {
+            if pos.0 as i32 + mode.width as i32 > screen_size.width as i32
+                || pos.1 as i32 + mode.height as i32 > screen_size.height as i32
+            {
+                println!(
+                    "Output {} at +{}+{} with dimension {}x{} exceeds screen boundaries {}x{}",
+                    output.name,
+                    pos.0,
+                    pos.1,
+                    mode.width,
+                    mode.height,
+                    screen_size.width,
+                    screen_size.height
+                );
+                return false;
+            }
+        }
+
         match apply_output_config(conn, output, &rr_crtcs, &rr_outputs) {
             Ok(SetConfig::SUCCESS) => println!("Great success"),
+            Ok(SetConfig::FAILED) => {
+                println!("Failed to set config for output {}", output.name);
+                return false;
+            }
             Ok(status) => {
-                println!("Failed to set config: {:#?}", status);
+                println!(
+                    "Failed to set config for output {}, reason: {:#?}",
+                    output.name, status
+                );
                 return false;
             }
             Err(_) => {
@@ -304,18 +384,62 @@ fn apply_output_config(
     rr_crtcs: &HashMap<CrtcId, CrtcInfo>,
     rr_outputs: &HashMap<OutputId, OutputInfo>,
 ) -> Result<SetConfig, Box<dyn Error>> {
-    let Some(crtc_id) = get_crtc_id(output, rr_crtcs, rr_outputs) else {
-        return Ok(SetConfig::FAILED);
-    };
-
-    if !output.enabled {
+    let mut crtc_id = rr_outputs[&output.id].crtc;
+    if output.enabled {
+        if crtc_id == 0 {
+            // If this output was disabled before get it a new empty CRTC.
+            if let Some(empty_id) = get_empty_crtc(rr_crtcs) {
+                crtc_id = empty_id;
+            } else {
+                println!("Failed to get empty CRTC for output {}", output.name);
+                return Ok(SetConfig::FAILED);
+            }
+        } else {
+            // If this output shares a CRTC with other outputs and its not the
+            // first one listed, move it to a new empty CRTC.
+            let crtc_info = &rr_crtcs[&crtc_id];
+            if crtc_info.outputs.len() > 1 && crtc_info.outputs[0] != output.id {
+                if let Some(empty_id) = get_empty_crtc(rr_crtcs) {
+                    crtc_id = empty_id;
+                } else {
+                    println!("Failed to get empty CRTC for output {}", output.name);
+                    return Ok(SetConfig::FAILED);
+                }
+            }
+        }
+        update_crtc(conn, crtc_id, output)
+    } else {
         if crtc_id > 0 {
+            // If this output was enabled before, disable its CRTC.
+            println!("Disable output {} on CRTC {}", output.name, crtc_id);
             return disable_crtc(conn, crtc_id);
         }
-        return Ok(SetConfig::SUCCESS);
+        println!("Nothing to do for output {}", output.name);
+        Ok(SetConfig::SUCCESS)
+    }
+}
+
+fn get_screen_size(screen: &Screen, outputs: &Vec<Output>) -> ScreenSize {
+    let bounds = get_bounds(&outputs);
+    let width = bounds.width() as u16;
+    let height = bounds.height() as u16;
+
+    let mut mwidth = screen.width_in_millimeters;
+    let mut mheight = screen.height_in_millimeters;
+
+    if width != screen.width_in_pixels || height != screen.height_in_pixels {
+        let dpi =
+            (MM_PER_INCH * screen.height_in_pixels as f32) / screen.height_in_millimeters as f32;
+        mwidth = ((MM_PER_INCH * width as f32) / dpi) as u16;
+        mheight = ((MM_PER_INCH * height as f32) / dpi) as u16;
     }
 
-    update_crtc(conn, crtc_id, output)
+    ScreenSize {
+        width,
+        height,
+        mwidth,
+        mheight,
+    }
 }
 
 fn update_crtc(
@@ -323,10 +447,18 @@ fn update_crtc(
     crtc: CrtcId,
     output: &Output,
 ) -> Result<SetConfig, Box<dyn Error>> {
-    let (Some(pos), Some(mode)) = (output.pos, &output.mode) else {
+    let Some(pos) = output.pos else {
+        println!("Output {} is missing a position.", output.name);
         return Ok(SetConfig::FAILED);
     };
-
+    let Some(mode) = &output.mode else {
+        println!("Output {} is missing a mode.", output.name);
+        return Ok(SetConfig::FAILED);
+    };
+    println!(
+        "Trying to set output {} to CTRC {} at position +{}+{} with mode {}",
+        output.name, crtc, pos.0, pos.1, mode.id
+    );
     Ok(set_crtc_config(
         conn,
         crtc,
@@ -356,23 +488,6 @@ fn disable_crtc(conn: &RustConnection, crtc: CrtcId) -> Result<SetConfig, Box<dy
     )?
     .reply()?
     .status)
-}
-
-fn get_crtc_id(
-    output: &Output,
-    rr_crtcs: &HashMap<CrtcId, CrtcInfo>,
-    rr_outputs: &HashMap<OutputId, OutputInfo>,
-) -> Option<CrtcId> {
-    let mut crtc_id = rr_outputs[&output.id].crtc;
-    if crtc_id == 0 {
-        crtc_id = get_empty_crtc(rr_crtcs)?;
-    } else {
-        let crtc_info = &rr_crtcs[&crtc_id];
-        if crtc_info.outputs.len() > 1 && crtc_info.outputs[0] != output.id {
-            crtc_id = get_empty_crtc(rr_crtcs)?;
-        }
-    }
-    Some(crtc_id)
 }
 
 fn get_empty_crtc(rr_crtcs: &HashMap<CrtcId, CrtcInfo>) -> Option<CrtcId> {

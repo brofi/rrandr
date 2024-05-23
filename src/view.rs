@@ -1,4 +1,4 @@
-use crate::{Output, ScreenSizeRange};
+use crate::{get_bounds, Output, ScreenSizeRange};
 use gdk::{
     glib::{clone, Bytes, Type, Value},
     ContentProvider, Drag, DragAction, MemoryTexture, Paintable, RGBA,
@@ -346,7 +346,7 @@ impl View {
         outputs: &mut Vec<Output>,
     ) {
         // Translate to x = y = 0
-        *bounds = Self::get_bounds(outputs);
+        *bounds = get_bounds(outputs);
         for output in outputs.iter_mut() {
             if let (Some(pos), Some(mode)) = (output.pos.as_mut(), &output.mode) {
                 let max_x = (size.max_width - mode.width).max(0) as i16;
@@ -355,20 +355,10 @@ impl View {
                 pos.1 = pos.1.saturating_sub(bounds.y() as i16).min(max_y);
             }
         }
-        *bounds = Self::get_bounds(outputs);
+        *bounds = get_bounds(outputs);
         *scale = ((w - VIEW_PADDING * 2) as f32 / bounds.width())
             .min((h - VIEW_PADDING * 2) as f32 / bounds.height()) as f64;
         *translate = (VIEW_PADDING as f64 / *scale, VIEW_PADDING as f64 / *scale);
-    }
-
-    fn get_bounds(outputs: &Vec<Output>) -> Rect {
-        let enabled_outputs = outputs.iter().filter(|&o| o.enabled).collect::<Vec<_>>();
-        if enabled_outputs.is_empty() {
-            return Rect::zero();
-        }
-        enabled_outputs
-            .iter()
-            .fold(enabled_outputs[0].rect(), |acc, &o| acc.union(&o.rect()))
     }
 
     fn on_draw(&self, cr: &cairo::Context, w: i32, h: i32) {
@@ -760,7 +750,7 @@ impl View {
 
     fn mind_the_gap_and_overlap(outputs: &mut Vec<Output>) {
         let mut data = HashMap::new();
-        let bounds = Self::get_bounds(outputs);
+        let bounds = get_bounds(outputs);
         let bc = bounds.center();
 
         for output in outputs.iter() {
