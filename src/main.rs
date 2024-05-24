@@ -377,8 +377,8 @@ fn on_apply_clicked(
                 );
                 return false;
             }
-            Err(_) => {
-                println!("General fail");
+            Err(e) => {
+                println!("{:?}", e);
                 return false;
             }
         }
@@ -398,11 +398,12 @@ fn apply_output_config(
     rr_crtcs: &HashMap<CrtcId, CrtcInfo>,
     rr_outputs: &HashMap<OutputId, OutputInfo>,
 ) -> Result<SetConfig, Box<dyn Error>> {
-    let mut crtc_id = rr_outputs[&output.id].crtc;
+    let output_info = &rr_outputs[&output.id];
+    let mut crtc_id = output_info.crtc;
     if output.enabled {
         if crtc_id == 0 {
             // If this output was disabled before get it a new empty CRTC.
-            if let Some(empty_id) = get_empty_crtc(rr_crtcs) {
+            if let Some(empty_id) = get_valid_empty_crtc(rr_crtcs, output.id, output_info) {
                 crtc_id = empty_id;
             } else {
                 println!("Failed to get empty CRTC for output {}", output.name);
@@ -413,7 +414,7 @@ fn apply_output_config(
             // first one listed, move it to a new empty CRTC.
             let crtc_info = &rr_crtcs[&crtc_id];
             if crtc_info.outputs.len() > 1 && crtc_info.outputs[0] != output.id {
-                if let Some(empty_id) = get_empty_crtc(rr_crtcs) {
+                if let Some(empty_id) = get_valid_empty_crtc(rr_crtcs, output.id, output_info) {
                     crtc_id = empty_id;
                 } else {
                     println!("Failed to get empty CRTC for output {}", output.name);
@@ -504,10 +505,17 @@ fn disable_crtc(conn: &RustConnection, crtc: CrtcId) -> Result<SetConfig, Box<dy
     .status)
 }
 
-fn get_empty_crtc(rr_crtcs: &HashMap<CrtcId, CrtcInfo>) -> Option<CrtcId> {
-    for (xid, crtc) in rr_crtcs {
-        if crtc.outputs.is_empty() {
-            return Some(*xid);
+fn get_valid_empty_crtc(
+    rr_crtcs: &HashMap<CrtcId, CrtcInfo>,
+    output_id: OutputId,
+    output_info: &OutputInfo,
+) -> Option<CrtcId> {
+    for (crtc_id, crtc) in rr_crtcs {
+        if crtc.outputs.is_empty()
+            && output_info.crtcs.contains(crtc_id)
+            && crtc.possible.contains(&output_id)
+        {
+            return Some(*crtc_id);
         }
     }
     None
@@ -634,7 +642,11 @@ fn print_crtcs(rr_crtcs: &HashMap<CrtcId, CrtcInfo>, rr_modes: &HashMap<ModeId, 
         println!("Pos:      +{}+{}", crtc.x, crtc.y);
         println!("Res:      {}x{}", crtc.width, crtc.height);
         if crtc.mode > 0 {
-            println!("Mode:     {}", Mode::from(rr_modes[&crtc.mode]));
+            println!(
+                "Mode:     {}: {}",
+                crtc.mode,
+                Mode::from(rr_modes[&crtc.mode])
+            );
         }
         println!("Outputs:  {:?}", crtc.outputs);
         println!("Rot:      {:#?}", crtc.rotation);
@@ -655,11 +667,11 @@ fn print_outputs(rr_outputs: &HashMap<OutputId, OutputInfo>, rr_modes: &HashMap<
             println!("Dim:   {}x{} mm", output.mm_width, output.mm_height);
             println!("Preferred modes:");
             for mode_id in &output.modes[0..output.num_preferred.into()] {
-                println!("    {}", Mode::from(rr_modes[mode_id]));
+                println!("    {}: {}", mode_id, Mode::from(rr_modes[mode_id]));
             }
             println!("Modes:");
             for mode_id in &output.modes {
-                println!("    {}", Mode::from(rr_modes[mode_id]));
+                println!("    {}: {}", mode_id, Mode::from(rr_modes[mode_id]));
             }
             println!("Clones: {:?}", output.clones);
             println!();
