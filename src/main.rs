@@ -1,5 +1,6 @@
 mod view;
 
+use core::fmt;
 use gtk::glib::ExitCode;
 use gtk::graphene::Rect;
 use gtk::prelude::*;
@@ -193,6 +194,12 @@ impl From<ModeInfo> for Mode {
     }
 }
 
+impl fmt::Display for Mode {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}x{}_{:.2}", self.width, self.height, self.refresh)
+    }
+}
+
 fn get_bounds(outputs: &Vec<Output>) -> Rect {
     let enabled_outputs = outputs.iter().filter(|&o| o.enabled).collect::<Vec<_>>();
     if enabled_outputs.is_empty() {
@@ -225,6 +232,11 @@ fn main() -> ExitCode {
     let rr_crtcs: HashMap<CrtcId, CrtcInfo> = get_crtcs(rr_crtcs).expect("reply for crtcs");
     let rr_modes: HashMap<ModeId, ModeInfo> =
         res.modes.into_iter().map(|m| return (m.id, m)).collect();
+
+    if cfg!(debug_assertions) {
+        print_crtcs(&rr_crtcs, &rr_modes);
+        print_outputs(&rr_outputs, &rr_modes);
+    }
 
     let mut outputs = Vec::new();
     for (id, output_info) in &rr_outputs {
@@ -612,4 +624,45 @@ fn get_monitor_name(conn: &RustConnection, output: OutputId) -> Option<String> {
         }
     }
     None
+}
+
+#[cfg(debug_assertions)]
+fn print_crtcs(rr_crtcs: &HashMap<CrtcId, CrtcInfo>, rr_modes: &HashMap<ModeId, ModeInfo>) {
+    for (crtc_id, crtc) in rr_crtcs {
+        println!("{:-^40}", format!(" CRTC {crtc_id} "));
+        println!("XID:      {}", crtc_id);
+        println!("Pos:      +{}+{}", crtc.x, crtc.y);
+        println!("Res:      {}x{}", crtc.width, crtc.height);
+        if crtc.mode > 0 {
+            println!("Mode:     {}", Mode::from(rr_modes[&crtc.mode]));
+        }
+        println!("Outputs:  {:?}", crtc.outputs);
+        println!("Rot:      {:#?}", crtc.rotation);
+        println!("Possible: {:?}", crtc.possible);
+        println!();
+    }
+}
+
+#[cfg(debug_assertions)]
+fn print_outputs(rr_outputs: &HashMap<OutputId, OutputInfo>, rr_modes: &HashMap<ModeId, ModeInfo>) {
+    for (output_id, output) in rr_outputs {
+        if output.connection == Connection::CONNECTED {
+            println!("{:-^40}", format!(" Output {output_id} "));
+            println!("XID:   {}", output_id);
+            println!("Name:  {}", String::from_utf8_lossy(&output.name));
+            println!("CRTC:  {}", output.crtc);
+            println!("CRTCs: {:?}", output.crtcs);
+            println!("Dim:   {}x{} mm", output.mm_width, output.mm_height);
+            println!("Preferred modes:");
+            for mode_id in &output.modes[0..output.num_preferred.into()] {
+                println!("    {}", Mode::from(rr_modes[mode_id]));
+            }
+            println!("Modes:");
+            for mode_id in &output.modes {
+                println!("    {}", Mode::from(rr_modes[mode_id]));
+            }
+            println!("Clones: {:?}", output.clones);
+            println!();
+        }
+    }
 }
