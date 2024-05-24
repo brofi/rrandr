@@ -10,7 +10,7 @@ use gtk::{
     DropTarget, Entry, EventControllerMotion, FlowBox, FlowBoxChild, Frame, GestureClick,
     GestureDrag, Label, Orientation, Paned, SelectionMode, StringList, Switch, Widget,
 };
-use pango::{FontDescription, Weight};
+use pango::{Alignment, FontDescription, Weight};
 use pangocairo::functions::{create_layout, show_layout};
 use std::{
     cell::RefCell,
@@ -393,11 +393,13 @@ impl View {
                     Self::draw_selected_output(cr, x, y, w, h);
                 }
             }
-            let mut label = o.name.to_owned();
+            let mut name = o.name.to_owned();
+            let mut product_name = o.product_name.to_owned();
             if o.primary {
-                label = format!("[{label}]");
+                name = format!("[{name}]");
+                product_name = product_name.and_then(|s| Some(format!("[{s}]")));
             }
-            Self::draw_output_label(cr, x, y, w, h, &label);
+            Self::draw_output_label(cr, x, y, w, h, &name, product_name.as_deref());
         }
     }
 
@@ -416,7 +418,15 @@ impl View {
             {
                 let pos = Self::get_disabled_output_pos(j, dim[1]);
                 Self::draw_output(cr, pos[0], pos[1], dim[0], dim[1]);
-                Self::draw_output_label(cr, pos[0], pos[1], dim[0], dim[1], o.name.as_str());
+                Self::draw_output_label(
+                    cr,
+                    pos[0],
+                    pos[1],
+                    dim[0],
+                    dim[1],
+                    &o.name,
+                    o.product_name.as_deref(),
+                );
                 if let Some(i) = *i_select {
                     if outputs[i].id == o.id {
                         Self::draw_selected_output(cr, pos[0], pos[1], dim[0], dim[1]);
@@ -478,23 +488,33 @@ impl View {
         cr.stroke().unwrap();
     }
 
-    fn draw_output_label(cr: &cairo::Context, x: f64, y: f64, w: f64, h: f64, label: &str) {
+    fn draw_output_label(
+        cr: &cairo::Context,
+        x: f64,
+        y: f64,
+        w: f64,
+        h: f64,
+        name: &str,
+        product_name: Option<&str>,
+    ) {
         cr.save().unwrap();
-        let layout = create_layout(cr);
-        layout.set_text(label);
         let mut desc = FontDescription::new();
         desc.set_family("monospace");
         // desc.set_size(12);
         desc.set_weight(Weight::Bold);
+
+        let layout = create_layout(cr);
         layout.set_font_description(Some(&desc));
+        layout.set_alignment(Alignment::Center);
 
         cr.set_source_color(&COLOR_BG0);
         cr.move_to(x + w / 2., y + h / 2.);
 
+        layout.set_text(product_name.unwrap_or(name));
         let ps = layout.pixel_size();
         cr.rel_move_to(-ps.0 as f64 / 2., -ps.1 as f64 / 2.);
-
         show_layout(cr, &layout);
+
         cr.restore().unwrap();
     }
 
@@ -941,7 +961,12 @@ impl View {
                 disabled_area.height(),
                 disabled_outputs.len(),
             );
-            if let Ok(icon) = Self::create_drag_icon(dim[0], dim[1], &outputs[i].name) {
+            if let Ok(icon) = Self::create_drag_icon(
+                dim[0],
+                dim[1],
+                &outputs[i].name,
+                outputs[i].product_name.as_deref(),
+            ) {
                 let j = outputs
                     .iter()
                     .filter(|&o| !o.enabled)
@@ -1032,12 +1057,13 @@ impl View {
     fn create_drag_icon(
         w: f64,
         h: f64,
-        label: &str,
+        name: &str,
+        product_name: Option<&str>,
     ) -> Result<impl IsA<Paintable>, Box<dyn Error>> {
         let surface = cairo::ImageSurface::create(cairo::Format::ARgb32, w as i32, h as i32)?;
         let cr = cairo::Context::new(&surface)?;
         Self::draw_output(&cr, 0., 0., w, h);
-        Self::draw_output_label(&cr, 0., 0., w, h, label);
+        Self::draw_output_label(&cr, 0., 0., w, h, name, product_name);
         cr.fill()?;
         drop(cr);
         surface.flush();

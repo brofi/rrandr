@@ -6,17 +6,17 @@ use gtk::prelude::*;
 use gtk::{Application, ApplicationWindow};
 use std::collections::HashMap;
 use std::error::Error;
-use x11rb::protocol::xproto::Screen;
+use x11rb::protocol::xproto::{intern_atom, AtomEnum, Screen};
 
 use std::rc::Rc;
 use view::View;
 use x11rb::cookie::Cookie;
 use x11rb::errors::{ConnectionError, ReplyError};
 use x11rb::protocol::randr::{
-    get_crtc_info, get_output_primary, get_screen_size_range, set_crtc_config, set_output_primary,
-    set_screen_size, Connection, Crtc as CrtcId, GetCrtcInfoReply, GetScreenResourcesCurrentReply,
-    GetScreenSizeRangeReply, Mode as ModeId, ModeFlag, ModeInfo, Output as OutputId, Rotation,
-    ScreenSize, SetConfig,
+    get_crtc_info, get_output_primary, get_output_property, get_screen_size_range, set_crtc_config,
+    set_output_primary, set_screen_size, Connection, Crtc as CrtcId, GetCrtcInfoReply,
+    GetScreenResourcesCurrentReply, GetScreenSizeRangeReply, Mode as ModeId, ModeFlag, ModeInfo,
+    Output as OutputId, Rotation, ScreenSize, SetConfig,
 };
 
 use x11rb::CURRENT_TIME;
@@ -39,6 +39,7 @@ const MM_PER_INCH: f32 = 25.4;
 pub struct Output {
     id: OutputId,
     name: String,
+    product_name: Option<String>,
     enabled: bool,
     primary: bool,
     pos: Option<(i16, i16)>,
@@ -241,6 +242,7 @@ fn main() -> ExitCode {
         outputs.push(Output {
             id: *id,
             name: String::from_utf8_lossy(&output_info.name).into_owned(),
+            product_name: get_monitor_name(&conn, *id),
             enabled,
             primary: *id == primary.output,
             pos,
@@ -565,4 +567,49 @@ fn get_refresh_rate(mode_info: &ModeInfo) -> f64 {
     } else {
         0.0
     }
+}
+
+fn get_edid(conn: &RustConnection, output: OutputId) -> Result<Vec<u8>, Box<dyn Error>> {
+    let name = "EDID";
+    let property = intern_atom(conn, true, name.as_bytes())?.reply()?.atom;
+    if property == AtomEnum::NONE.into() {
+        return Err(format!("No property named: {}", name).into());
+    }
+    Ok(get_output_property(
+        conn,
+        output,
+        property,
+        AtomEnum::INTEGER,
+        0,
+        256,
+        false,
+        false,
+    )?
+    .reply()?
+    .data)
+}
+
+fn get_monitor_name(conn: &RustConnection, output: OutputId) -> Option<String> {
+    if let Ok(edid) = get_edid(conn, output) {
+        if edid.len() >= 128 {
+            let version = edid[0x12];
+            let revision = edid[0x13];
+            if version == 1 && (revision == 3 || revision == 4) {
+                let mut i = 0x48;
+                while i <= 0x6C {
+                    // This 18 byte descriptor is a used as a display descriptor
+                    // with a tag 0xFC (display product name).
+                    if edid[i..(i + 3)] == [0, 0, 0] && edid[i + 3] == 0xFC && edid[i + 4] == 0 {
+                        return Some(
+                            String::from_utf8_lossy(&edid[(i + 5)..(i + 18)])
+                                .trim_end()
+                                .to_string(),
+                        );
+                    }
+                    i += 18;
+                }
+            }
+        }
+    }
+    None
 }
