@@ -7,9 +7,8 @@ use gtk::prelude::*;
 use gtk::{Application, ApplicationWindow};
 use std::collections::HashMap;
 use std::error::Error;
-use x11rb::protocol::xproto::{intern_atom, AtomEnum, Screen};
+use x11rb::protocol::xproto::{intern_atom, AtomEnum};
 
-use std::rc::Rc;
 use view::View;
 use x11rb::cookie::Cookie;
 use x11rb::errors::{ConnectionError, ReplyError};
@@ -274,12 +273,10 @@ fn main() -> ExitCode {
             dim: [output_info.mm_width, output_info.mm_height],
         });
     }
-    let conn = Rc::new(conn);
     let app = Application::builder().application_id(APP_ID).build();
     app.connect_activate(move |app| {
-        build_ui(app, outputs.clone(), screen_size_range, {
-            let conn = Rc::clone(&conn);
-            move |outputs| on_apply_clicked(&conn, screen_num, &screen_size_range, &outputs)
+        build_ui(app, outputs.clone(), screen_size_range, move |outputs| {
+            on_apply_clicked(&screen_size_range, &outputs)
         })
     });
     app.run()
@@ -303,12 +300,8 @@ fn build_ui(
     window.present();
 }
 
-fn on_apply_clicked(
-    conn: &RustConnection,
-    screen_num: usize,
-    screen_size_range: &ScreenSizeRange,
-    outputs: &Vec<Output>,
-) -> bool {
+fn on_apply_clicked(screen_size_range: &ScreenSizeRange, outputs: &Vec<Output>) -> bool {
+    let (conn, screen_num) = x11rb::connect(None).expect("connection to X Server");
     let screen = &conn.setup().roots[screen_num];
     let res = get_screen_resources_current(&conn, screen.root)
         .expect("cookie to request screen resources");
@@ -327,7 +320,7 @@ fn on_apply_clicked(
         let crtc_id = rr_outputs[&output.id].crtc;
         if crtc_id > 0 {
             if !output.enabled {
-                match disable_crtc(conn, rr_outputs[&output.id].crtc) {
+                match disable_crtc(&conn, rr_outputs[&output.id].crtc) {
                     Ok(SetConfig::FAILED) | Err(_) => {
                         println!("Failed to disable CRTC {}", crtc_id);
                         return false;
@@ -344,7 +337,7 @@ fn on_apply_clicked(
                     || crtc.y as i32 + crtc.height as i32 > screen_size.height as i32
                 {
                     println!("CRTC {} currently doesn't fit the new screen size", crtc_id);
-                    match disable_crtc(conn, rr_outputs[&output.id].crtc) {
+                    match disable_crtc(&conn, rr_outputs[&output.id].crtc) {
                         Ok(SetConfig::FAILED) | Err(_) => {
                             println!("Failed to disable CRTC {}", crtc_id);
                             return false;
@@ -363,7 +356,7 @@ fn on_apply_clicked(
         );
 
         match set_screen_size(
-            conn,
+            &conn,
             screen.root,
             screen_size.width,
             screen_size.height,
@@ -409,7 +402,7 @@ fn on_apply_clicked(
                     }
                 }
             }
-            match update_crtc(conn, crtc_id, output) {
+            match update_crtc(&conn, crtc_id, output) {
                 Ok(SetConfig::SUCCESS) => println!("Great success"),
                 Ok(SetConfig::FAILED) => {
                     println!("Failed to set config for output {}", output.name);
@@ -430,7 +423,7 @@ fn on_apply_clicked(
         }
 
         if output.primary {
-            if set_output_primary(conn, screen.root, output.id).is_err() {
+            if set_output_primary(&conn, screen.root, output.id).is_err() {
                 println!("Failed to set primary output");
                 return false;
             }
