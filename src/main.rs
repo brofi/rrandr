@@ -35,6 +35,7 @@ type Resolution = [u16; 2];
 const APP_ID: &str = "com.github.brofi.rrandr";
 const RESOLUTION_JOIN_CHAR: char = 'x';
 const MM_PER_INCH: f32 = 25.4;
+const PPI_DEFAULT: u8 = 96;
 
 #[derive(Clone, Debug)]
 pub struct Output {
@@ -46,9 +47,19 @@ pub struct Output {
     pos: Option<(i16, i16)>,
     mode: Option<Mode>,
     modes: Vec<Mode>,
+    dim: [u32; 2],
 }
 
 impl Output {
+    fn ppi(&self) -> f32 {
+        if let Some(mode) = &self.mode {
+            if self.dim[1] > 0 {
+                return (MM_PER_INCH * mode.height as f32) / self.dim[1] as f32;
+            }
+        }
+        PPI_DEFAULT as f32
+    }
+
     fn left(&self) -> i32 {
         self.pos.unwrap().0.into()
     }
@@ -260,6 +271,7 @@ fn main() -> ExitCode {
             pos,
             mode,
             modes: get_modes_for_output(&output_info, &rr_modes),
+            dim: [output_info.mm_width, output_info.mm_height],
         });
     }
     let conn = Rc::new(conn);
@@ -307,81 +319,116 @@ fn on_apply_clicked(
         get_outputs(rr_outputs).expect("reply for outputs");
     let rr_crtcs: HashMap<CrtcId, CrtcInfo> = get_crtcs(rr_crtcs).expect("reply for crtcs");
 
-    let screen_size = get_screen_size(screen, outputs);
-    if screen_size.width < screen_size_range.min_width
-        || screen_size.height < screen_size_range.min_height
-    {
-        println!(
-            "Screen size must be bigger than {}x{}",
-            screen_size_range.min_width, screen_size_range.min_height
-        );
-        return false;
-    }
-    if screen_size.width > screen_size_range.max_width
-        || screen_size.height > screen_size_range.max_height
-    {
-        println!(
-            "Screen size must be smaller than {}x{}",
-            screen_size_range.max_width, screen_size_range.max_height
-        );
-        return false;
-    }
-
-    println!(
-        "Setting screen size to {}x{} px, {}x{} mm",
-        screen_size.width, screen_size.height, screen_size.mwidth, screen_size.mheight
-    );
-    if set_screen_size(
-        conn,
-        screen.root,
-        screen_size.width,
-        screen_size.height,
-        screen_size.mwidth.into(),
-        screen_size.mheight.into(),
-    )
-    .is_err()
-    {
-        println!("Failed to set screen size");
-        return false;
-    };
+    let screen_size = get_screen_size(screen_size_range, outputs);
+    let screen_size_changed = screen.width_in_pixels != screen_size.width
+        || screen.height_in_pixels != screen_size.height;
 
     for output in outputs {
-        if let (Some(pos), Some(mode)) = (output.pos, &output.mode) {
-            if pos.0 as i32 + mode.width as i32 > screen_size.width as i32
-                || pos.1 as i32 + mode.height as i32 > screen_size.height as i32
-            {
-                println!(
-                    "Output {} at +{}+{} with dimension {}x{} exceeds screen boundaries {}x{}",
-                    output.name,
-                    pos.0,
-                    pos.1,
-                    mode.width,
-                    mode.height,
-                    screen_size.width,
-                    screen_size.height
-                );
+        let crtc_id = rr_outputs[&output.id].crtc;
+        if crtc_id > 0 {
+            if !output.enabled {
+                match disable_crtc(conn, rr_outputs[&output.id].crtc) {
+                    Ok(SetConfig::FAILED) | Err(_) => {
+                        println!("Failed to disable CRTC {}", crtc_id);
+                        return false;
+                    }
+                    _ => (),
+                }
+            } else if screen_size_changed {
+                // Disable outputs that stay enabled but currently don't fit the
+                // new screen size. This needs to be done to avoid an invalid
+                // intermediate configuration when actually setting the new screen
+                // size.
+                let crtc = &rr_crtcs[&crtc_id];
+                if crtc.x as i32 + crtc.width as i32 > screen_size.width as i32
+                    || crtc.y as i32 + crtc.height as i32 > screen_size.height as i32
+                {
+                    println!("CRTC {} currently doesn't fit the new screen size", crtc_id);
+                    match disable_crtc(conn, rr_outputs[&output.id].crtc) {
+                        Ok(SetConfig::FAILED) | Err(_) => {
+                            println!("Failed to disable CRTC {}", crtc_id);
+                            return false;
+                        }
+                        _ => (),
+                    }
+                }
+            }
+        }
+    }
+
+    if screen_size_changed {
+        println!(
+            "Setting screen size to {}x{} px, {}x{} mm",
+            screen_size.width, screen_size.height, screen_size.mwidth, screen_size.mheight
+        );
+
+        match set_screen_size(
+            conn,
+            screen.root,
+            screen_size.width,
+            screen_size.height,
+            screen_size.mwidth.into(),
+            screen_size.mheight.into(),
+        ) {
+            Ok(cookie) => {
+                if let Err(e) = cookie.check() {
+                    println!("Failed to set screen size: {}", e);
+                    return false;
+                }
+            }
+            Err(e) => {
+                println!("Failed to request set screen size: {}", e);
                 return false;
+            }
+        }
+    }
+
+    for output in outputs {
+        let output_info = &rr_outputs[&output.id];
+        let mut crtc_id = output_info.crtc;
+        if output.enabled {
+            if crtc_id == 0 {
+                // If this output was disabled before get it a new empty CRTC.
+                if let Some(empty_id) = get_valid_empty_crtc(&rr_crtcs, output.id, output_info) {
+                    crtc_id = empty_id;
+                } else {
+                    println!("Failed to get empty CRTC for output {}", output.name);
+                    return false;
+                }
+            } else {
+                // If this output shares a CRTC with other outputs and its not the
+                // first one listed, move it to a new empty CRTC.
+                let crtc_info = &rr_crtcs[&crtc_id];
+                if crtc_info.outputs.len() > 1 && crtc_info.outputs[0] != output.id {
+                    if let Some(empty_id) = get_valid_empty_crtc(&rr_crtcs, output.id, output_info)
+                    {
+                        crtc_id = empty_id;
+                    } else {
+                        println!("Failed to get empty CRTC for output {}", output.name);
+                        return false;
+                    }
+                }
+            }
+            match update_crtc(conn, crtc_id, output) {
+                Ok(SetConfig::SUCCESS) => println!("Great success"),
+                Ok(SetConfig::FAILED) => {
+                    println!("Failed to set config for output {}", output.name);
+                    return false;
+                }
+                Ok(status) => {
+                    println!(
+                        "Failed to set config for output {}, reason: {:#?}",
+                        output.name, status
+                    );
+                    return false;
+                }
+                Err(e) => {
+                    println!("{:?}", e);
+                    return false;
+                }
             }
         }
 
-        match apply_output_config(conn, output, &rr_crtcs, &rr_outputs) {
-            Ok(SetConfig::SUCCESS) => println!("Great success"),
-            Ok(SetConfig::FAILED) => {
-                println!("Failed to set config for output {}", output.name);
-                return false;
-            }
-            Ok(status) => {
-                println!(
-                    "Failed to set config for output {}, reason: {:#?}",
-                    output.name, status
-                );
-                return false;
-            }
-            Err(e) => {
-                println!("{:?}", e);
-                return false;
-            }
-        }
         if output.primary {
             if set_output_primary(conn, screen.root, output.id).is_err() {
                 println!("Failed to set primary output");
@@ -392,68 +439,25 @@ fn on_apply_clicked(
     true
 }
 
-fn apply_output_config(
-    conn: &RustConnection,
-    output: &Output,
-    rr_crtcs: &HashMap<CrtcId, CrtcInfo>,
-    rr_outputs: &HashMap<OutputId, OutputInfo>,
-) -> Result<SetConfig, Box<dyn Error>> {
-    let output_info = &rr_outputs[&output.id];
-    let mut crtc_id = output_info.crtc;
-    if output.enabled {
-        if crtc_id == 0 {
-            // If this output was disabled before get it a new empty CRTC.
-            if let Some(empty_id) = get_valid_empty_crtc(rr_crtcs, output.id, output_info) {
-                crtc_id = empty_id;
-            } else {
-                println!("Failed to get empty CRTC for output {}", output.name);
-                return Ok(SetConfig::FAILED);
-            }
-        } else {
-            // If this output shares a CRTC with other outputs and its not the
-            // first one listed, move it to a new empty CRTC.
-            let crtc_info = &rr_crtcs[&crtc_id];
-            if crtc_info.outputs.len() > 1 && crtc_info.outputs[0] != output.id {
-                if let Some(empty_id) = get_valid_empty_crtc(rr_crtcs, output.id, output_info) {
-                    crtc_id = empty_id;
-                } else {
-                    println!("Failed to get empty CRTC for output {}", output.name);
-                    return Ok(SetConfig::FAILED);
-                }
-            }
-        }
-        update_crtc(conn, crtc_id, output)
-    } else {
-        if crtc_id > 0 {
-            // If this output was enabled before, disable its CRTC.
-            println!("Disable output {} on CRTC {}", output.name, crtc_id);
-            return disable_crtc(conn, crtc_id);
-        }
-        println!("Nothing to do for output {}", output.name);
-        Ok(SetConfig::SUCCESS)
-    }
-}
-
-fn get_screen_size(screen: &Screen, outputs: &Vec<Output>) -> ScreenSize {
+fn get_screen_size(screen_size_range: &ScreenSizeRange, outputs: &Vec<Output>) -> ScreenSize {
     let bounds = get_bounds(&outputs);
-    let width = bounds.width() as u16;
-    let height = bounds.height() as u16;
+    let width = screen_size_range
+        .min_width
+        .max(screen_size_range.max_width.min(bounds.width() as u16));
+    let height = screen_size_range
+        .min_height
+        .max(screen_size_range.max_width.min(bounds.height() as u16));
 
-    let mut mwidth = screen.width_in_millimeters;
-    let mut mheight = screen.height_in_millimeters;
-
-    if width != screen.width_in_pixels || height != screen.height_in_pixels {
-        let dpi =
-            (MM_PER_INCH * screen.height_in_pixels as f32) / screen.height_in_millimeters as f32;
-        mwidth = ((MM_PER_INCH * width as f32) / dpi) as u16;
-        mheight = ((MM_PER_INCH * height as f32) / dpi) as u16;
+    let mut ppi = PPI_DEFAULT as f32;
+    if let Some(primary) = outputs.iter().find(|&o| o.primary) {
+        ppi = primary.ppi();
     }
 
     ScreenSize {
         width,
         height,
-        mwidth,
-        mheight,
+        mwidth: ((MM_PER_INCH * width as f32) / ppi) as u16,
+        mheight: ((MM_PER_INCH * height as f32) / ppi) as u16,
     }
 }
 
@@ -472,7 +476,7 @@ fn update_crtc(
     };
     println!(
         "Trying to set output {} to CTRC {} at position +{}+{} with mode {}",
-        output.name, crtc, pos.0, pos.1, mode.id
+        output.name, crtc, pos.0, pos.1, mode
     );
     Ok(set_crtc_config(
         conn,
