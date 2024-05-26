@@ -312,7 +312,8 @@ fn on_apply_clicked(screen_size_range: &ScreenSizeRange, outputs: &Vec<Output>) 
         get_outputs(rr_outputs).expect("reply for outputs");
     let rr_crtcs: HashMap<CrtcId, CrtcInfo> = get_crtcs(rr_crtcs).expect("reply for crtcs");
 
-    let screen_size = get_screen_size(screen_size_range, outputs);
+    let primary = outputs.iter().find(|&o| o.primary);
+    let screen_size = get_screen_size(screen_size_range, outputs, primary);
     let screen_size_changed = screen.width_in_pixels != screen_size.width
         || screen.height_in_pixels != screen_size.height;
 
@@ -421,18 +422,20 @@ fn on_apply_clicked(screen_size_range: &ScreenSizeRange, outputs: &Vec<Output>) 
                 }
             }
         }
-
-        if output.primary {
-            if set_output_primary(&conn, screen.root, output.id).is_err() {
-                println!("Failed to set primary output");
-                return false;
-            }
-        }
+    }
+    let primary_id = primary.and_then(|p| Some(p.id)).unwrap_or_default();
+    if set_output_primary(&conn, screen.root, primary_id).is_err() {
+        println!("Failed to set primary output");
+        return false;
     }
     true
 }
 
-fn get_screen_size(screen_size_range: &ScreenSizeRange, outputs: &Vec<Output>) -> ScreenSize {
+fn get_screen_size(
+    screen_size_range: &ScreenSizeRange,
+    outputs: &Vec<Output>,
+    primary: Option<&Output>,
+) -> ScreenSize {
     let bounds = get_bounds(&outputs);
     let width = screen_size_range
         .min_width
@@ -441,10 +444,9 @@ fn get_screen_size(screen_size_range: &ScreenSizeRange, outputs: &Vec<Output>) -
         .min_height
         .max(screen_size_range.max_width.min(bounds.height() as u16));
 
-    let mut ppi = PPI_DEFAULT as f32;
-    if let Some(primary) = outputs.iter().find(|&o| o.primary) {
-        ppi = primary.ppi();
-    }
+    let ppi = primary
+        .and_then(|p| Some(p.ppi()))
+        .unwrap_or(PPI_DEFAULT as f32);
 
     ScreenSize {
         width,
