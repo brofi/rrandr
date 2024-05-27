@@ -50,7 +50,7 @@ pub struct View {
 }
 
 impl View {
-    pub fn new(
+    pub fn create(
         outputs: Vec<Output>,
         size: ScreenSizeRange,
         apply_callback: impl Fn(Vec<Output>) -> bool + 'static,
@@ -152,9 +152,9 @@ impl View {
             @strong disabled_area
             => move |_btn| {
                 if apply_callback(shared.outputs.borrow().clone()) {
-                    *shared.outputs_orig.borrow_mut() = shared.outputs.borrow().clone();
+                    shared.outputs_orig.borrow_mut().clone_from(&shared.outputs.borrow());
                 } else {
-                    *shared.outputs.borrow_mut() = shared.outputs_orig.borrow().clone();
+                    shared.outputs.borrow_mut().clone_from(&shared.outputs_orig.borrow());
                     Self::resize(
                         enabled_area.width(),
                         enabled_area.height(),
@@ -360,7 +360,7 @@ impl View {
         scale: &mut f64,
         translate: &mut (f64, f64),
         bounds: &mut Rect,
-        outputs: &mut Vec<Output>,
+        outputs: &mut [Output],
     ) {
         // Translate to x = y = 0
         *bounds = get_bounds(outputs);
@@ -414,7 +414,7 @@ impl View {
             let mut product_name = o.product_name.to_owned();
             if o.primary {
                 name = format!("[{name}]");
-                product_name = product_name.and_then(|s| Some(format!("[{s}]")));
+                product_name = product_name.map(|s| format!("[{s}]"));
             }
             Self::draw_output_label(cr, x, y, w, h, &name, product_name.as_deref());
         }
@@ -454,7 +454,7 @@ impl View {
         }
     }
 
-    fn get_disabled_outputs(outputs: &Vec<Output>) -> Vec<&Output> {
+    fn get_disabled_outputs(outputs: &[Output]) -> Vec<&Output> {
         outputs.iter().filter(|&n| !n.enabled).collect::<Vec<_>>()
     }
 
@@ -1151,8 +1151,8 @@ impl View {
         if dd_refresh_model.is_some() {
             *self.skip_update_output.borrow_mut() = true;
             dd_refresh.set_model(dd_refresh_model.as_ref());
-            if dd_refresh_index.is_some() {
-                dd_refresh.set_selected(dd_refresh_index.unwrap() as u32);
+            if let Some(idx) = dd_refresh_index {
+                dd_refresh.set_selected(idx as u32);
             }
             *self.skip_update_output.borrow_mut() = false;
         }
@@ -1266,7 +1266,9 @@ impl View {
         disabled_area: &DrawingArea,
         details_ui: &impl IsA<Widget>,
     ) {
-        *self.outputs.borrow_mut() = self.outputs_orig.borrow().clone();
+        self.outputs
+            .borrow_mut()
+            .clone_from(&self.outputs_orig.borrow());
         // Disable selection
         *self.selected_output.borrow_mut() = None;
         self.update_details_visibility(details_ui);

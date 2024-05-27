@@ -211,7 +211,7 @@ impl fmt::Display for Mode {
     }
 }
 
-fn get_bounds(outputs: &Vec<Output>) -> Rect {
+fn get_bounds(outputs: &[Output]) -> Rect {
     let enabled_outputs = outputs.iter().filter(|&o| o.enabled).collect::<Vec<_>>();
     if enabled_outputs.is_empty() {
         return Rect::zero();
@@ -241,8 +241,7 @@ fn main() -> ExitCode {
     let rr_outputs: HashMap<OutputId, OutputInfo> =
         get_outputs(rr_outputs).expect("reply for outputs");
     let rr_crtcs: HashMap<CrtcId, CrtcInfo> = get_crtcs(rr_crtcs).expect("reply for crtcs");
-    let rr_modes: HashMap<ModeId, ModeInfo> =
-        res.modes.into_iter().map(|m| return (m.id, m)).collect();
+    let rr_modes: HashMap<ModeId, ModeInfo> = res.modes.into_iter().map(|m| (m.id, m)).collect();
 
     if cfg!(debug_assertions) {
         print_crtcs(&rr_crtcs, &rr_modes);
@@ -270,7 +269,7 @@ fn main() -> ExitCode {
             primary: *id == primary.output,
             pos,
             mode,
-            modes: get_modes_for_output(&output_info, &rr_modes),
+            modes: get_modes_for_output(output_info, &rr_modes),
             dim: [output_info.mm_width, output_info.mm_height],
         });
     }
@@ -296,7 +295,7 @@ fn build_ui(
         .title("RRandR")
         .build();
 
-    let view = View::new(outputs, size, on_apply);
+    let view = View::create(outputs, size, on_apply);
     window.set_child(Some(&view));
     window.present();
 }
@@ -390,7 +389,7 @@ fn on_apply_clicked(screen_size_range: &ScreenSizeRange, outputs: &Vec<Output>) 
     }
 
     // Set primary output
-    let primary_id = primary.and_then(|p| Some(p.id)).unwrap_or_default();
+    let primary_id = primary.map(|p| p.id).unwrap_or_default();
     if handle_no_reply_error(
         set_output_primary(&conn, screen.root, primary_id),
         "set primary output",
@@ -402,10 +401,10 @@ fn on_apply_clicked(screen_size_range: &ScreenSizeRange, outputs: &Vec<Output>) 
 
 fn get_screen_size(
     screen_size_range: &ScreenSizeRange,
-    outputs: &Vec<Output>,
+    outputs: &[Output],
     primary: Option<&Output>,
 ) -> ScreenSize {
-    let bounds = get_bounds(&outputs);
+    let bounds = get_bounds(outputs);
     let width = screen_size_range
         .min_width
         .max(screen_size_range.max_width.min(bounds.width() as u16));
@@ -413,9 +412,7 @@ fn get_screen_size(
         .min_height
         .max(screen_size_range.max_width.min(bounds.height() as u16));
 
-    let ppi = primary
-        .and_then(|p| Some(p.ppi()))
-        .unwrap_or(PPI_DEFAULT as f32);
+    let ppi = primary.map(|p| p.ppi()).unwrap_or(PPI_DEFAULT as f32);
 
     ScreenSize {
         width,
@@ -527,7 +524,7 @@ fn x_error_to_string(e: X11Error) -> String {
         e.error_kind,
         e.bad_value,
         e.request_name
-            .and_then(|s| Some(" in request ".to_string() + s))
+            .map(|s| " in request ".to_string() + s)
             .unwrap_or_default()
     )
 }
