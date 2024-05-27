@@ -370,8 +370,11 @@ fn on_apply_clicked(screen_size_range: &ScreenSizeRange, outputs: &Vec<Output>) 
         }
         let output_info = &rr_outputs[&output.id];
         let mut crtc_id = output_info.crtc;
-        let crtc_info = &rr_crtcs[&crtc_id];
-        if crtc_id == 0 || (crtc_info.outputs.len() > 1 && crtc_info.outputs[0] != output.id) {
+        if crtc_id == 0
+            || rr_crtcs
+                .get(&crtc_id)
+                .is_some_and(|ci: &CrtcInfo| ci.outputs.len() > 1 && ci.outputs[0] != output.id)
+        {
             // If this output was disabled before get it a new empty CRTC.
             // If this output is enabled, shares a CRTC with other outputs and
             // its not the first one listed, move it to a new empty CRTC.
