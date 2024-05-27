@@ -597,6 +597,8 @@ impl View {
         en_position: &Entry,
     ) {
         if let Some(i) = *self.selected_output.borrow() {
+            *self.skip_update_output.borrow_mut() = true;
+
             // Update Actionables
             let enabled = self.outputs.borrow()[i].enabled;
             sw_enabled.set_active(enabled);
@@ -609,11 +611,9 @@ impl View {
             // Update resolution drop down.
             // Note: `DropDown::set_model` and `DropDown::set_selected` trigger
             // `on_refresh_rate_selected`.
-
             // When changing the dropdown model the triggered call should not
             // change the output data. Otherwise switching through outputs
             // would mean resetting them back to default values.
-            *self.skip_update_output.borrow_mut() = true;
 
             // When the index of the resolution dropdown should be 0 the refresh
             // rate dropdown has to be updated after a model change because there
@@ -633,8 +633,8 @@ impl View {
                 *self.skip_update_refresh_model.borrow_mut() = false;
                 dd_resolution.set_selected(dd_res_index.unwrap() as u32);
             }
-            *self.skip_update_output.borrow_mut() = false;
             *self.skip_update_refresh_model.borrow_mut() = false;
+            *self.skip_update_output.borrow_mut() = false;
         }
     }
 
@@ -918,8 +918,10 @@ impl View {
             self.get_disabled_output_index_at(x, y, disabled_area.width(), disabled_area.height())
         {
             *self.selected_output.borrow_mut() = Some(i);
+            *self.skip_update_output.borrow_mut() = true;
             let enabled = self.outputs.borrow()[i].enabled;
             sw_enabled.set_active(enabled);
+            *self.skip_update_output.borrow_mut() = false;
         } else {
             *self.selected_output.borrow_mut() = None;
         }
@@ -1047,6 +1049,7 @@ impl View {
                 (y / *scale - translate.1) as i16,
             ));
 
+            Self::mind_the_gap_and_overlap(&mut outputs);
             Self::resize(
                 drawing_area.width(),
                 drawing_area.height(),
@@ -1156,28 +1159,32 @@ impl View {
     }
 
     fn on_refresh_rate_selected(&self, dd_refresh: &DropDown, dd_resolution: &DropDown) {
-        if !*self.skip_update_output.borrow() {
-            if let Some(i) = *self.selected_output.borrow() {
-                let mut outputs = self.outputs.borrow_mut();
-                if !outputs[i].enabled {
-                    return;
-                }
+        if *self.skip_update_output.borrow() {
+            return;
+        }
+        if let Some(i) = *self.selected_output.borrow() {
+            let mut outputs = self.outputs.borrow_mut();
+            if !outputs[i].enabled {
+                return;
+            }
 
-                // Update current mode
-                let mode = &outputs[i].modes[outputs[i].refresh_rate_dropdown_mode_index(
-                    dd_resolution.selected() as usize,
-                    dd_refresh.selected() as usize,
-                )];
-                if outputs[i].mode.as_ref().is_some_and(|m| m.id != mode.id)
-                    || outputs[i].mode.is_none()
-                {
-                    outputs[i].mode = Some(mode.clone());
-                }
+            // Update current mode
+            let mode = &outputs[i].modes[outputs[i].refresh_rate_dropdown_mode_index(
+                dd_resolution.selected() as usize,
+                dd_refresh.selected() as usize,
+            )];
+            if outputs[i].mode.as_ref().is_some_and(|m| m.id != mode.id)
+                || outputs[i].mode.is_none()
+            {
+                outputs[i].mode = Some(mode.clone());
             }
         }
     }
 
     fn on_primary_checked(&self, cb_primary: &CheckButton, drawing_area: &DrawingArea) {
+        if *self.skip_update_output.borrow() {
+            return;
+        }
         if let Some(i) = *self.selected_output.borrow() {
             let mut outputs = self.outputs.borrow_mut();
             if !outputs[i].enabled {
@@ -1205,6 +1212,9 @@ impl View {
         disabled_area: &DrawingArea,
         details_ui: &impl IsA<Widget>,
     ) {
+        if *self.skip_update_output.borrow() {
+            return;
+        }
         let Some(i) = *self.selected_output.borrow() else {
             return;
         };
