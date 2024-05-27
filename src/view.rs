@@ -1,4 +1,4 @@
-use crate::{get_bounds, Output, ScreenSizeRange};
+use crate::{get_bounds, nearly_eq, Output, ScreenSizeRange};
 use gdk::{
     glib::{clone, Bytes, Type, Value},
     ContentProvider, Drag, DragAction, MemoryTexture, Paintable, RGBA,
@@ -12,15 +12,9 @@ use gtk::{
 };
 use pango::{Alignment, FontDescription, Weight};
 use pangocairo::functions::{create_layout, show_layout};
-use std::{
-    cell::RefCell,
-    collections::HashMap,
-    error::Error,
-    ops::{Deref, DerefMut},
-    rc::Rc,
-};
+use std::{cell::RefCell, collections::HashMap, error::Error, ops::Deref, rc::Rc};
 
-pub const VIEW_PADDING: i32 = 10;
+pub const VIEW_PADDING: u16 = 10;
 const COLOR_GREEN: RGBA = RGBA::new(0.722, 0.733, 0.149, 1.);
 const COLOR_FG: RGBA = RGBA::new(0.922, 0.859, 0.698, 1.);
 const COLOR_BG0_H: RGBA = RGBA::new(0.114, 0.125, 0.129, 1.);
@@ -76,11 +70,11 @@ impl View {
 
         let root = gtk::Box::builder()
             .orientation(Orientation::Vertical)
-            .margin_start(VIEW_PADDING)
-            .margin_end(VIEW_PADDING)
-            .margin_top(VIEW_PADDING)
-            .margin_bottom(VIEW_PADDING)
-            .spacing(VIEW_PADDING)
+            .margin_start(i32::from(VIEW_PADDING))
+            .margin_end(i32::from(VIEW_PADDING))
+            .margin_top(i32::from(VIEW_PADDING))
+            .margin_bottom(i32::from(VIEW_PADDING))
+            .spacing(i32::from(VIEW_PADDING))
             .build();
 
         let enabled_area = DrawingArea::new();
@@ -107,11 +101,11 @@ impl View {
 
         let box_bottom = gtk::Box::builder()
             .orientation(Orientation::Horizontal)
-            .spacing(VIEW_PADDING)
+            .spacing(i32::from(VIEW_PADDING))
             .build();
         let flow_box_details = FlowBox::builder()
-            .row_spacing(VIEW_PADDING as u32)
-            .column_spacing(VIEW_PADDING as u32)
+            .row_spacing(u32::from(VIEW_PADDING))
+            .column_spacing(u32::from(VIEW_PADDING))
             .orientation(Orientation::Horizontal)
             .selection_mode(SelectionMode::None)
             .halign(Align::Start)
@@ -141,7 +135,7 @@ impl View {
 
         let box_controls = gtk::Box::builder()
             .orientation(Orientation::Horizontal)
-            .spacing(VIEW_PADDING)
+            .spacing(i32::from(VIEW_PADDING))
             .halign(Align::End)
             .valign(Align::End)
             .build();
@@ -156,13 +150,13 @@ impl View {
                 } else {
                     shared.outputs.borrow_mut().clone_from(&shared.outputs_orig.borrow());
                     Self::resize(
-                        enabled_area.width(),
-                        enabled_area.height(),
+                        Self::area_width(&enabled_area),
+                        Self::area_height(&enabled_area),
                         shared.size,
-                        shared.scale.borrow_mut().deref_mut(),
-                        shared.translate.borrow_mut().deref_mut(),
-                        shared.bounds.borrow_mut().deref_mut(),
-                        shared.outputs.borrow_mut().deref_mut(),
+                        &mut shared.scale.borrow_mut(),
+                        &mut shared.translate.borrow_mut(),
+                        &mut shared.bounds.borrow_mut(),
+                        &mut shared.outputs.borrow_mut(),
                     );
                     enabled_area.queue_draw();
                     disabled_area.queue_draw();
@@ -193,14 +187,14 @@ impl View {
             let shared = Rc::clone(&shared);
             move |_d, w, h| {
                 Self::resize(
-                    w,
-                    h,
+                    Self::area_w(w),
+                    Self::area_h(h),
                     shared.size,
-                    shared.scale.borrow_mut().deref_mut(),
-                    shared.translate.borrow_mut().deref_mut(),
-                    shared.bounds.borrow_mut().deref_mut(),
-                    shared.outputs.borrow_mut().deref_mut(),
-                )
+                    &mut shared.scale.borrow_mut(),
+                    &mut shared.translate.borrow_mut(),
+                    &mut shared.bounds.borrow_mut(),
+                    &mut shared.outputs.borrow_mut(),
+                );
             }
         });
 
@@ -224,7 +218,7 @@ impl View {
                     &en_position,
                     &details_ui,
                     &disabled_area,
-                )
+                );
             }
         });
         gesture_drag.connect_drag_update({
@@ -234,7 +228,7 @@ impl View {
         });
         gesture_drag.connect_drag_end({
             let shared = Rc::clone(&shared);
-            move |_g, _offset_x, _offset_y| shared.on_drag_end(_g, _offset_x, _offset_y)
+            move |g, offset_x, offset_y| shared.on_drag_end(g, offset_x, offset_y)
         });
         enabled_area.add_controller(gesture_drag);
 
@@ -243,14 +237,8 @@ impl View {
             let shared = Rc::clone(&shared);
             move |ecm, x, y| shared.on_motion(ecm, x, y)
         });
-        event_controller_motion.connect_enter({
-            let shared = Rc::clone(&shared);
-            move |ecm, x, y| shared.on_enter(ecm, x, y)
-        });
-        event_controller_motion.connect_leave({
-            let shared = Rc::clone(&shared);
-            move |ecm| shared.on_leave(ecm)
-        });
+        event_controller_motion.connect_enter(Self::on_enter);
+        event_controller_motion.connect_leave(Self::on_leave);
         enabled_area.add_controller(event_controller_motion);
 
         let drag_source = DragSource::builder().actions(DragAction::MOVE).build();
@@ -282,7 +270,7 @@ impl View {
 
         let drop_controller_motion = DropControllerMotion::new();
         drop_controller_motion.connect_motion(
-            clone!(@strong shared => move |dcm, x, y| shared.on_disabled_dragdrop_motion(dcm, x, y)),
+            clone!(@strong shared => move |dcm, x, y| Self::on_disabled_dragdrop_motion(dcm, x, y)),
         );
         disabled_area.add_controller(drop_controller_motion);
 
@@ -299,7 +287,7 @@ impl View {
                 => move |dt, v, x, y| shared.on_dragdrop_drop(dt, v, x, y, &disabled_area, &sw_enabled, &dd_resolution, &cb_primary, &en_position, &details_ui))
         );
         drop_target.connect_motion(
-            clone!(@strong shared => move |dt, x, y| shared.on_dragdrop_motion(dt, x, y)),
+            clone!(@strong shared => move |dt, x, y| Self::on_dragdrop_motion(dt, x, y)),
         );
         enabled_area.add_controller(drop_target);
 
@@ -334,7 +322,7 @@ impl View {
         let hbox = gtk::Box::builder()
             .orientation(Orientation::Horizontal)
             .valign(Align::Center)
-            .spacing(VIEW_PADDING)
+            .spacing(i32::from(VIEW_PADDING))
             .build();
         let label = if label.contains('_') {
             label.to_string()
@@ -354,8 +342,8 @@ impl View {
     }
 
     fn resize(
-        w: i32,
-        h: i32,
+        w: u32,
+        h: u32,
         size: ScreenSizeRange,
         scale: &mut f64,
         translate: &mut (f64, f64),
@@ -366,19 +354,26 @@ impl View {
         *bounds = get_bounds(outputs);
         for output in outputs.iter_mut() {
             if let (Some(pos), Some(mode)) = (output.pos.as_mut(), &output.mode) {
-                let max_x = (size.max_width - mode.width).max(0) as i16;
-                let max_y = (size.max_height - mode.height).max(0) as i16;
+                let max_x =
+                    i16::try_from(size.max_width.saturating_sub(mode.width)).unwrap_or(i16::MAX);
+                let max_y =
+                    i16::try_from(size.max_height.saturating_sub(mode.height)).unwrap_or(i16::MAX);
                 pos.0 = pos.0.saturating_sub(bounds.x() as i16).min(max_x);
                 pos.1 = pos.1.saturating_sub(bounds.y() as i16).min(max_y);
             }
         }
         *bounds = get_bounds(outputs);
-        *scale = ((w - VIEW_PADDING * 2) as f32 / bounds.width())
-            .min((h - VIEW_PADDING * 2) as f32 / bounds.height()) as f64;
-        *translate = (VIEW_PADDING as f64 / *scale, VIEW_PADDING as f64 / *scale);
+        *scale = (f64::from(w - u32::from(VIEW_PADDING) * 2) / f64::from(bounds.width()))
+            .min(f64::from(h - u32::from(VIEW_PADDING) * 2) / f64::from(bounds.height()));
+        *translate = (
+            f64::from(VIEW_PADDING) / *scale,
+            f64::from(VIEW_PADDING) / *scale,
+        );
     }
 
     fn on_draw(&self, cr: &cairo::Context, w: i32, h: i32) {
+        let w = Self::area_w(w);
+        let h = Self::area_w(h);
         let bounds = self.bounds.borrow();
         let scale = self.scale.borrow();
         let translate = self.translate.borrow();
@@ -387,10 +382,10 @@ impl View {
 
         Self::draw_screen(
             cr,
-            (bounds.x() as f64 + translate.0) * *scale,
-            (bounds.y() as f64 + translate.1) * *scale,
-            bounds.width() as f64 * *scale,
-            bounds.height() as f64 * *scale,
+            (f64::from(bounds.x()) + translate.0) * *scale,
+            (f64::from(bounds.y()) + translate.1) * *scale,
+            f64::from(bounds.width()) * *scale,
+            f64::from(bounds.height()) * *scale,
         );
 
         for (i, o) in self.outputs.borrow().iter().enumerate() {
@@ -399,10 +394,10 @@ impl View {
             }
             let pos = o.pos.expect("enabled output has position");
             let mode = o.mode.as_ref().expect("enabled output has mode");
-            let x = (pos.0 as f64 + translate.0) * *scale;
-            let y = (pos.1 as f64 + translate.1) * *scale;
-            let w = mode.width as f64 * *scale;
-            let h = mode.height as f64 * *scale;
+            let x = (f64::from(pos.0) + translate.0) * *scale;
+            let y = (f64::from(pos.1) + translate.1) * *scale;
+            let w = f64::from(mode.width) * *scale;
+            let h = f64::from(mode.height) * *scale;
 
             Self::draw_output(cr, x, y, w, h);
             if let Some(j) = *self.selected_output.borrow() {
@@ -410,8 +405,8 @@ impl View {
                     Self::draw_selected_output(cr, x, y, w, h);
                 }
             }
-            let mut name = o.name.to_owned();
-            let mut product_name = o.product_name.to_owned();
+            let mut name = o.name.clone();
+            let mut product_name = o.product_name.clone();
             if o.primary {
                 name = format!("[{name}]");
                 product_name = product_name.map(|s| format!("[{s}]"));
@@ -421,6 +416,8 @@ impl View {
     }
 
     fn on_draw_disabled(&self, cr: &cairo::Context, w: i32, h: i32) {
+        let w = Self::area_w(w);
+        let h = Self::area_w(h);
         let outputs = self.outputs.borrow();
 
         Self::draw_area_background(cr, w, h);
@@ -459,21 +456,22 @@ impl View {
     }
 
     fn get_disabled_output_pos(index: usize, output_height: f64) -> [f64; 2] {
-        let x = VIEW_PADDING as f64;
-        let y = (index + 1) as f64 * VIEW_PADDING as f64 + index as f64 * output_height;
+        let x = f64::from(VIEW_PADDING);
+        let y = (index + 1) as f64 * f64::from(VIEW_PADDING) + index as f64 * output_height;
         [x, y]
     }
 
-    fn get_disabled_output_dim(w: i32, h: i32, n_disabled: usize) -> [f64; 2] {
-        let max_width = (w - 2 * VIEW_PADDING) as f64;
-        let max_height = (h - (n_disabled + 1) as i32 * VIEW_PADDING) as f64 / n_disabled as f64;
+    fn get_disabled_output_dim(w: u32, h: u32, n_disabled: usize) -> [f64; 2] {
+        let n_disabled = u32::try_from(n_disabled).expect("less disabled outputs");
+        let max_width = f64::from(w - 2 * u32::from(VIEW_PADDING));
+        let max_height = f64::from(h - (n_disabled + 1) * u32::from(VIEW_PADDING) / n_disabled);
         let width = max_width.min(max_height * 16. / 9.);
         let height = max_height.min(max_width * 9. / 16.);
         [width, height]
     }
 
-    fn draw_area_background(cr: &cairo::Context, w: i32, h: i32) {
-        cr.rectangle(0.0, 0.0, w as f64, h as f64);
+    fn draw_area_background(cr: &cairo::Context, w: u32, h: u32) {
+        cr.rectangle(0.0, 0.0, f64::from(w), f64::from(h));
         cr.set_source_color(&COLOR_BG0_H);
         cr.fill().unwrap();
     }
@@ -489,9 +487,9 @@ impl View {
     fn draw_output(cr: &cairo::Context, x: f64, y: f64, w: f64, h: f64) {
         cr.rectangle(x, y, w, h);
         cr.set_source_rgba(
-            COLOR_FG.red() as f64,
-            COLOR_FG.green() as f64,
-            COLOR_FG.blue() as f64,
+            f64::from(COLOR_FG.red()),
+            f64::from(COLOR_FG.green()),
+            f64::from(COLOR_FG.blue()),
             0.75,
         );
         cr.fill().unwrap();
@@ -529,7 +527,7 @@ impl View {
 
         layout.set_text(product_name.unwrap_or(name));
         let ps = layout.pixel_size();
-        cr.rel_move_to(-ps.0 as f64 / 2., -ps.1 as f64 / 2.);
+        cr.rel_move_to(f64::from(-ps.0) / 2., f64::from(-ps.1) / 2.);
         show_layout(cr, &layout);
 
         cr.restore().unwrap();
@@ -556,8 +554,8 @@ impl View {
             // Grab offset to output origin in global coordinates
             let pos = outputs[i].pos.expect("dragged output has position");
             *self.grab_offset.borrow_mut() = (
-                pos.0 as f64 - (start_x / *scale - translate.0),
-                pos.1 as f64 - (start_y / *scale - translate.1),
+                f64::from(pos.0) - (start_x / *scale - translate.0),
+                f64::from(pos.1) - (start_y / *scale - translate.1),
             );
 
             // Push output to back, so it gets drawn last
@@ -626,7 +624,7 @@ impl View {
 
             // Change the dropdown model
             let resolutions = self.outputs.borrow()[i].get_resolutions_dropdown();
-            dd_resolution.set_model(Some(&Self::into_string_list(resolutions)));
+            dd_resolution.set_model(Some(&Self::into_string_list(&resolutions)));
 
             if dd_res_index.is_some() {
                 // Always update the refresh rate dropdown
@@ -649,8 +647,8 @@ impl View {
             let mut min_side = f64::MAX;
             for output in outputs.iter().filter(|n| n.enabled) {
                 let mode = output.mode.as_ref().expect("dragged output has mode");
-                min_side = min_side.min(mode.height as f64);
-                min_side = min_side.min(mode.width as f64);
+                min_side = min_side.min(f64::from(mode.height));
+                min_side = min_side.min(f64::from(mode.width));
             }
             // Snap to all snap values should be possible on all scaled sizes.
             // Give some leeway so it doesn't have to be pixel perfect.
@@ -669,18 +667,18 @@ impl View {
             // Apply snap
             let pos = output.pos.expect("dragged output has position");
             if snap[0] == 0 {
-                if ((new_x - pos.0).abs() as f64) < snap_strength {
+                if f64::from((new_x - pos.0).abs()) < snap_strength {
                     new_x = pos.0;
                 }
-            } else if (snap[0].abs() as f64) < snap_strength {
-                new_x = (pos.0 as i32 + snap[0]) as i16;
+            } else if f64::from(snap[0].abs()) < snap_strength {
+                new_x = (i32::from(pos.0) + snap[0]) as i16;
             }
             if snap[1] == 0 {
-                if ((new_y - pos.1).abs() as f64) < snap_strength {
+                if f64::from((new_y - pos.1).abs()) < snap_strength {
                     new_y = pos.1;
                 }
-            } else if (snap[1].abs() as f64) < snap_strength {
-                new_y = (pos.1 as i32 + snap[1]) as i16;
+            } else if f64::from(snap[1].abs()) < snap_strength {
+                new_y = (i32::from(pos.1) + snap[1]) as i16;
             }
 
             // Update new position
@@ -688,13 +686,13 @@ impl View {
                 outputs[i].pos = Some((new_x, new_y));
                 let drawing_area = g.widget().downcast::<DrawingArea>().unwrap();
                 Self::resize(
-                    drawing_area.width(),
-                    drawing_area.height(),
+                    Self::area_width(&drawing_area),
+                    Self::area_height(&drawing_area),
                     self.size,
-                    scale.deref_mut(),
-                    translate.deref_mut(),
-                    self.bounds.borrow_mut().deref_mut(),
-                    outputs.deref_mut(),
+                    &mut scale,
+                    &mut translate,
+                    &mut self.bounds.borrow_mut(),
+                    &mut outputs,
                 );
                 let resized_pos = outputs[i].pos.unwrap();
                 en_position.set_text(&format!("+{}+{}", resized_pos.0, resized_pos.1));
@@ -798,7 +796,7 @@ impl View {
             let c = r.center();
             let mut e = [0., 0.];
             if !bc.eq(&c) {
-                let d = [(bc.x() - c.x()) as f64, (bc.y() - c.y()) as f64];
+                let d = [f64::from(bc.x() - c.x()), f64::from(bc.y() - c.y())];
                 let d_len = (d[0].powi(2) + d[1].powi(2)).sqrt();
                 e = [d[0] / d_len, d[1] / d_len];
             }
@@ -807,7 +805,7 @@ impl View {
 
         let step = 50.;
         let mut moved = Vec::new();
-        let mut max_loops = (bounds.width().max(bounds.height()) as f64 / step) as u16;
+        let mut max_loops = (f64::from(bounds.width().max(bounds.height())) / step) as u16;
         loop {
             for i in 0..outputs.len() {
                 if !outputs[i].enabled {
@@ -850,24 +848,24 @@ impl View {
                         continue;
                     }
                     if let Some(intersect) = r.intersection(&data[&other.id].0) {
-                        let mut dx = -sx * intersect.width() as f64;
-                        let mut dy = -sy * intersect.height() as f64;
+                        let mut dx = -sx * f64::from(intersect.width());
+                        let mut dy = -sy * f64::from(intersect.height());
 
                         if e[1].abs() > 0. {
                             // Calculate the x where a line in the flipped direction towards center
                             // intersects the bottom of the intersection rectangle.
-                            let ix = sx * e[0] * intersect.height() as f64 / (sy * e[1]);
+                            let ix = sx * e[0] * f64::from(intersect.height()) / (sy * e[1]);
                             // If the intersection rectangle bottom is intersected
-                            if ix.abs() <= intersect.width() as f64 {
+                            if ix.abs() <= f64::from(intersect.width()) {
                                 dx = -sx * ix;
                             }
                         }
                         if e[0].abs() > 0. {
                             // Calculate the y where a line in the flipped direction towards center
                             // intersects the right of the intersection rectangle.
-                            let iy = sy * e[1] * intersect.width() as f64 / (sx * e[0]);
+                            let iy = sy * e[1] * f64::from(intersect.width()) / (sx * e[0]);
                             // If the intersection rectangle right side is intersected
-                            if iy.abs() <= intersect.height() as f64 {
+                            if iy.abs() <= f64::from(intersect.height()) {
                                 dy = -sy * iy;
                             }
                         }
@@ -877,7 +875,9 @@ impl View {
                 }
                 // Check if rect has moved
                 let old_r = &data[&outputs[i].id].0;
-                if r.x().round() != old_r.x().round() || r.y().round() != old_r.y().round() {
+                if !nearly_eq(r.x().into(), old_r.x().into())
+                    || !nearly_eq(r.y().into(), old_r.y().into())
+                {
                     moved.push(true);
                 }
                 data.insert(outputs[i].id, (r, e));
@@ -914,9 +914,12 @@ impl View {
         details_ui: &impl IsA<Widget>,
     ) {
         let disabled_area = gc.widget().downcast::<DrawingArea>().unwrap();
-        if let Some(i) =
-            self.get_disabled_output_index_at(x, y, disabled_area.width(), disabled_area.height())
-        {
+        if let Some(i) = self.get_disabled_output_index_at(
+            x,
+            y,
+            Self::area_width(&disabled_area),
+            Self::area_height(&disabled_area),
+        ) {
             *self.selected_output.borrow_mut() = Some(i);
             *self.skip_update_output.borrow_mut() = true;
             let enabled = self.outputs.borrow()[i].enabled;
@@ -955,31 +958,31 @@ impl View {
 
     fn on_disabled_motion(&self, ecm: &EventControllerMotion, x: f64, y: f64) {
         let disabled_area = ecm.widget().downcast::<DrawingArea>().unwrap();
-        match self.get_disabled_output_index_at(x, y, disabled_area.width(), disabled_area.height())
-        {
+        match self.get_disabled_output_index_at(
+            x,
+            y,
+            Self::area_width(&disabled_area),
+            Self::area_height(&disabled_area),
+        ) {
             Some(_) => disabled_area.set_cursor_from_name(Some("pointer")),
             None => disabled_area.set_cursor_from_name(Some("default")),
         }
     }
 
-    fn on_disabled_dragdrop_motion(&self, _dcm: &DropControllerMotion, _x: f64, _y: f64) {}
+    fn on_disabled_dragdrop_motion(_dcm: &DropControllerMotion, _x: f64, _y: f64) {}
 
-    fn on_enter(&self, _ecm: &EventControllerMotion, _x: f64, _y: f64) {}
+    fn on_enter(_ecm: &EventControllerMotion, _x: f64, _y: f64) {}
 
-    fn on_leave(&self, _ecm: &EventControllerMotion) {}
+    fn on_leave(_ecm: &EventControllerMotion) {}
 
     fn on_dragdrop_prepare(&self, ds: &DragSource, x: f64, y: f64) -> Option<ContentProvider> {
         let outputs = self.outputs.borrow();
         let disabled_outputs = Self::get_disabled_outputs(&outputs);
         let disabled_area = ds.widget().downcast::<DrawingArea>().unwrap();
-        if let Some(i) =
-            self.get_disabled_output_index_at(x, y, disabled_area.width(), disabled_area.height())
-        {
-            let dim = Self::get_disabled_output_dim(
-                disabled_area.width(),
-                disabled_area.height(),
-                disabled_outputs.len(),
-            );
+        let width = Self::area_width(&disabled_area);
+        let height = Self::area_height(&disabled_area);
+        if let Some(i) = self.get_disabled_output_index_at(x, y, width, height) {
+            let dim = Self::get_disabled_output_dim(width, height, disabled_outputs.len());
             if let Ok(icon) = Self::create_drag_icon(
                 dim[0],
                 dim[1],
@@ -1051,13 +1054,13 @@ impl View {
 
             Self::mind_the_gap_and_overlap(&mut outputs);
             Self::resize(
-                drawing_area.width(),
-                drawing_area.height(),
+                Self::area_width(&drawing_area),
+                Self::area_height(&drawing_area),
                 self.size,
-                scale.deref_mut(),
-                translate.deref_mut(),
-                self.bounds.borrow_mut().deref_mut(),
-                outputs.deref_mut(),
+                &mut scale,
+                &mut translate,
+                &mut self.bounds.borrow_mut(),
+                &mut outputs,
             );
         }
         // Enable selection
@@ -1070,7 +1073,7 @@ impl View {
         true
     }
 
-    fn on_dragdrop_motion(&self, _dt: &DropTarget, _x: f64, _y: f64) -> DragAction {
+    fn on_dragdrop_motion(_dt: &DropTarget, _x: f64, _y: f64) -> DragAction {
         DragAction::MOVE
     }
 
@@ -1123,15 +1126,15 @@ impl View {
                     || outputs[i].mode.is_none()
                 {
                     outputs[i].mode = Some(mode.clone());
-                    Self::mind_the_gap_and_overlap(outputs.deref_mut());
+                    Self::mind_the_gap_and_overlap(&mut outputs);
                     Self::resize(
-                        drawing_area.width(),
-                        drawing_area.height(),
+                        Self::area_width(drawing_area),
+                        Self::area_height(drawing_area),
                         self.size,
-                        self.scale.borrow_mut().deref_mut(),
-                        self.translate.borrow_mut().deref_mut(),
-                        self.bounds.borrow_mut().deref_mut(),
-                        outputs.deref_mut(),
+                        &mut self.scale.borrow_mut(),
+                        &mut self.translate.borrow_mut(),
+                        &mut self.bounds.borrow_mut(),
+                        &mut outputs,
                     );
                     let new_pos = outputs[i].pos.unwrap();
                     en_position.set_text(&format!("+{}+{}", new_pos.0, new_pos.1));
@@ -1142,7 +1145,7 @@ impl View {
             // Update refresh rate dropdown
             if !*self.skip_update_refresh_model.borrow() {
                 dd_refresh_model = Some(Self::into_string_list(
-                    outputs[i].get_refresh_rates_dropdown(dd_selected),
+                    &outputs[i].get_refresh_rates_dropdown(dd_selected),
                 ));
                 dd_refresh_index = outputs[i].get_current_refresh_rate_dropdown_index(dd_selected);
             }
@@ -1225,20 +1228,20 @@ impl View {
             if outputs[i].enabled != active {
                 // Update output
                 outputs[i].enabled = active;
-                if !active {
-                    // Remove output
-                    outputs[i].primary = false;
-                    outputs[i].pos = None;
-                    outputs[i].mode = None;
-                    // Disable selection
-                    *self.selected_output.borrow_mut() = None;
-                } else {
+                if active {
                     // Insert output
                     outputs[i].enabled = true;
                     outputs[i].mode = Some(outputs[i].modes[0].clone());
                     outputs[i].pos = Some((0, 0));
                     // Enable selection
                     *self.selected_output.borrow_mut() = Some(i);
+                } else {
+                    // Remove output
+                    outputs[i].primary = false;
+                    outputs[i].pos = None;
+                    outputs[i].mode = None;
+                    // Disable selection
+                    *self.selected_output.borrow_mut() = None;
                 }
             }
         }
@@ -1248,8 +1251,8 @@ impl View {
 
         // Update drawing areas
         Self::resize(
-            enabled_area.width(),
-            enabled_area.height(),
+            Self::area_width(enabled_area),
+            Self::area_height(enabled_area),
             self.size,
             &mut self.scale.borrow_mut(),
             &mut self.translate.borrow_mut(),
@@ -1274,8 +1277,8 @@ impl View {
         self.update_details_visibility(details_ui);
         // Update drawing areas
         Self::resize(
-            enabled_area.width(),
-            enabled_area.height(),
+            Self::area_width(enabled_area),
+            Self::area_height(enabled_area),
             self.size,
             &mut self.scale.borrow_mut(),
             &mut self.translate.borrow_mut(),
@@ -1296,10 +1299,10 @@ impl View {
                 let pos = output.pos.expect("enabled output has position");
                 let mode = output.mode.as_ref().expect("enabled output has mode");
                 let scaled_rect = Rect::new(
-                    ((pos.0 as f64 + translate.0) * *scale) as f32,
-                    ((pos.1 as f64 + translate.1) * *scale) as f32,
-                    mode.width as f32 * *scale as f32,
-                    mode.height as f32 * *scale as f32,
+                    ((f64::from(pos.0) + translate.0) * *scale) as f32,
+                    ((f64::from(pos.1) + translate.1) * *scale) as f32,
+                    f32::from(mode.width) * *scale as f32,
+                    f32::from(mode.height) * *scale as f32,
                 );
                 if scaled_rect.contains_point(&p) {
                     return Some(i);
@@ -1309,10 +1312,16 @@ impl View {
         None
     }
 
-    fn get_disabled_output_index_at(&self, x: f64, y: f64, w: i32, h: i32) -> Option<usize> {
+    fn get_disabled_output_index_at(
+        &self,
+        x: f64,
+        y: f64,
+        width: u32,
+        height: u32,
+    ) -> Option<usize> {
         let outputs = self.outputs.borrow();
         let disabled_outputs = Self::get_disabled_outputs(&outputs);
-        let dim = Self::get_disabled_output_dim(w, h, disabled_outputs.len());
+        let dim = Self::get_disabled_output_dim(width, height, disabled_outputs.len());
         let p = Point::new(x as f32, y as f32);
         for (i, &disabled_output) in disabled_outputs.iter().enumerate() {
             let pos = Self::get_disabled_output_pos(i, dim[1]);
@@ -1328,9 +1337,25 @@ impl View {
         None
     }
 
-    fn into_string_list(list: Vec<String>) -> StringList {
+    fn into_string_list(list: &[String]) -> StringList {
         let list = list.iter().map(String::as_str).collect::<Vec<&str>>();
         StringList::new(list.as_slice())
+    }
+
+    fn area_width(drawing_area: &DrawingArea) -> u32 {
+        Self::area_w(drawing_area.width())
+    }
+
+    fn area_height(drawing_area: &DrawingArea) -> u32 {
+        Self::area_h(drawing_area.height())
+    }
+
+    fn area_w(w: i32) -> u32 {
+        u32::try_from(w).expect("gtk::DrawingArea width is positive")
+    }
+
+    fn area_h(h: i32) -> u32 {
+        u32::try_from(h).expect("gtk::DrawingArea height is positive")
     }
 
     // fn to_local(&self, value: (f64, f64)) -> (f64, f64) {

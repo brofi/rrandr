@@ -51,13 +51,13 @@ pub struct Output {
 }
 
 impl Output {
-    fn ppi(&self) -> f32 {
+    fn ppi(&self) -> f64 {
         if let Some(mode) = &self.mode {
             if self.dim[1] > 0 {
-                return (MM_PER_INCH * mode.height as f32) / self.dim[1] as f32;
+                return (f64::from(MM_PER_INCH) * f64::from(mode.height)) / f64::from(self.dim[1]);
             }
         }
-        PPI_DEFAULT as f32
+        f64::from(PPI_DEFAULT)
     }
 
     fn left(&self) -> i32 {
@@ -65,7 +65,7 @@ impl Output {
     }
 
     fn right(&self) -> i32 {
-        self.left() + self.mode.as_ref().unwrap().width as i32
+        self.left() + i32::from(self.mode.as_ref().unwrap().width)
     }
 
     fn top(&self) -> i32 {
@@ -73,7 +73,7 @@ impl Output {
     }
 
     fn bottom(&self) -> i32 {
-        self.top() + self.mode.as_ref().unwrap().height as i32
+        self.top() + i32::from(self.mode.as_ref().unwrap().height)
     }
 
     // fn is_above(&self, other: &Output) -> bool {
@@ -95,7 +95,7 @@ impl Output {
     fn get_resolutions_dropdown(&self) -> Vec<String> {
         self.get_resolutions()
             .iter()
-            .map(Self::resolution_str)
+            .map(|&r| Self::resolution_str(r))
             .collect::<Vec<String>>()
     }
 
@@ -123,7 +123,7 @@ impl Output {
         let refresh = self.get_refresh_rates(resolution_index)[index];
         self.modes
             .iter()
-            .position(|m| m.width == res[0] && m.height == res[1] && m.refresh == refresh)
+            .position(|m| m.width == res[0] && m.height == res[1] && nearly_eq(m.refresh, refresh))
             .unwrap()
     }
 
@@ -132,7 +132,7 @@ impl Output {
             return self
                 .get_refresh_rates(resolution_index)
                 .iter()
-                .position(|&refresh| refresh == mode.refresh)?
+                .position(|&refresh| nearly_eq(refresh, mode.refresh))?
                 .into();
         }
         None
@@ -141,7 +141,7 @@ impl Output {
     fn get_refresh_rates_dropdown(&self, resolution_index: usize) -> Vec<String> {
         self.get_refresh_rates(resolution_index)
             .iter()
-            .map(Self::refresh_str)
+            .map(|&r| Self::refresh_str(r))
             .collect::<Vec<String>>()
     }
 
@@ -165,12 +165,12 @@ impl Output {
             .collect::<Vec<f64>>()
     }
 
-    fn resolution_str(res: &Resolution) -> String {
+    fn resolution_str(res: Resolution) -> String {
         format!("{}{RESOLUTION_JOIN_CHAR}{}", res[0], res[1])
     }
 
-    fn refresh_str(refresh: &f64) -> String {
-        format!("{:6.2} Hz", refresh)
+    fn refresh_str(refresh: f64) -> String {
+        format!("{refresh:6.2} Hz")
     }
 
     fn rect(&self) -> Rect {
@@ -178,10 +178,10 @@ impl Output {
             return Rect::zero();
         }
         Rect::new(
-            self.pos.unwrap().0 as f32,
-            self.pos.unwrap().1 as f32,
-            self.mode.as_ref().unwrap().width as f32,
-            self.mode.as_ref().unwrap().height as f32,
+            f32::from(self.pos.unwrap().0),
+            f32::from(self.pos.unwrap().1),
+            f32::from(self.mode.as_ref().unwrap().width),
+            f32::from(self.mode.as_ref().unwrap().height),
         )
     }
 }
@@ -277,7 +277,7 @@ fn main() -> ExitCode {
     app.connect_activate(move |app| {
         build_ui(app, outputs.clone(), screen_size_range, move |outputs| {
             on_apply_clicked(&screen_size_range, &outputs)
-        })
+        });
     });
     app.run()
 }
@@ -327,8 +327,8 @@ fn on_apply_clicked(screen_size_range: &ScreenSizeRange, outputs: &Vec<Output>) 
         let crtc = &rr_crtcs[&crtc_id];
         if !output.enabled
             || (screen_size_changed
-                && (crtc.x as i32 + crtc.width as i32 > screen_size.width as i32
-                    || crtc.y as i32 + crtc.height as i32 > screen_size.height as i32))
+                && (i32::from(crtc.x) + i32::from(crtc.width) > i32::from(screen_size.width)
+                    || i32::from(crtc.y) + i32::from(crtc.height) > i32::from(screen_size.height)))
         {
             // Disable outputs that are still enabled but shouldn't be and outputs
             // that stay enabled but currently don't fit the new screen size.
@@ -412,13 +412,13 @@ fn get_screen_size(
         .min_height
         .max(screen_size_range.max_width.min(bounds.height() as u16));
 
-    let ppi = primary.map(|p| p.ppi()).unwrap_or(PPI_DEFAULT as f32);
+    let ppi = primary.map_or(f64::from(PPI_DEFAULT), Output::ppi);
 
     ScreenSize {
         width,
         height,
-        mwidth: ((MM_PER_INCH * width as f32) / ppi) as u16,
-        mheight: ((MM_PER_INCH * height as f32) / ppi) as u16,
+        mwidth: ((f64::from(MM_PER_INCH) * f64::from(width)) / ppi) as u16,
+        mheight: ((f64::from(MM_PER_INCH) * f64::from(height)) / ppi) as u16,
     }
 }
 
@@ -494,10 +494,10 @@ fn handle_reply_error(result: Result<SetConfig, ReplyError>, msg: &str) -> bool 
     let mut error = true;
     match result {
         Ok(SetConfig::SUCCESS) => error = false,
-        Ok(SetConfig::FAILED) => println!("Failed to {}.", msg),
-        Ok(status) => println!("Failed to {}. Cause: {:#?}", msg, status),
-        Err(ReplyError::X11Error(e)) => println!("{}", x_error_to_string(e)),
-        Err(e) => println!("Failed to {}. Cause: {:?}", msg, e),
+        Ok(SetConfig::FAILED) => println!("Failed to {msg}."),
+        Ok(status) => println!("Failed to {msg}. Cause: {status:#?}"),
+        Err(ReplyError::X11Error(e)) => println!("{}", x_error_to_string(&e)),
+        Err(e) => println!("Failed to {msg}. Cause: {e:?}"),
     }
     error
 }
@@ -509,16 +509,16 @@ fn handle_no_reply_error(
     let mut error = true;
     match result {
         Ok(cookie) => match cookie.check() {
-            Ok(_) => error = false,
-            Err(ReplyError::X11Error(e)) => println!("{}", x_error_to_string(e)),
-            Err(e) => println!("Failed to {}. Cause: {}", msg, e),
+            Ok(()) => error = false,
+            Err(ReplyError::X11Error(e)) => println!("{}", x_error_to_string(&e)),
+            Err(e) => println!("Failed to {msg}. Cause: {e}"),
         },
-        Err(e) => println!("Failed to request {}. Cause: {}", msg, e),
+        Err(e) => println!("Failed to request {msg}. Cause: {e}"),
     }
     error
 }
 
-fn x_error_to_string(e: X11Error) -> String {
+fn x_error_to_string(e: &X11Error) -> String {
     format!(
         "X11 {:?} error for value {}{}.",
         e.error_kind,
@@ -625,7 +625,7 @@ fn get_refresh_rate(mode_info: &ModeInfo) -> f64 {
     }
 
     if mode_info.htotal > 0 && vtotal > 0 {
-        mode_info.dot_clock as f64 / (mode_info.htotal as f64 * vtotal as f64)
+        f64::from(mode_info.dot_clock) / (f64::from(mode_info.htotal) * f64::from(vtotal))
     } else {
         0.0
     }
@@ -635,7 +635,7 @@ fn get_edid(conn: &RustConnection, output: OutputId) -> Result<Vec<u8>, Box<dyn 
     let name = "EDID";
     let property = intern_atom(conn, true, name.as_bytes())?.reply()?.atom;
     if property == AtomEnum::NONE.into() {
-        return Err(format!("No property named: {}", name).into());
+        return Err(format!("No property named: {name}").into());
     }
     Ok(get_output_property(
         conn,
@@ -676,11 +676,34 @@ fn get_monitor_name(conn: &RustConnection, output: OutputId) -> Option<String> {
     None
 }
 
+fn nearly_eq(a: f64, b: f64) -> bool {
+    nearly_eq_rel_and_abs(a, b, 0.0, None)
+}
+
+// Floating point comparison inspired by:
+// https://randomascii.wordpress.com/2012/02/25/comparing-floating-point-numbers-2012-edition/
+// https://peps.python.org/pep-0485/
+// https://floating-point-gui.de/errors/comparison/
+fn nearly_eq_rel_and_abs(a: f64, b: f64, abs_tol: f64, rel_tol: Option<f64>) -> bool {
+    nearly_eq_rel(a, b, rel_tol) || nearly_eq_abs(a, b, abs_tol)
+}
+
+fn nearly_eq_abs(a: f64, b: f64, abs_tol: f64) -> bool {
+    (a - b).abs() <= abs_tol
+}
+
+fn nearly_eq_rel(a: f64, b: f64, rel_tol: Option<f64>) -> bool {
+    let diff = (a - b).abs();
+    let a = a.abs();
+    let b = b.abs();
+    diff <= if b > a { b } else { a } * rel_tol.unwrap_or(f64::EPSILON)
+}
+
 #[cfg(debug_assertions)]
 fn print_crtcs(rr_crtcs: &HashMap<CrtcId, CrtcInfo>, rr_modes: &HashMap<ModeId, ModeInfo>) {
     for (crtc_id, crtc) in rr_crtcs {
         println!("{:-^40}", format!(" CRTC {crtc_id} "));
-        println!("XID:      {}", crtc_id);
+        println!("XID:      {crtc_id}");
         println!("Pos:      +{}+{}", crtc.x, crtc.y);
         println!("Res:      {}x{}", crtc.width, crtc.height);
         if crtc.mode > 0 {
@@ -701,8 +724,8 @@ fn print_crtcs(rr_crtcs: &HashMap<CrtcId, CrtcInfo>, rr_modes: &HashMap<ModeId, 
 fn print_outputs(rr_outputs: &HashMap<OutputId, OutputInfo>, rr_modes: &HashMap<ModeId, ModeInfo>) {
     for (output_id, output) in rr_outputs {
         if output.connection == Connection::CONNECTED {
-            println!("{:-^40}", format!(" Output {output_id} "));
-            println!("XID:   {}", output_id);
+            println!("{:-^40}", format!(" Output {} ", output_id));
+            println!("XID:   {output_id}");
             println!("Name:  {}", String::from_utf8_lossy(&output.name));
             println!("CRTC:  {}", output.crtc);
             println!("CRTCs: {:?}", output.crtcs);
