@@ -7,10 +7,11 @@ use gtk::prelude::*;
 use gtk::{Application, ApplicationWindow};
 use std::collections::HashMap;
 use std::error::Error;
-use x11rb::protocol::xproto::{intern_atom, AtomEnum};
+use x11rb::protocol::xproto::{intern_atom, AtomEnum, Screen};
+use x11rb::x11_utils::X11Error;
 
 use view::View;
-use x11rb::cookie::Cookie;
+use x11rb::cookie::{Cookie, VoidCookie};
 use x11rb::errors::{ConnectionError, ReplyError};
 use x11rb::protocol::randr::{
     get_crtc_info, get_output_primary, get_output_property, get_screen_size_range, set_crtc_config,
@@ -317,35 +318,26 @@ fn on_apply_clicked(screen_size_range: &ScreenSizeRange, outputs: &Vec<Output>) 
     let screen_size_changed = screen.width_in_pixels != screen_size.width
         || screen.height_in_pixels != screen_size.height;
 
+    // Disable outputs
     for output in outputs {
         let crtc_id = rr_outputs[&output.id].crtc;
-        if crtc_id > 0 {
-            if !output.enabled {
-                match disable_crtc(&conn, rr_outputs[&output.id].crtc) {
-                    Ok(SetConfig::FAILED) | Err(_) => {
-                        println!("Failed to disable CRTC {}", crtc_id);
-                        return false;
-                    }
-                    _ => (),
-                }
-            } else if screen_size_changed {
-                // Disable outputs that stay enabled but currently don't fit the
-                // new screen size. This needs to be done to avoid an invalid
-                // intermediate configuration when actually setting the new screen
-                // size.
-                let crtc = &rr_crtcs[&crtc_id];
-                if crtc.x as i32 + crtc.width as i32 > screen_size.width as i32
-                    || crtc.y as i32 + crtc.height as i32 > screen_size.height as i32
-                {
-                    println!("CRTC {} currently doesn't fit the new screen size", crtc_id);
-                    match disable_crtc(&conn, rr_outputs[&output.id].crtc) {
-                        Ok(SetConfig::FAILED) | Err(_) => {
-                            println!("Failed to disable CRTC {}", crtc_id);
-                            return false;
-                        }
-                        _ => (),
-                    }
-                }
+        if crtc_id == 0 {
+            // Output already disabled
+            continue;
+        }
+        let crtc = &rr_crtcs[&crtc_id];
+        if !output.enabled
+            || (screen_size_changed
+                && (crtc.x as i32 + crtc.width as i32 > screen_size.width as i32
+                    || crtc.y as i32 + crtc.height as i32 > screen_size.height as i32))
+        {
+            // Disable outputs that are still enabled but shouldn't be and outputs
+            // that stay enabled but currently don't fit the new screen size.
+            // The latter needs to be done to avoid an invalid intermediate
+            // configuration when actually setting the new screen size.
+            if handle_reply_error(disable_crtc(&conn, crtc_id), "disable CRTC") {
+                revert(&conn, screen, &rr_crtcs);
+                return false;
             }
         }
     }
@@ -356,76 +348,53 @@ fn on_apply_clicked(screen_size_range: &ScreenSizeRange, outputs: &Vec<Output>) 
             screen_size.width, screen_size.height, screen_size.mwidth, screen_size.mheight
         );
 
-        match set_screen_size(
-            &conn,
-            screen.root,
-            screen_size.width,
-            screen_size.height,
-            screen_size.mwidth.into(),
-            screen_size.mheight.into(),
+        if handle_no_reply_error(
+            set_screen_size(
+                &conn,
+                screen.root,
+                screen_size.width,
+                screen_size.height,
+                screen_size.mwidth.into(),
+                screen_size.mheight.into(),
+            ),
+            "set screen size",
         ) {
-            Ok(cookie) => {
-                if let Err(e) = cookie.check() {
-                    println!("Failed to set screen size: {}", e);
-                    return false;
-                }
-            }
-            Err(e) => {
-                println!("Failed to request set screen size: {}", e);
-                return false;
-            }
+            revert(&conn, screen, &rr_crtcs);
+            return false;
         }
     }
 
+    // Update outputs
     for output in outputs {
+        if !output.enabled {
+            continue;
+        }
         let output_info = &rr_outputs[&output.id];
         let mut crtc_id = output_info.crtc;
-        if output.enabled {
-            if crtc_id == 0 {
-                // If this output was disabled before get it a new empty CRTC.
-                if let Some(empty_id) = get_valid_empty_crtc(&rr_crtcs, output.id, output_info) {
-                    crtc_id = empty_id;
-                } else {
-                    println!("Failed to get empty CRTC for output {}", output.name);
-                    return false;
-                }
+        let crtc_info = &rr_crtcs[&crtc_id];
+        if crtc_id == 0 || (crtc_info.outputs.len() > 1 && crtc_info.outputs[0] != output.id) {
+            // If this output was disabled before get it a new empty CRTC.
+            // If this output is enabled, shares a CRTC with other outputs and
+            // its not the first one listed, move it to a new empty CRTC.
+            if let Some(empty_id) = get_valid_empty_crtc(&rr_crtcs, output.id, output_info) {
+                crtc_id = empty_id;
             } else {
-                // If this output shares a CRTC with other outputs and its not the
-                // first one listed, move it to a new empty CRTC.
-                let crtc_info = &rr_crtcs[&crtc_id];
-                if crtc_info.outputs.len() > 1 && crtc_info.outputs[0] != output.id {
-                    if let Some(empty_id) = get_valid_empty_crtc(&rr_crtcs, output.id, output_info)
-                    {
-                        crtc_id = empty_id;
-                    } else {
-                        println!("Failed to get empty CRTC for output {}", output.name);
-                        return false;
-                    }
-                }
-            }
-            match update_crtc(&conn, crtc_id, output) {
-                Ok(SetConfig::SUCCESS) => println!("Great success"),
-                Ok(SetConfig::FAILED) => {
-                    println!("Failed to set config for output {}", output.name);
-                    return false;
-                }
-                Ok(status) => {
-                    println!(
-                        "Failed to set config for output {}, reason: {:#?}",
-                        output.name, status
-                    );
-                    return false;
-                }
-                Err(e) => {
-                    println!("{:?}", e);
-                    return false;
-                }
+                revert(&conn, screen, &rr_crtcs);
+                return false;
             }
         }
+        if handle_reply_error(update_crtc(&conn, crtc_id, output), "update CRTC") {
+            revert(&conn, screen, &rr_crtcs);
+            return false;
+        }
     }
+
+    // Set primary output
     let primary_id = primary.and_then(|p| Some(p.id)).unwrap_or_default();
-    if set_output_primary(&conn, screen.root, primary_id).is_err() {
-        println!("Failed to set primary output");
+    if handle_no_reply_error(
+        set_output_primary(&conn, screen.root, primary_id),
+        "set primary output",
+    ) {
         return false;
     }
     true
@@ -460,7 +429,7 @@ fn update_crtc(
     conn: &RustConnection,
     crtc: CrtcId,
     output: &Output,
-) -> Result<SetConfig, Box<dyn Error>> {
+) -> Result<SetConfig, ReplyError> {
     let Some(pos) = output.pos else {
         println!("Output {} is missing a position.", output.name);
         return Ok(SetConfig::FAILED);
@@ -488,7 +457,7 @@ fn update_crtc(
     .status)
 }
 
-fn disable_crtc(conn: &RustConnection, crtc: CrtcId) -> Result<SetConfig, Box<dyn Error>> {
+fn disable_crtc(conn: &RustConnection, crtc: CrtcId) -> Result<SetConfig, ReplyError> {
     Ok(set_crtc_config(
         conn,
         crtc,
@@ -517,7 +486,84 @@ fn get_valid_empty_crtc(
             return Some(*crtc_id);
         }
     }
+    println!(
+        "Failed to get empty CRTC for output {}",
+        String::from_utf8_lossy(&output_info.name)
+    );
     None
+}
+
+fn handle_reply_error(result: Result<SetConfig, ReplyError>, msg: &str) -> bool {
+    let mut error = true;
+    match result {
+        Ok(SetConfig::SUCCESS) => error = false,
+        Ok(SetConfig::FAILED) => println!("Failed to {}.", msg),
+        Ok(status) => println!("Failed to {}. Cause: {:#?}", msg, status),
+        Err(ReplyError::X11Error(e)) => println!("{}", x_error_to_string(e)),
+        Err(e) => println!("Failed to {}. Cause: {:?}", msg, e),
+    }
+    error
+}
+
+fn handle_no_reply_error(
+    result: Result<VoidCookie<RustConnection>, ConnectionError>,
+    msg: &str,
+) -> bool {
+    let mut error = true;
+    match result {
+        Ok(cookie) => match cookie.check() {
+            Ok(_) => error = false,
+            Err(ReplyError::X11Error(e)) => println!("{}", x_error_to_string(e)),
+            Err(e) => println!("Failed to {}. Cause: {}", msg, e),
+        },
+        Err(e) => println!("Failed to request {}. Cause: {}", msg, e),
+    }
+    error
+}
+
+fn x_error_to_string(e: X11Error) -> String {
+    format!(
+        "X11 {:?} error for value {}{}.",
+        e.error_kind,
+        e.bad_value,
+        e.request_name
+            .and_then(|s| Some(" in request ".to_string() + s))
+            .unwrap_or_default()
+    )
+}
+
+fn revert(conn: &RustConnection, screen: &Screen, rr_crtcs: &HashMap<CrtcId, CrtcInfo>) {
+    println!("Reverting changes");
+    for crtc_id in rr_crtcs.keys() {
+        disable_crtc(conn, *crtc_id).expect("disable CRTC");
+    }
+    set_screen_size(
+        conn,
+        screen.root,
+        screen.width_in_pixels,
+        screen.height_in_pixels,
+        screen.width_in_millimeters.into(),
+        screen.height_in_millimeters.into(),
+    )
+    .expect("revert screen size request")
+    .check()
+    .expect("revert screen size");
+    for (crtc_id, crtc_info) in rr_crtcs {
+        set_crtc_config(
+            conn,
+            *crtc_id,
+            CURRENT_TIME,
+            CURRENT_TIME,
+            crtc_info.x,
+            crtc_info.y,
+            crtc_info.mode,
+            crtc_info.rotation,
+            &crtc_info.outputs,
+        )
+        .expect("revert CRTC request")
+        .reply()
+        .expect("revert CRTC");
+    }
 }
 
 // TODO checkout GetXIDListRequest

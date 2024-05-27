@@ -146,10 +146,27 @@ impl View {
             .valign(Align::End)
             .build();
         let btn_apply = Button::with_mnemonic("Apply");
-        btn_apply.connect_clicked(clone!(@strong shared => move |_btn| {
-            if apply_callback(shared.outputs.borrow().clone()) {
-                *shared.outputs_orig.borrow_mut() = shared.outputs.borrow().clone();
-            }
+        btn_apply.connect_clicked(clone!(
+            @strong shared,
+            @strong enabled_area,
+            @strong disabled_area
+            => move |_btn| {
+                if apply_callback(shared.outputs.borrow().clone()) {
+                    *shared.outputs_orig.borrow_mut() = shared.outputs.borrow().clone();
+                } else {
+                    *shared.outputs.borrow_mut() = shared.outputs_orig.borrow().clone();
+                    Self::resize(
+                        enabled_area.width(),
+                        enabled_area.height(),
+                        shared.size,
+                        shared.scale.borrow_mut().deref_mut(),
+                        shared.translate.borrow_mut().deref_mut(),
+                        shared.bounds.borrow_mut().deref_mut(),
+                        shared.outputs.borrow_mut().deref_mut(),
+                    );
+                    enabled_area.queue_draw();
+                    disabled_area.queue_draw();
+                }
         }));
         box_controls.append(&btn_apply);
         let btn_reset = Button::with_mnemonic("Reset");
