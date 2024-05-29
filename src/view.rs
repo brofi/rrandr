@@ -13,6 +13,8 @@ use pangocairo::functions::{create_layout, show_layout};
 use std::{cell::RefCell, collections::HashMap, error::Error, ops::Deref, rc::Rc};
 
 pub const VIEW_PADDING: u16 = 10;
+const SCREEN_LINE_WIDTH: f64 = 2.;
+const SELECTION_LINE_WIDTH: f64 = 4.;
 const COLOR_GREEN: RGBA = RGBA::new(0.722, 0.733, 0.149, 1.);
 const COLOR_FG: RGBA = RGBA::new(0.922, 0.859, 0.698, 1.);
 const COLOR_BG0_H: RGBA = RGBA::new(0.114, 0.125, 0.129, 1.);
@@ -360,11 +362,15 @@ impl View {
             }
         }
         *bounds = get_bounds(outputs);
-        *scale = (f64::from(w - i32::from(VIEW_PADDING) * 2) / f64::from(bounds.width()))
-            .min(f64::from(h - i32::from(VIEW_PADDING) * 2) / f64::from(bounds.height()));
+        *scale = ((f64::from(w) - (f64::from(VIEW_PADDING) + SCREEN_LINE_WIDTH) * 2.)
+            / f64::from(bounds.width()))
+        .min(
+            (f64::from(h) - (f64::from(VIEW_PADDING) + SCREEN_LINE_WIDTH) * 2.)
+                / f64::from(bounds.height()),
+        );
         *translate = [
-            (f64::from(VIEW_PADDING) / *scale) as i16,
-            (f64::from(VIEW_PADDING) / *scale) as i16,
+            ((f64::from(VIEW_PADDING) + SCREEN_LINE_WIDTH) / *scale) as i16,
+            ((f64::from(VIEW_PADDING) + SCREEN_LINE_WIDTH) / *scale) as i16,
         ];
     }
 
@@ -464,9 +470,14 @@ impl View {
     }
 
     fn draw_screen(cr: &cairo::Context, rect: [f64; 4]) {
-        cr.rectangle(rect[0], rect[1], rect[2], rect[3]);
+        cr.rectangle(
+            rect[0] - SCREEN_LINE_WIDTH / 2.,
+            rect[1] - SCREEN_LINE_WIDTH / 2.,
+            rect[2] + SCREEN_LINE_WIDTH,
+            rect[3] + SCREEN_LINE_WIDTH,
+        );
         cr.set_source_color(&COLOR_FG);
-        cr.set_line_width(2.);
+        cr.set_line_width(SCREEN_LINE_WIDTH);
         cr.set_dash(&[4.], 1.);
         cr.stroke().unwrap();
     }
@@ -483,9 +494,14 @@ impl View {
     }
 
     fn draw_selected_output(cr: &cairo::Context, rect: [f64; 4]) {
-        cr.rectangle(rect[0], rect[1], rect[2], rect[3]);
+        cr.rectangle(
+            rect[0] + SELECTION_LINE_WIDTH / 2.,
+            rect[1] + SELECTION_LINE_WIDTH / 2.,
+            rect[2] - SELECTION_LINE_WIDTH,
+            rect[3] - SELECTION_LINE_WIDTH,
+        );
         cr.set_source_color(&COLOR_GREEN);
-        cr.set_line_width(4.);
+        cr.set_line_width(SELECTION_LINE_WIDTH);
         cr.set_dash(&[1., 0.], 0.);
         cr.stroke().unwrap();
     }
