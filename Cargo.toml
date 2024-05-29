@@ -6,24 +6,8 @@ edition = "2021"
 
 [dependencies]
 x11rb = { version = "0.13.1", features = ["randr"] }
-gtk = { version = "0.8.2", package = "gtk4", features = [
-    "v4_2",
-    "v4_4",
-    "v4_6",
-    "v4_8",
-    "v4_10",
-    "v4_12",
-    "v4_14",
-] }
-gdk = { version = "0.8.2", package = "gdk4", features = [
-    "v4_2",
-    "v4_4",
-    "v4_6",
-    "v4_8",
-    "v4_10",
-    "v4_12",
-    "v4_14",
-] }
+gtk = { version = "0.8.2", package = "gtk4", features = ["v4_6"] }
+gdk = { version = "0.8.2", package = "gdk4" }
 cairo-rs = "0.19.4"
 pango = "0.19.5"
 pangocairo = "0.19.2"
