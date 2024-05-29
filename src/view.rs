@@ -373,8 +373,8 @@ impl View {
                 / f64::from(bounds.height()),
         );
         *translate = [
-            ((f64::from(VIEW_PADDING) + SCREEN_LINE_WIDTH) / *scale) as i16,
-            ((f64::from(VIEW_PADDING) + SCREEN_LINE_WIDTH) / *scale) as i16,
+            (f64::from(VIEW_PADDING) + SCREEN_LINE_WIDTH).round() as i16,
+            (f64::from(VIEW_PADDING) + SCREEN_LINE_WIDTH).round() as i16,
         ];
     }
 
@@ -385,14 +385,14 @@ impl View {
 
         Self::draw_area_background(cr, w, h);
 
-        let screen_rect = bounds.transform(*translate, *scale);
+        let screen_rect = bounds.transform(*scale, *translate);
         Self::draw_screen(cr, screen_rect);
 
         for (i, o) in self.outputs.borrow().iter().enumerate() {
             if !o.enabled {
                 continue;
             }
-            let output_rect = o.rect().transform(*translate, *scale);
+            let output_rect = o.rect().transform(*scale, *translate);
             Self::draw_output(cr, output_rect);
             if let Some(j) = *self.selected_output.borrow() {
                 if i == j {
@@ -560,8 +560,8 @@ impl View {
             // Grab offset to output origin in global coordinates
             let pos = outputs[i].pos.expect("dragged output has position");
             *self.grab_offset.borrow_mut() = (
-                f64::from(pos.0) - (start_x / *scale - f64::from(translate[0])),
-                f64::from(pos.1) - (start_y / *scale - f64::from(translate[1])),
+                f64::from(pos.0) - (start_x - f64::from(translate[0])) / *scale,
+                f64::from(pos.1) - (start_y - f64::from(translate[1])) / *scale,
             );
 
             // Push output to back, so it gets drawn last
@@ -665,12 +665,10 @@ impl View {
 
             // Calculate new position
             let start = g.start_point().unwrap();
-            // let mut new_x = ((start.0 + offset_x + *scale * grab_offset.0) / *scale - f64::from(translate[0])) as i16;
-            // let mut new_y = ((start.1 + offset_y + *scale * grab_offset.1) / *scale - f64::from(translate[1])) as i16;
             let mut new_x =
-                (((start.0 + offset_x) / *scale) - f64::from(translate[0]) + grab_offset.0) as i16;
+                (((start.0 + offset_x - f64::from(translate[0])) / *scale) + grab_offset.0) as i16;
             let mut new_y =
-                (((start.1 + offset_y) / *scale) - f64::from(translate[1]) + grab_offset.1) as i16;
+                (((start.1 + offset_y - f64::from(translate[1])) / *scale) + grab_offset.1) as i16;
 
             // Apply snap
             let pos = output.pos.expect("dragged output has position");
@@ -1010,8 +1008,8 @@ impl View {
             outputs[i].enabled = true;
             outputs[i].mode = Some(outputs[i].modes[0].clone());
             outputs[i].pos = Some((
-                (x / *scale - f64::from(translate[0])) as i16,
-                (y / *scale - f64::from(translate[1])) as i16,
+                ((x - f64::from(translate[0])) / *scale) as i16,
+                ((y - f64::from(translate[1])) / *scale) as i16,
             ));
 
             Self::mind_the_gap_and_overlap(&mut outputs);
@@ -1263,8 +1261,8 @@ impl View {
         for (i, output) in self.outputs.borrow().iter().enumerate() {
             if output.enabled {
                 let mut scaled_rect = output.rect();
-                scaled_rect.translate(translate[0], translate[1]);
                 scaled_rect.scale(*scale);
+                scaled_rect.translate(translate[0], translate[1]);
                 if scaled_rect.contains(x, y) {
                     return Some(i);
                 }

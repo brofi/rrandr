@@ -127,10 +127,10 @@ impl Rect {
         self.height = (f64::from(self.height) * scale).round() as u16;
     }
 
-    pub fn transform(&self, translate: [i16; 2], scale: f64) -> [f64; 4] {
+    pub fn transform(&self, scale: f64, translate: [i16; 2]) -> [f64; 4] {
         [
-            f64::from(self.x.saturating_add(translate[0])) * scale,
-            f64::from(self.y.saturating_add(translate[1])) * scale,
+            f64::from(self.x) * scale + f64::from(translate[0]),
+            f64::from(self.y) * scale + f64::from(translate[1]),
             f64::from(self.width) * scale,
             f64::from(self.height) * scale,
         ]
