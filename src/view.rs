@@ -1,20 +1,21 @@
-use crate::{
-    get_bounds,
-    math::{Point, Rect},
-    Output, ScreenSizeRange,
-};
-use gdk::{
-    glib::{clone, Bytes, Type, Value},
-    ContentProvider, Drag, DragAction, MemoryTexture, Paintable, RGBA,
-};
+use std::cell::RefCell;
+use std::collections::HashMap;
+use std::error::Error;
+use std::rc::Rc;
+
+use gdk::glib::{clone, Bytes, Type, Value};
+use gdk::{ContentProvider, Drag, DragAction, MemoryTexture, Paintable, RGBA};
+use gtk::prelude::*;
 use gtk::{
-    prelude::*, Align, Button, CheckButton, DragSource, DrawingArea, DropControllerMotion,
-    DropDown, DropTarget, Entry, EventControllerMotion, FlowBox, FlowBoxChild, Frame, GestureClick,
+    Align, Button, CheckButton, DragSource, DrawingArea, DropControllerMotion, DropDown,
+    DropTarget, Entry, EventControllerMotion, FlowBox, FlowBoxChild, Frame, GestureClick,
     GestureDrag, Label, Orientation, Paned, SelectionMode, StringList, Switch, Widget,
 };
 use pango::{Alignment, FontDescription, Weight};
 use pangocairo::functions::{create_layout, show_layout};
-use std::{cell::RefCell, collections::HashMap, error::Error, rc::Rc};
+
+use crate::math::{Point, Rect};
+use crate::{get_bounds, Output, ScreenSizeRange};
 
 pub const VIEW_PADDING: u16 = 10;
 const SCREEN_LINE_WIDTH: f64 = 2.;
@@ -24,10 +25,11 @@ const COLOR_FG: RGBA = RGBA::new(0.922, 0.859, 0.698, 1.);
 const COLOR_BG0_H: RGBA = RGBA::new(0.114, 0.125, 0.129, 1.);
 const COLOR_BG0: RGBA = RGBA::new(0.157, 0.157, 0.157, 1.);
 
-// needed because to tansfer ownership because: function requires argument type to outlive `'static`
-// https://doc.rust-lang.org/rust-by-example/scope/lifetime/static_lifetime.html
-// It's important to understand this means that any owned data always passes a 'static lifetime bound, but a reference to that owned data generally does not:
-// https://stackoverflow.com/questions/52464653/how-to-move-data-into-multiple-rust-closures
+// needed because to tansfer ownership because: function requires argument type
+// to outlive `'static` https://doc.rust-lang.org/rust-by-example/scope/lifetime/static_lifetime.html
+// It's important to understand this means that any owned data always passes a
+// 'static lifetime bound, but a reference to that owned data generally does
+// not: https://stackoverflow.com/questions/52464653/how-to-move-data-into-multiple-rust-closures
 pub struct View {
     outputs: RefCell<Vec<Output>>,
     outputs_orig: RefCell<Vec<Output>>,
@@ -81,17 +83,11 @@ impl View {
             .build();
 
         let enabled_area = DrawingArea::new();
-        let frame_enabled = Frame::builder()
-            .label("Layout")
-            .child(&enabled_area)
-            .build();
+        let frame_enabled = Frame::builder().label("Layout").child(&enabled_area).build();
 
         let disabled_area = DrawingArea::new();
-        let frame_disabled = Frame::builder()
-            .label("Disabled")
-            .child(&disabled_area)
-            .width_request(150)
-            .build();
+        let frame_disabled =
+            Frame::builder().label("Disabled").child(&disabled_area).width_request(150).build();
 
         let paned = Paned::builder()
             .start_child(&frame_enabled)
@@ -327,11 +323,7 @@ impl View {
             .valign(Align::Center)
             .spacing(i32::from(VIEW_PADDING))
             .build();
-        let label = if label.contains('_') {
-            label.to_owned()
-        } else {
-            format!("_{label}")
-        };
+        let label = if label.contains('_') { label.to_owned() } else { format!("_{label}") };
         let label = Label::with_mnemonic(&label);
         label.set_mnemonic_widget(Some(ctrl));
         let gesture_click = GestureClick::new();
@@ -422,12 +414,8 @@ impl View {
             if i_select.is_none() || i_select.is_some_and(|i| !is_dragging || outputs[i].id != o.id)
             {
                 let pos = Self::get_disabled_output_pos(j, dim[1]);
-                let rect = [
-                    f64::from(pos[0]),
-                    f64::from(pos[1]),
-                    f64::from(dim[0]),
-                    f64::from(dim[1]),
-                ];
+                let rect =
+                    [f64::from(pos[0]), f64::from(pos[1]), f64::from(dim[0]), f64::from(dim[1])];
                 Self::draw_output(cr, rect);
                 Self::draw_output_label(cr, rect, &o.name, o.product_name.as_deref());
                 if let Some(i) = *i_select {
@@ -579,7 +567,8 @@ impl View {
         }
         drawing_area.queue_draw();
         disabled_area.queue_draw();
-        // Do details UI updates out of scope because their triggered callbacks need to borrow
+        // Do details UI updates out of scope because their triggered callbacks need to
+        // borrow
         self.update_details_ui(sw_enabled, dd_resolution, cb_primary, en_position);
         self.update_details_visibility(details_ui);
     }
@@ -967,9 +956,7 @@ impl View {
                 let pos = Self::get_disabled_output_pos(j, dim[1]);
                 ds.set_icon(Some(&icon), x as i32, (y - f64::from(pos[1])) as i32);
             }
-            return Some(ContentProvider::for_value(&Value::from(
-                u64::try_from(i).ok()?,
-            )));
+            return Some(ContentProvider::for_value(&Value::from(u64::try_from(i).ok()?)));
         }
         None
     }
@@ -1044,9 +1031,7 @@ impl View {
         true
     }
 
-    fn on_dragdrop_motion(_dt: &DropTarget, _x: f64, _y: f64) -> DragAction {
-        DragAction::MOVE
-    }
+    fn on_dragdrop_motion(_dt: &DropTarget, _x: f64, _y: f64) -> DragAction { DragAction::MOVE }
 
     fn create_drag_icon(
         width: u16,
@@ -1245,9 +1230,7 @@ impl View {
         disabled_area: &DrawingArea,
         details_ui: &impl IsA<Widget>,
     ) {
-        self.outputs
-            .borrow_mut()
-            .clone_from(&self.outputs_orig.borrow());
+        self.outputs.borrow_mut().clone_from(&self.outputs_orig.borrow());
         // Disable selection
         *self.selected_output.borrow_mut() = None;
         self.update_details_visibility(details_ui);

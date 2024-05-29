@@ -5,12 +5,7 @@ pub struct Point {
 }
 
 impl Point {
-    pub fn max() -> Self {
-        Point {
-            x: i32::MAX,
-            y: i32::MAX,
-        }
-    }
+    pub fn max() -> Self { Point { x: i32::MAX, y: i32::MAX } }
 }
 
 #[derive(Clone, Debug, Default)]
@@ -31,52 +26,28 @@ impl Rect {
             i32::from(y) + i32::from(height) <= 0xFFFF,
             "bottom side needs to be smaller than u16::MAX"
         );
-        Rect {
-            x,
-            y,
-            width,
-            height,
-        }
+        Rect { x, y, width, height }
     }
 
-    pub fn x(&self) -> i16 {
-        self.x
-    }
+    pub fn x(&self) -> i16 { self.x }
 
-    pub fn y(&self) -> i16 {
-        self.y
-    }
+    pub fn y(&self) -> i16 { self.y }
 
-    pub fn width(&self) -> u16 {
-        self.width
-    }
+    pub fn width(&self) -> u16 { self.width }
 
-    pub fn height(&self) -> u16 {
-        self.height
-    }
+    pub fn height(&self) -> u16 { self.height }
 
     pub fn bounds(rects: Vec<Rect>) -> Rect {
-        rects
-            .into_iter()
-            .reduce(|acc, r| acc.union(&r))
-            .unwrap_or_default()
+        rects.into_iter().reduce(|acc, r| acc.union(&r)).unwrap_or_default()
     }
 
-    pub fn left(&self) -> i32 {
-        i32::from(self.x)
-    }
+    pub fn left(&self) -> i32 { i32::from(self.x) }
 
-    pub fn right(&self) -> i32 {
-        self.left() + i32::from(self.width)
-    }
+    pub fn right(&self) -> i32 { self.left() + i32::from(self.width) }
 
-    pub fn top(&self) -> i32 {
-        i32::from(self.y)
-    }
+    pub fn top(&self) -> i32 { i32::from(self.y) }
 
-    pub fn bottom(&self) -> i32 {
-        self.top() + i32::from(self.height)
-    }
+    pub fn bottom(&self) -> i32 { self.top() + i32::from(self.height) }
 
     pub fn center(&self) -> Point {
         Point {

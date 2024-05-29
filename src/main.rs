@@ -7,31 +7,28 @@ mod math;
 mod view;
 
 use core::fmt;
+use std::collections::HashMap;
+use std::error::Error;
+
 use gtk::glib::ExitCode;
 use gtk::prelude::*;
 use gtk::{Application, ApplicationWindow};
 use math::Rect;
-use std::collections::HashMap;
-use std::error::Error;
-use x11rb::protocol::xproto::{intern_atom, AtomEnum, Screen};
-use x11rb::x11_utils::X11Error;
-
 use view::View;
+use x11rb::connection::Connection as XConnection;
 use x11rb::cookie::{Cookie, VoidCookie};
 use x11rb::errors::{ConnectionError, ReplyError};
 use x11rb::protocol::randr::{
-    get_crtc_info, get_output_primary, get_output_property, get_screen_size_range, set_crtc_config,
-    set_output_primary, set_screen_size, Connection, Crtc as CrtcId, GetCrtcInfoReply,
+    get_crtc_info, get_output_info, get_output_primary, get_output_property,
+    get_screen_resources_current, get_screen_size_range, set_crtc_config, set_output_primary,
+    set_screen_size, Connection, Crtc as CrtcId, GetCrtcInfoReply, GetOutputInfoReply,
     GetScreenResourcesCurrentReply, GetScreenSizeRangeReply, Mode as ModeId, ModeFlag, ModeInfo,
     Output as OutputId, Rotation, ScreenSize, SetConfig,
 };
-
+use x11rb::protocol::xproto::{intern_atom, AtomEnum, Screen};
+use x11rb::rust_connection::RustConnection;
+use x11rb::x11_utils::X11Error;
 use x11rb::CURRENT_TIME;
-use x11rb::{
-    connection::Connection as XConnection,
-    protocol::randr::{get_output_info, get_screen_resources_current, GetOutputInfoReply},
-    rust_connection::RustConnection,
-};
 
 type ScreenSizeRange = GetScreenSizeRangeReply;
 type OutputInfo = GetOutputInfoReply;
@@ -67,10 +64,7 @@ impl Output {
     }
 
     fn get_resolutions_dropdown(&self) -> Vec<String> {
-        self.get_resolutions()
-            .iter()
-            .map(|&r| Self::resolution_str(r))
-            .collect::<Vec<String>>()
+        self.get_resolutions().iter().map(|&r| Self::resolution_str(r)).collect::<Vec<String>>()
     }
 
     fn get_current_resolution_dropdown_index(&self) -> Option<usize> {
@@ -86,10 +80,7 @@ impl Output {
 
     fn resolution_dropdown_mode_index(&self, index: usize) -> usize {
         let res = self.get_resolutions()[index];
-        self.modes
-            .iter()
-            .position(|m| m.width == res[0] && m.height == res[1])
-            .unwrap()
+        self.modes.iter().position(|m| m.width == res[0] && m.height == res[1]).unwrap()
     }
 
     fn refresh_rate_dropdown_mode_index(&self, resolution_index: usize, index: usize) -> usize {
@@ -143,9 +134,7 @@ impl Output {
         format!("{}{RESOLUTION_JOIN_CHAR}{}", res[0], res[1])
     }
 
-    fn refresh_str(refresh: f64) -> String {
-        format!("{refresh:6.2} Hz")
-    }
+    fn refresh_str(refresh: f64) -> String { format!("{refresh:6.2} Hz") }
 
     fn rect(&self) -> Rect {
         if let (Some((x, y)), Some(mode)) = (self.pos, self.mode.as_ref()) {
@@ -181,13 +170,7 @@ impl fmt::Display for Mode {
 }
 
 fn get_bounds(outputs: &[Output]) -> Rect {
-    Rect::bounds(
-        outputs
-            .iter()
-            .filter(|&o| o.enabled)
-            .map(Output::rect)
-            .collect::<Vec<_>>(),
-    )
+    Rect::bounds(outputs.iter().filter(|&o| o.enabled).map(Output::rect).collect::<Vec<_>>())
 }
 
 fn main() -> ExitCode {
@@ -200,9 +183,8 @@ fn main() -> ExitCode {
     let primary = primary.reply().expect("reply for primary output");
     let screen_size_range =
         get_screen_size_range(&conn, screen.root).expect("cookie to request screen size range");
-    let screen_size_range: ScreenSizeRange = screen_size_range
-        .reply()
-        .expect("reply for screen size range");
+    let screen_size_range: ScreenSizeRange =
+        screen_size_range.reply().expect("reply for screen size range");
 
     let rr_outputs = request_outputs(&conn, &res).expect("cookies to request outputs");
     let rr_crtcs = request_crtcs(&conn, &res).expect("cookies to request crtcs");
@@ -379,12 +361,8 @@ fn get_screen_size(
     primary: Option<&Output>,
 ) -> ScreenSize {
     let bounds = get_bounds(outputs);
-    let width = screen_size_range
-        .min_width
-        .max(screen_size_range.max_width.min(bounds.width()));
-    let height = screen_size_range
-        .min_height
-        .max(screen_size_range.max_width.min(bounds.height()));
+    let width = screen_size_range.min_width.max(screen_size_range.max_width.min(bounds.width()));
+    let height = screen_size_range.min_height.max(screen_size_range.max_width.min(bounds.height()));
 
     let ppi = primary.map_or(f64::from(PPI_DEFAULT), Output::ppi);
 
@@ -429,19 +407,9 @@ fn update_crtc(
 }
 
 fn disable_crtc(conn: &RustConnection, crtc: CrtcId) -> Result<SetConfig, ReplyError> {
-    Ok(set_crtc_config(
-        conn,
-        crtc,
-        CURRENT_TIME,
-        CURRENT_TIME,
-        0,
-        0,
-        0,
-        Rotation::ROTATE0,
-        &[],
-    )?
-    .reply()?
-    .status)
+    Ok(set_crtc_config(conn, crtc, CURRENT_TIME, CURRENT_TIME, 0, 0, 0, Rotation::ROTATE0, &[])?
+        .reply()?
+        .status)
 }
 
 fn get_valid_empty_crtc(
@@ -457,10 +425,7 @@ fn get_valid_empty_crtc(
             return Some(*crtc_id);
         }
     }
-    println!(
-        "Failed to get empty CRTC for output {}",
-        String::from_utf8_lossy(&output_info.name)
-    );
+    println!("Failed to get empty CRTC for output {}", String::from_utf8_lossy(&output_info.name));
     None
 }
 
@@ -497,9 +462,7 @@ fn x_error_to_string(e: &X11Error) -> String {
         "X11 {:?} error for value {}{}.",
         e.error_kind,
         e.bad_value,
-        e.request_name
-            .map(|s| " in request ".to_owned() + s)
-            .unwrap_or_default()
+        e.request_name.map(|s| " in request ".to_owned() + s).unwrap_or_default()
     )
 }
 
@@ -581,11 +544,7 @@ fn get_crtcs(
 }
 
 fn get_modes_for_output(output_info: &OutputInfo, modes: &HashMap<ModeId, ModeInfo>) -> Vec<Mode> {
-    output_info
-        .modes
-        .iter()
-        .map(|mode_id| Mode::from(modes[mode_id]))
-        .collect::<Vec<Mode>>()
+    output_info.modes.iter().map(|mode_id| Mode::from(modes[mode_id])).collect::<Vec<Mode>>()
 }
 
 fn get_refresh_rate(mode_info: &ModeInfo) -> f64 {
@@ -611,18 +570,9 @@ fn get_edid(conn: &RustConnection, output: OutputId) -> Result<Vec<u8>, Box<dyn 
     if property == AtomEnum::NONE.into() {
         return Err(format!("No property named: {name}").into());
     }
-    Ok(get_output_property(
-        conn,
-        output,
-        property,
-        AtomEnum::INTEGER,
-        0,
-        256,
-        false,
-        false,
-    )?
-    .reply()?
-    .data)
+    Ok(get_output_property(conn, output, property, AtomEnum::INTEGER, 0, 256, false, false)?
+        .reply()?
+        .data)
 }
 
 fn get_monitor_name(conn: &RustConnection, output: OutputId) -> Option<String> {
@@ -637,9 +587,7 @@ fn get_monitor_name(conn: &RustConnection, output: OutputId) -> Option<String> {
                     // with a tag 0xFC (display product name).
                     if edid[i..(i + 3)] == [0, 0, 0] && edid[i + 3] == 0xFC && edid[i + 4] == 0 {
                         return Some(
-                            String::from_utf8_lossy(&edid[(i + 5)..(i + 18)])
-                                .trim_end()
-                                .to_owned(),
+                            String::from_utf8_lossy(&edid[(i + 5)..(i + 18)]).trim_end().to_owned(),
                         );
                     }
                     i += 18;
@@ -650,9 +598,7 @@ fn get_monitor_name(conn: &RustConnection, output: OutputId) -> Option<String> {
     None
 }
 
-fn nearly_eq(a: f64, b: f64) -> bool {
-    nearly_eq_rel_and_abs(a, b, 0.0, None)
-}
+fn nearly_eq(a: f64, b: f64) -> bool { nearly_eq_rel_and_abs(a, b, 0.0, None) }
 
 // Floating point comparison inspired by:
 // https://randomascii.wordpress.com/2012/02/25/comparing-floating-point-numbers-2012-edition/
@@ -662,9 +608,7 @@ fn nearly_eq_rel_and_abs(a: f64, b: f64, abs_tol: f64, rel_tol: Option<f64>) -> 
     nearly_eq_rel(a, b, rel_tol) || nearly_eq_abs(a, b, abs_tol)
 }
 
-fn nearly_eq_abs(a: f64, b: f64, abs_tol: f64) -> bool {
-    (a - b).abs() <= abs_tol
-}
+fn nearly_eq_abs(a: f64, b: f64, abs_tol: f64) -> bool { (a - b).abs() <= abs_tol }
 
 fn nearly_eq_rel(a: f64, b: f64, rel_tol: Option<f64>) -> bool {
     let diff = (a - b).abs();
@@ -682,11 +626,7 @@ fn print_crtcs(rr_crtcs: &HashMap<CrtcId, CrtcInfo>, rr_modes: &HashMap<ModeId, 
         println!("Pos:      +{}+{}", crtc.x, crtc.y);
         println!("Res:      {}x{}", crtc.width, crtc.height);
         if crtc.mode > 0 {
-            println!(
-                "Mode:     {}: {}",
-                crtc.mode,
-                Mode::from(rr_modes[&crtc.mode])
-            );
+            println!("Mode:     {}: {}", crtc.mode, Mode::from(rr_modes[&crtc.mode]));
         }
         println!("Outputs:  {:?}", crtc.outputs);
         println!("Rot:      {:#?}", crtc.rotation);
