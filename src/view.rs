@@ -320,7 +320,7 @@ impl View {
             .build();
         child.set_visible(false);
         child.set_widget_name(
-            &("fbc_".to_string() + &label.to_string().replace('_', "").to_lowercase()),
+            &("fbc_".to_owned() + &label.to_owned().replace('_', "").to_lowercase()),
         );
         let hbox = gtk::Box::builder()
             .orientation(Orientation::Horizontal)
@@ -328,7 +328,7 @@ impl View {
             .spacing(i32::from(VIEW_PADDING))
             .build();
         let label = if label.contains('_') {
-            label.to_string()
+            label.to_owned()
         } else {
             format!("_{label}")
         };
@@ -344,6 +344,7 @@ impl View {
         child
     }
 
+    #[allow(clippy::cast_possible_truncation)]
     fn resize(
         w: i32,
         h: i32,
@@ -356,7 +357,7 @@ impl View {
         // Translate to x = y = 0
         *bounds = get_bounds(outputs);
         for output in outputs.iter_mut() {
-            if let (Some(pos), Some(mode)) = (output.pos.as_mut(), &output.mode) {
+            if let (Some(pos), Some(mode)) = (output.pos.as_mut(), output.mode.as_ref()) {
                 let max_x =
                     i16::try_from(size.max_width.saturating_sub(mode.width)).unwrap_or(i16::MAX);
                 let max_y =
@@ -372,10 +373,8 @@ impl View {
             (f64::from(h) - (f64::from(VIEW_PADDING) + SCREEN_LINE_WIDTH) * 2.)
                 / f64::from(bounds.height()),
         );
-        *translate = [
-            (f64::from(VIEW_PADDING) + SCREEN_LINE_WIDTH).round() as i16,
-            (f64::from(VIEW_PADDING) + SCREEN_LINE_WIDTH).round() as i16,
-        ];
+        let dxy = i16::try_from(VIEW_PADDING).unwrap() + SCREEN_LINE_WIDTH.round() as i16;
+        *translate = [dxy, dxy];
     }
 
     fn on_draw(&self, cr: &cairo::Context, w: i32, h: i32) {
@@ -447,11 +446,15 @@ impl View {
 
     fn get_disabled_output_pos(index: usize, output_height: u16) -> [i16; 2] {
         let index = u32::try_from(index).expect("less disabled outputs");
-        let x = VIEW_PADDING as i16;
-        let y = ((index + 1) * u32::from(VIEW_PADDING) + index * u32::from(output_height)) as i16;
+        let x = i16::try_from(VIEW_PADDING).unwrap_or(i16::MAX);
+        let y =
+            i16::try_from((index + 1) * u32::from(VIEW_PADDING) + index * u32::from(output_height))
+                .unwrap_or(i16::MAX);
         [x, y]
     }
 
+    #[allow(clippy::cast_sign_loss)]
+    #[allow(clippy::cast_possible_truncation)]
     fn get_disabled_output_dim(w: i32, h: i32, n_disabled: usize) -> [u16; 2] {
         if n_disabled == 0 {
             return [0, 0];
@@ -635,13 +638,15 @@ impl View {
             if dd_res_index.is_some() {
                 // Always update the refresh rate dropdown
                 *self.skip_update_refresh_model.borrow_mut() = false;
-                dd_resolution.set_selected(dd_res_index.unwrap() as u32);
+                dd_resolution
+                    .set_selected(u32::try_from(dd_res_index.unwrap()).expect("less resolutions"));
             }
             *self.skip_update_refresh_model.borrow_mut() = false;
             *self.skip_update_output.borrow_mut() = false;
         }
     }
 
+    #[allow(clippy::cast_possible_truncation)]
     fn on_drag_update(&self, g: &GestureDrag, offset_x: f64, offset_y: f64, en_position: &Entry) {
         if let Some(i) = *self.selected_output.borrow() {
             let mut outputs = self.outputs.borrow_mut();
@@ -665,10 +670,12 @@ impl View {
 
             // Calculate new position
             let start = g.start_point().unwrap();
-            let mut new_x =
-                (((start.0 + offset_x - f64::from(translate[0])) / *scale) + grab_offset.0) as i16;
-            let mut new_y =
-                (((start.1 + offset_y - f64::from(translate[1])) / *scale) + grab_offset.1) as i16;
+            let mut new_x = (((start.0 + offset_x - f64::from(translate[0])) / *scale)
+                + grab_offset.0)
+                .round() as i16;
+            let mut new_y = (((start.1 + offset_y - f64::from(translate[1])) / *scale)
+                + grab_offset.1)
+                .round() as i16;
 
             // Apply snap
             let pos = output.pos.expect("dragged output has position");
@@ -677,14 +684,14 @@ impl View {
                     new_x = pos.0;
                 }
             } else if f64::from(snap.x.abs()) < snap_strength {
-                new_x = (i32::from(pos.0) + snap.x) as i16;
+                new_x = pos.0.saturating_add(i16::try_from(snap.x).unwrap());
             }
             if snap.y == 0 {
                 if f64::from((new_y - pos.1).abs()) < snap_strength {
                     new_y = pos.1;
                 }
             } else if f64::from(snap.y.abs()) < snap_strength {
-                new_y = (i32::from(pos.1) + snap.y) as i16;
+                new_y = pos.1.saturating_add(i16::try_from(snap.y).unwrap());
             }
 
             // Update new position
@@ -707,7 +714,7 @@ impl View {
         }
     }
 
-    fn calculate_snap(outputs: &Vec<Output>, output_index: usize) -> Point {
+    fn calculate_snap(outputs: &[Output], output_index: usize) -> Point {
         let output_r = &outputs[output_index].rect();
         let output_center = output_r.center();
         let mut dist = Point::max();
@@ -752,6 +759,8 @@ impl View {
         snap
     }
 
+    #[allow(clippy::cast_sign_loss)]
+    #[allow(clippy::cast_possible_truncation)]
     fn mind_the_gap_and_overlap(outputs: &mut Vec<Output>) {
         let mut data = HashMap::new();
         let bounds = get_bounds(outputs);
@@ -935,6 +944,7 @@ impl View {
 
     fn on_leave(_ecm: &EventControllerMotion) {}
 
+    #[allow(clippy::cast_possible_truncation)]
     fn on_dragdrop_prepare(&self, ds: &DragSource, x: f64, y: f64) -> Option<ContentProvider> {
         let outputs = self.outputs.borrow();
         let disabled_outputs = Self::get_disabled_outputs(&outputs);
@@ -976,6 +986,7 @@ impl View {
         *self.dragging_disabled_output.borrow_mut() = false;
     }
 
+    #[allow(clippy::cast_possible_truncation)]
     fn on_dragdrop_drop(
         &self,
         dt: &DropTarget,
@@ -1008,8 +1019,8 @@ impl View {
             outputs[i].enabled = true;
             outputs[i].mode = Some(outputs[i].modes[0].clone());
             outputs[i].pos = Some((
-                ((x - f64::from(translate[0])) / *scale) as i16,
-                ((y - f64::from(translate[1])) / *scale) as i16,
+                ((x - f64::from(translate[0])).max(0.) / *scale).round() as i16,
+                ((y - f64::from(translate[1])).max(0.) / *scale).round() as i16,
             ));
 
             Self::mind_the_gap_and_overlap(&mut outputs);
@@ -1057,8 +1068,8 @@ impl View {
         surface.flush();
         let stride = surface.stride().try_into()?;
         Ok(MemoryTexture::new(
-            width as i32,
-            height as i32,
+            i32::from(width),
+            i32::from(height),
             gdk::MemoryFormat::B8g8r8a8Premultiplied,
             &Bytes::from_owned(surface.take_data()?),
             stride,
@@ -1120,7 +1131,7 @@ impl View {
             *self.skip_update_output.borrow_mut() = true;
             dd_refresh.set_model(dd_refresh_model.as_ref());
             if let Some(idx) = dd_refresh_index {
-                dd_refresh.set_selected(idx as u32);
+                dd_refresh.set_selected(u32::try_from(idx).expect("less refresh rates"));
             }
             *self.skip_update_output.borrow_mut() = false;
         }

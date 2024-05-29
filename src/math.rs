@@ -23,12 +23,14 @@ pub struct Rect {
 
 impl Rect {
     pub fn new(x: i16, y: i16, width: u16, height: u16) -> Self {
-        if i32::from(x) + i32::from(width) > 0xFFFF {
-            panic!("right side needs to be smaller than u16::MAX");
-        }
-        if i32::from(y) + i32::from(height) > 0xFFFF {
-            panic!("bottom side needs to be smaller than u16::MAX");
-        }
+        assert!(
+            i32::from(x) + i32::from(width) <= 0xFFFF,
+            "right side needs to be smaller than u16::MAX"
+        );
+        assert!(
+            i32::from(y) + i32::from(height) <= 0xFFFF,
+            "bottom side needs to be smaller than u16::MAX"
+        );
         Rect {
             x,
             y,
@@ -93,8 +95,8 @@ impl Rect {
     pub fn union(&self, o: &Self) -> Self {
         let x = self.x.min(o.x);
         let y = self.y.min(o.y);
-        let width = u16::try_from(self.right().max(o.right()) - x as i32).unwrap();
-        let height = u16::try_from(self.bottom().max(o.bottom()) - y as i32).unwrap();
+        let width = u16::try_from(self.right().max(o.right()) - i32::from(x)).unwrap();
+        let height = u16::try_from(self.bottom().max(o.bottom()) - i32::from(y)).unwrap();
         Self::new(x, y, width, height)
     }
 
@@ -120,6 +122,8 @@ impl Rect {
         self.y = self.y.saturating_add(dy);
     }
 
+    #[allow(clippy::cast_sign_loss)]
+    #[allow(clippy::cast_possible_truncation)]
     pub fn scale(&mut self, scale: f64) {
         self.x = (f64::from(self.x) * scale).round() as i16;
         self.y = (f64::from(self.y) * scale).round() as i16;

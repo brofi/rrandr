@@ -1,3 +1,8 @@
+#![warn(clippy::pedantic)]
+#![allow(clippy::too_many_arguments)]
+#![allow(clippy::too_many_lines)]
+// #![warn(clippy::restriction)]
+
 mod math;
 mod view;
 
@@ -53,7 +58,7 @@ pub struct Output {
 
 impl Output {
     fn ppi(&self) -> f64 {
-        if let Some(mode) = &self.mode {
+        if let Some(mode) = self.mode.as_ref() {
             if self.dim[1] > 0 {
                 return (f64::from(MM_PER_INCH) * f64::from(mode.height)) / f64::from(self.dim[1]);
             }
@@ -69,7 +74,7 @@ impl Output {
     }
 
     fn get_current_resolution_dropdown_index(&self) -> Option<usize> {
-        if let Some(mode) = &self.mode {
+        if let Some(mode) = self.mode.as_ref() {
             return self
                 .get_resolutions()
                 .iter()
@@ -97,7 +102,7 @@ impl Output {
     }
 
     fn get_current_refresh_rate_dropdown_index(&self, resolution_index: usize) -> Option<usize> {
-        if let Some(mode) = &self.mode {
+        if let Some(mode) = self.mode.as_ref() {
             return self
                 .get_refresh_rates(resolution_index)
                 .iter()
@@ -143,7 +148,7 @@ impl Output {
     }
 
     fn rect(&self) -> Rect {
-        if let (Some((x, y)), Some(mode)) = (self.pos, &self.mode) {
+        if let (Some((x, y)), Some(mode)) = (self.pos, self.mode.as_ref()) {
             return Rect::new(x, y, mode.width, mode.height);
         };
         Rect::default()
@@ -366,6 +371,8 @@ fn on_apply_clicked(screen_size_range: &ScreenSizeRange, outputs: &Vec<Output>) 
     true
 }
 
+#[allow(clippy::cast_sign_loss)]
+#[allow(clippy::cast_possible_truncation)]
 fn get_screen_size(
     screen_size_range: &ScreenSizeRange,
     outputs: &[Output],
@@ -398,7 +405,7 @@ fn update_crtc(
         println!("Output {} is missing a position.", output.name);
         return Ok(SetConfig::FAILED);
     };
-    let Some(mode) = &output.mode else {
+    let Some(mode) = output.mode.as_ref() else {
         println!("Output {} is missing a mode.", output.name);
         return Ok(SetConfig::FAILED);
     };
@@ -491,7 +498,7 @@ fn x_error_to_string(e: &X11Error) -> String {
         e.error_kind,
         e.bad_value,
         e.request_name
-            .map(|s| " in request ".to_string() + s)
+            .map(|s| " in request ".to_owned() + s)
             .unwrap_or_default()
     )
 }
@@ -632,7 +639,7 @@ fn get_monitor_name(conn: &RustConnection, output: OutputId) -> Option<String> {
                         return Some(
                             String::from_utf8_lossy(&edid[(i + 5)..(i + 18)])
                                 .trim_end()
-                                .to_string(),
+                                .to_owned(),
                         );
                     }
                     i += 18;
@@ -667,6 +674,7 @@ fn nearly_eq_rel(a: f64, b: f64, rel_tol: Option<f64>) -> bool {
 }
 
 #[cfg(debug_assertions)]
+#[allow(clippy::use_debug)]
 fn print_crtcs(rr_crtcs: &HashMap<CrtcId, CrtcInfo>, rr_modes: &HashMap<ModeId, ModeInfo>) {
     for (crtc_id, crtc) in rr_crtcs {
         println!("{:-^40}", format!(" CRTC {crtc_id} "));
@@ -688,6 +696,7 @@ fn print_crtcs(rr_crtcs: &HashMap<CrtcId, CrtcInfo>, rr_modes: &HashMap<ModeId, 
 }
 
 #[cfg(debug_assertions)]
+#[allow(clippy::use_debug)]
 fn print_outputs(rr_outputs: &HashMap<OutputId, OutputInfo>, rr_modes: &HashMap<ModeId, ModeInfo>) {
     for (output_id, output) in rr_outputs {
         if output.connection == Connection::CONNECTED {
