@@ -1,10 +1,11 @@
+mod math;
 mod view;
 
 use core::fmt;
 use gtk::glib::ExitCode;
-use gtk::graphene::Rect;
 use gtk::prelude::*;
 use gtk::{Application, ApplicationWindow};
+use math::Rect;
 use std::collections::HashMap;
 use std::error::Error;
 use x11rb::protocol::xproto::{intern_atom, AtomEnum, Screen};
@@ -174,15 +175,10 @@ impl Output {
     }
 
     fn rect(&self) -> Rect {
-        if self.pos.is_none() || self.mode.is_none() {
-            return Rect::zero();
-        }
-        Rect::new(
-            f32::from(self.pos.unwrap().0),
-            f32::from(self.pos.unwrap().1),
-            f32::from(self.mode.as_ref().unwrap().width),
-            f32::from(self.mode.as_ref().unwrap().height),
-        )
+        if let (Some((x, y)), Some(mode)) = (self.pos, &self.mode) {
+            return Rect::new(x, y, mode.width, mode.height);
+        };
+        Rect::default()
     }
 }
 
@@ -212,13 +208,13 @@ impl fmt::Display for Mode {
 }
 
 fn get_bounds(outputs: &[Output]) -> Rect {
-    let enabled_outputs = outputs.iter().filter(|&o| o.enabled).collect::<Vec<_>>();
-    if enabled_outputs.is_empty() {
-        return Rect::zero();
-    }
-    enabled_outputs
-        .iter()
-        .fold(enabled_outputs[0].rect(), |acc, &o| acc.union(&o.rect()))
+    Rect::bounds(
+        outputs
+            .iter()
+            .filter(|&o| o.enabled)
+            .map(Output::rect)
+            .collect::<Vec<_>>(),
+    )
 }
 
 fn main() -> ExitCode {
@@ -410,10 +406,10 @@ fn get_screen_size(
     let bounds = get_bounds(outputs);
     let width = screen_size_range
         .min_width
-        .max(screen_size_range.max_width.min(bounds.width() as u16));
+        .max(screen_size_range.max_width.min(bounds.width()));
     let height = screen_size_range
         .min_height
-        .max(screen_size_range.max_width.min(bounds.height() as u16));
+        .max(screen_size_range.max_width.min(bounds.height()));
 
     let ppi = primary.map_or(f64::from(PPI_DEFAULT), Output::ppi);
 
