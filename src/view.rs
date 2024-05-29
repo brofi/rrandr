@@ -112,33 +112,61 @@ impl View {
             .hexpand(true)
             .build();
 
-        let sw_enabled = Switch::new();
+        let sw_enabled = Switch::builder().tooltip_text("Enable/Disable").build();
         flow_box_details.append(&Self::create_detail_child("Enabled", &sw_enabled));
-        let dd_resolution = DropDown::builder().build();
-        flow_box_details.append(&Self::create_detail_child("Resolution", &dd_resolution));
-        let dd_refresh = DropDown::builder().build();
-        flow_box_details.append(&Self::create_detail_child("Re_fresh Rate", &dd_refresh));
-        let en_position = Entry::builder()
-            .text("+0+0")
-            .placeholder_text("+x+y")
-            .editable(false)
-            .width_chars(13)
-            .max_width_chars(12)
+
+        let box_mode = gtk::Box::builder()
+            .orientation(Orientation::Horizontal)
+            .css_classes(["linked"])
             .build();
-        EntryExt::set_alignment(&en_position, 1.);
-        flow_box_details.append(&Self::create_detail_child("Position", &en_position));
-        let cb_primary = CheckButton::builder().build();
-        flow_box_details.append(&Self::create_detail_child("Pr_imary", &cb_primary));
+        let dd_resolution = DropDown::builder().tooltip_text("Resolution").build();
+        let dd_refresh = DropDown::builder().tooltip_text("Refresh rate").build();
+        box_mode.append(&dd_resolution);
+        box_mode.append(&dd_refresh);
+        flow_box_details.append(&Self::create_detail_child("Mode", &box_mode));
+
+        let box_pos = gtk::Box::builder()
+            .orientation(Orientation::Horizontal)
+            .css_classes(["linked"])
+            .build();
+        let en_position_x = Entry::builder()
+            .text("0")
+            .placeholder_text("x")
+            .tooltip_text("Horizontal position")
+            .editable(false)
+            .width_chars(5)
+            .max_width_chars(5)
+            .build();
+        EntryExt::set_alignment(&en_position_x, 1.);
+        let en_position_y = Entry::builder()
+            .text("0")
+            .placeholder_text("y")
+            .tooltip_text("Vertical position")
+            .editable(false)
+            .width_chars(5)
+            .max_width_chars(5)
+            .build();
+        EntryExt::set_alignment(&en_position_y, 1.);
+        box_pos.append(&en_position_x);
+        box_pos.append(&en_position_y);
+        flow_box_details.append(&Self::create_detail_child("Position", &box_pos));
+
+        let cb_primary = CheckButton::builder().tooltip_text("Set as primary").build();
+        flow_box_details.append(&Self::create_detail_child("Primary", &cb_primary));
 
         box_bottom.append(&flow_box_details);
 
         let box_controls = gtk::Box::builder()
             .orientation(Orientation::Horizontal)
-            .spacing(i32::from(VIEW_PADDING))
             .halign(Align::End)
             .valign(Align::End)
+            .css_classes(["linked"])
             .build();
-        let btn_apply = Button::with_mnemonic("Apply");
+        let btn_apply = Button::builder()
+            .label("_Apply")
+            .use_underline(true)
+            .tooltip_text("Apply changes")
+            .build();
         btn_apply.connect_clicked(clone!(
             @strong shared,
             @strong enabled_area,
@@ -162,7 +190,11 @@ impl View {
                 }
         }));
         box_controls.append(&btn_apply);
-        let btn_reset = Button::with_mnemonic("Reset");
+        let btn_reset = Button::builder()
+            .label("_Reset")
+            .use_underline(true)
+            .tooltip_text("Reset changes")
+            .build();
         btn_reset.connect_clicked(clone!(
             @strong shared,
             @strong enabled_area,
@@ -203,7 +235,8 @@ impl View {
             let sw_enabled = sw_enabled.clone();
             let dd_resolution = dd_resolution.clone();
             let cb_primary = cb_primary.clone();
-            let en_position = en_position.clone();
+            let en_position_x = en_position_x.clone();
+            let en_position_y = en_position_y.clone();
             let details_ui = flow_box_details.clone();
             let disabled_area = disabled_area.clone();
             move |g, start_x, start_y| {
@@ -214,7 +247,8 @@ impl View {
                     &sw_enabled,
                     &dd_resolution,
                     &cb_primary,
-                    &en_position,
+                    &en_position_x,
+                    &en_position_y,
                     &details_ui,
                     &disabled_area,
                 );
@@ -222,8 +256,11 @@ impl View {
         });
         gesture_drag.connect_drag_update({
             let shared = Rc::clone(&shared);
-            let en_position = en_position.clone();
-            move |g, offset_x, offset_y| shared.on_drag_update(g, offset_x, offset_y, &en_position)
+            let en_position_x = en_position_x.clone();
+            let en_position_y = en_position_y.clone();
+            move |g, offset_x, offset_y| {
+                shared.on_drag_update(g, offset_x, offset_y, &en_position_x, &en_position_y)
+            }
         });
         gesture_drag.connect_drag_end({
             let shared = Rc::clone(&shared);
@@ -281,9 +318,10 @@ impl View {
                 @strong sw_enabled,
                 @strong dd_resolution,
                 @strong cb_primary,
-                @strong en_position,
+                @strong en_position_x,
+                @strong en_position_y,
                 @strong flow_box_details as details_ui
-                => move |dt, v, x, y| shared.on_dragdrop_drop(dt, v, x, y, &disabled_area, &sw_enabled, &dd_resolution, &cb_primary, &en_position, &details_ui))
+                => move |dt, v, x, y| shared.on_dragdrop_drop(dt, v, x, y, &disabled_area, &sw_enabled, &dd_resolution, &cb_primary, &en_position_x, &en_position_y, &details_ui))
         );
         drop_target.connect_motion(
             clone!(@strong shared => move |dt, x, y| Self::on_dragdrop_motion(dt, x, y)),
@@ -291,7 +329,7 @@ impl View {
         enabled_area.add_controller(drop_target);
 
         dd_resolution.connect_selected_item_notify(
-            clone!(@strong shared, @strong dd_refresh, @strong enabled_area => move |dd_resolution| shared.on_resolution_selected(dd_resolution, &dd_refresh, &en_position, &enabled_area)),
+            clone!(@strong shared, @strong dd_refresh, @strong enabled_area => move |dd_resolution| shared.on_resolution_selected(dd_resolution, &dd_refresh, &en_position_x, &en_position_y, &enabled_area)),
         );
         dd_refresh.connect_selected_item_notify(
             clone!(@strong shared => move |dd_refresh| shared.on_refresh_rate_selected(dd_refresh, &dd_resolution)),
@@ -307,33 +345,35 @@ impl View {
     }
 
     fn create_detail_child<W: IsA<Widget>>(label: &str, ctrl: &W) -> impl IsA<Widget> {
-        let child = FlowBoxChild::builder()
+        let fbc = FlowBoxChild::builder()
+            .name(&("fbc_".to_owned() + &label.to_owned().replace('_', "").to_lowercase()))
             .halign(Align::Start)
             .valign(Align::Center)
             .hexpand(false)
             .vexpand(false)
             .focusable(false)
+            .visible(false)
             .build();
-        child.set_visible(false);
-        child.set_widget_name(
-            &("fbc_".to_owned() + &label.to_owned().replace('_', "").to_lowercase()),
-        );
         let hbox = gtk::Box::builder()
             .orientation(Orientation::Horizontal)
             .valign(Align::Center)
             .spacing(i32::from(VIEW_PADDING))
             .build();
+        let mut child: Widget = (*ctrl).clone().into();
+        if ctrl.is::<gtk::Box>() {
+            child = ctrl.first_child().expect("Box has a child");
+        }
         let label = if label.contains('_') { label.to_owned() } else { format!("_{label}") };
         let label = Label::with_mnemonic(&label);
-        label.set_mnemonic_widget(Some(ctrl));
+        label.set_mnemonic_widget(Some(&child));
         let gesture_click = GestureClick::new();
         gesture_click
-            .connect_released(clone!(@strong ctrl => move |_, _, _, _| _ = ctrl.activate()));
+            .connect_released(clone!(@strong child => move |_, _, _, _| _ = child.activate()));
         label.add_controller(gesture_click);
         hbox.append(&label);
         hbox.append(ctrl);
-        child.set_child(Some(&hbox));
-        child
+        fbc.set_child(Some(&hbox));
+        fbc
     }
 
     #[allow(clippy::cast_possible_truncation)]
@@ -538,7 +578,8 @@ impl View {
         sw_enabled: &Switch,
         dd_resolution: &DropDown,
         cb_primary: &CheckButton,
-        en_position: &Entry,
+        en_position_x: &Entry,
+        en_position_y: &Entry,
         details_ui: &impl IsA<Widget>,
         disabled_area: &DrawingArea,
     ) {
@@ -569,7 +610,7 @@ impl View {
         disabled_area.queue_draw();
         // Do details UI updates out of scope because their triggered callbacks need to
         // borrow
-        self.update_details_ui(sw_enabled, dd_resolution, cb_primary, en_position);
+        self.update_details_ui(sw_enabled, dd_resolution, cb_primary, en_position_x, en_position_y);
         self.update_details_visibility(details_ui);
     }
 
@@ -590,7 +631,8 @@ impl View {
         sw_enabled: &Switch,
         dd_resolution: &DropDown,
         cb_primary: &CheckButton,
-        en_position: &Entry,
+        en_position_x: &Entry,
+        en_position_y: &Entry,
     ) {
         if let Some(i) = *self.selected_output.borrow() {
             *self.skip_update_output.borrow_mut() = true;
@@ -601,7 +643,8 @@ impl View {
             let primary = self.outputs.borrow()[i].primary;
             cb_primary.set_active(primary);
             if let Some(pos) = self.outputs.borrow()[i].pos {
-                en_position.set_text(&format!("+{}+{}", pos.0, pos.1));
+                en_position_x.set_text(&pos.0.to_string());
+                en_position_y.set_text(&pos.1.to_string());
             }
 
             // Update resolution drop down.
@@ -636,7 +679,14 @@ impl View {
     }
 
     #[allow(clippy::cast_possible_truncation)]
-    fn on_drag_update(&self, g: &GestureDrag, offset_x: f64, offset_y: f64, en_position: &Entry) {
+    fn on_drag_update(
+        &self,
+        g: &GestureDrag,
+        offset_x: f64,
+        offset_y: f64,
+        en_position_x: &Entry,
+        en_position_y: &Entry,
+    ) {
         if let Some(i) = *self.selected_output.borrow() {
             let mut outputs = self.outputs.borrow_mut();
             let output = &outputs[i];
@@ -697,7 +747,8 @@ impl View {
                     &mut outputs,
                 );
                 let resized_pos = outputs[i].pos.unwrap();
-                en_position.set_text(&format!("+{}+{}", resized_pos.0, resized_pos.1));
+                en_position_x.set_text(&resized_pos.0.to_string());
+                en_position_y.set_text(&resized_pos.1.to_string());
                 drawing_area.queue_draw();
             }
         }
@@ -984,7 +1035,8 @@ impl View {
         sw_enabled: &Switch,
         dd_resolution: &DropDown,
         cb_primary: &CheckButton,
-        en_position: &Entry,
+        en_position_x: &Entry,
+        en_position_y: &Entry,
         details_ui: &impl IsA<Widget>,
     ) -> bool {
         let Ok(i) = v.get::<u64>() else {
@@ -1023,7 +1075,7 @@ impl View {
         }
         // Enable selection
         *self.selected_output.borrow_mut() = Some(i);
-        self.update_details_ui(sw_enabled, dd_resolution, cb_primary, en_position);
+        self.update_details_ui(sw_enabled, dd_resolution, cb_primary, en_position_x, en_position_y);
         self.update_details_visibility(details_ui);
         // Update drawing areas
         disabled_area.queue_draw();
@@ -1065,7 +1117,8 @@ impl View {
         &self,
         dd_resolution: &DropDown,
         dd_refresh: &DropDown,
-        en_position: &Entry,
+        en_position_x: &Entry,
+        en_position_y: &Entry,
         drawing_area: &DrawingArea,
     ) {
         let mut dd_refresh_model = None;
@@ -1098,7 +1151,8 @@ impl View {
                         &mut outputs,
                     );
                     let new_pos = outputs[i].pos.unwrap();
-                    en_position.set_text(&format!("+{}+{}", new_pos.0, new_pos.1));
+                    en_position_x.set_text(&new_pos.0.to_string());
+                    en_position_y.set_text(&new_pos.1.to_string());
                     drawing_area.queue_draw();
                 }
             }
