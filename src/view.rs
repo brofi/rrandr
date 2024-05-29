@@ -1,4 +1,8 @@
-use crate::{get_bounds, math::Rect, Output, ScreenSizeRange};
+use crate::{
+    get_bounds,
+    math::{Point, Rect},
+    Output, ScreenSizeRange,
+};
 use gdk::{
     glib::{clone, Bytes, Type, Value},
     ContentProvider, Drag, DragAction, MemoryTexture, Paintable, RGBA,
@@ -10,7 +14,7 @@ use gtk::{
 };
 use pango::{Alignment, FontDescription, Weight};
 use pangocairo::functions::{create_layout, show_layout};
-use std::{cell::RefCell, collections::HashMap, error::Error, ops::Deref, rc::Rc};
+use std::{cell::RefCell, collections::HashMap, error::Error, rc::Rc};
 
 pub const VIEW_PADDING: u16 = 10;
 const SCREEN_LINE_WIDTH: f64 = 2.;
@@ -668,19 +672,19 @@ impl View {
 
             // Apply snap
             let pos = output.pos.expect("dragged output has position");
-            if snap[0] == 0 {
+            if snap.x == 0 {
                 if f64::from((new_x - pos.0).abs()) < snap_strength {
                     new_x = pos.0;
                 }
-            } else if f64::from(snap[0].abs()) < snap_strength {
-                new_x = (i32::from(pos.0) + snap[0]) as i16;
+            } else if f64::from(snap.x.abs()) < snap_strength {
+                new_x = (i32::from(pos.0) + snap.x) as i16;
             }
-            if snap[1] == 0 {
+            if snap.y == 0 {
                 if f64::from((new_y - pos.1).abs()) < snap_strength {
                     new_y = pos.1;
                 }
-            } else if f64::from(snap[1].abs()) < snap_strength {
-                new_y = (i32::from(pos.1) + snap[1]) as i16;
+            } else if f64::from(snap.y.abs()) < snap_strength {
+                new_y = (i32::from(pos.1) + snap.y) as i16;
             }
 
             // Update new position
@@ -703,86 +707,49 @@ impl View {
         }
     }
 
-    fn calculate_snap(outputs: &Vec<Output>, output_index: usize) -> [i32; 2] {
-        let output = &outputs[output_index];
-
-        let mut dist_v = i32::MAX;
-        let mut snap_v = 0;
-        let mut dist_h = i32::MAX;
-        let mut snap_h = 0;
-
-        let center = outputs[output_index].rect().center();
-        for (j, other) in outputs.deref().iter().enumerate() {
+    fn calculate_snap(outputs: &Vec<Output>, output_index: usize) -> Point {
+        let output_r = &outputs[output_index].rect();
+        let output_center = output_r.center();
+        let mut dist = Point::max();
+        let mut snap = Point::default();
+        for (j, other) in outputs.iter().enumerate() {
             if !other.enabled {
                 continue;
             }
             if output_index != j {
-                let other_center = other.rect().center();
+                let other_r = other.rect();
+                let other_center = other_r.center();
 
-                // left to other left
-                let dist = other.left() - output.left();
-                if dist.abs() < dist_h {
-                    dist_h = dist.abs();
-                    snap_h = dist;
-                }
-                // left to other right
-                let dist = other.right() - output.left();
-                if dist.abs() < dist_h {
-                    dist_h = dist.abs();
-                    snap_h = dist;
-                }
-                // right to other left
-                let dist = other.left() - output.right();
-                if dist.abs() < dist_h {
-                    dist_h = dist.abs();
-                    snap_h = dist;
-                }
-                // right to other right
-                let dist = other.right() - output.right();
-                if dist.abs() < dist_h {
-                    dist_h = dist.abs();
-                    snap_h = dist;
-                }
-                // center to other center horizontal
-                let dist = other_center.x - center.x;
-                if dist.abs() < dist_h {
-                    dist_h = dist.abs();
-                    snap_h = dist;
+                // Horizontal snap
+                for dist_h in [
+                    other_r.left() - output_r.left(),
+                    other_r.right() - output_r.left(),
+                    other_r.left() - output_r.right(),
+                    other_r.right() - output_r.right(),
+                    other_center.x - output_center.x,
+                ] {
+                    if dist_h.abs() < dist.x {
+                        dist.x = dist_h.abs();
+                        snap.x = dist_h;
+                    }
                 }
 
-                // top to other top
-                let dist = other.top() - output.top();
-                if dist.abs() < dist_v {
-                    dist_v = dist.abs();
-                    snap_v = dist;
-                }
-                // top to other bottom
-                let dist = other.bottom() - output.top();
-                if dist.abs() < dist_v {
-                    dist_v = dist.abs();
-                    snap_v = dist;
-                }
-                // bottom to other top
-                let dist = other.top() - output.bottom();
-                if dist.abs() < dist_v {
-                    dist_v = dist.abs();
-                    snap_v = dist;
-                }
-                // bottom to other bottom
-                let dist = other.bottom() - output.bottom();
-                if dist.abs() < dist_v {
-                    dist_v = dist.abs();
-                    snap_v = dist;
-                }
-                // center to other center vertical
-                let dist = other_center.y - center.y;
-                if dist.abs() < dist_v {
-                    dist_v = dist.abs();
-                    snap_v = dist;
+                // Vertical snap
+                for dist_v in [
+                    other_r.top() - output_r.top(),
+                    other_r.bottom() - output_r.top(),
+                    other_r.top() - output_r.bottom(),
+                    other_r.bottom() - output_r.bottom(),
+                    other_center.y - output_center.y,
+                ] {
+                    if dist_v.abs() < dist.y {
+                        dist.y = dist_v.abs();
+                        snap.y = dist_v;
+                    }
                 }
             }
         }
-        [snap_h, snap_v]
+        snap
     }
 
     fn mind_the_gap_and_overlap(outputs: &mut Vec<Output>) {
@@ -1296,7 +1263,7 @@ impl View {
                 let mut scaled_rect = output.rect();
                 scaled_rect.translate(translate[0], translate[1]);
                 scaled_rect.scale(*scale);
-                if scaled_rect.contains_f(x, y) {
+                if scaled_rect.contains(x, y) {
                     return Some(i);
                 }
             }

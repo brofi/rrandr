@@ -1,12 +1,15 @@
-#[derive(PartialEq)]
+#[derive(Default, PartialEq)]
 pub struct Point {
     pub x: i32,
     pub y: i32,
 }
 
 impl Point {
-    fn new(x: i32, y: i32) -> Self {
-        Point { x, y }
+    pub fn max() -> Self {
+        Point {
+            x: i32::MAX,
+            y: i32::MAX,
+        }
     }
 }
 
@@ -57,12 +60,20 @@ impl Rect {
             .unwrap_or_default()
     }
 
-    fn right(&self) -> i32 {
-        i32::from(self.x) + i32::from(self.width)
+    pub fn left(&self) -> i32 {
+        i32::from(self.x)
     }
 
-    fn bottom(&self) -> i32 {
-        i32::from(self.y) + i32::from(self.height)
+    pub fn right(&self) -> i32 {
+        self.left() + i32::from(self.width)
+    }
+
+    pub fn top(&self) -> i32 {
+        i32::from(self.y)
+    }
+
+    pub fn bottom(&self) -> i32 {
+        self.top() + i32::from(self.height)
     }
 
     pub fn center(&self) -> Point {
@@ -72,15 +83,11 @@ impl Rect {
         }
     }
 
-    pub fn contains_f(&self, x: f64, y: f64) -> bool {
+    pub fn contains(&self, x: f64, y: f64) -> bool {
         x >= f64::from(self.x)
             && x <= f64::from(self.right())
             && y >= f64::from(self.y)
             && y <= f64::from(self.bottom())
-    }
-
-    pub fn contains(&self, x: i32, y: i32) -> bool {
-        x >= i32::from(self.x) && x <= self.right() && y >= i32::from(self.y) && y <= self.bottom()
     }
 
     pub fn union(&self, o: &Self) -> Self {

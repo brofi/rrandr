@@ -61,38 +61,6 @@ impl Output {
         f64::from(PPI_DEFAULT)
     }
 
-    fn left(&self) -> i32 {
-        self.pos.unwrap().0.into()
-    }
-
-    fn right(&self) -> i32 {
-        self.left() + i32::from(self.mode.as_ref().unwrap().width)
-    }
-
-    fn top(&self) -> i32 {
-        self.pos.unwrap().1.into()
-    }
-
-    fn bottom(&self) -> i32 {
-        self.top() + i32::from(self.mode.as_ref().unwrap().height)
-    }
-
-    // fn is_above(&self, other: &Output) -> bool {
-    //     self.bottom() <= other.top()
-    // }
-
-    // fn is_below(&self, other: &Output) -> bool {
-    //     self.top() >= other.bottom()
-    // }
-
-    // fn is_left_of(&self, other: &Output) -> bool {
-    //     self.right() <= other.left()
-    // }
-
-    // fn is_right_of(&self, other: &Output) -> bool {
-    //     self.left() >= other.right()
-    // }
-
     fn get_resolutions_dropdown(&self) -> Vec<String> {
         self.get_resolutions()
             .iter()
