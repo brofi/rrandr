@@ -525,15 +525,17 @@ impl View {
         let layout = create_layout(cr);
         layout.set_font_description(Some(&desc));
         layout.set_alignment(Alignment::Center);
-
-        cr.set_source_color(&COLOR_BG0);
-        cr.move_to(rect[0] + rect[2] / 2., rect[1] + rect[3] / 2.);
-
         layout.set_text(product_name.unwrap_or(name));
-        let ps = layout.pixel_size();
-        cr.rel_move_to(f64::from(-ps.0) / 2., f64::from(-ps.1) / 2.);
-        show_layout(cr, &layout);
 
+        let ps = layout.pixel_size();
+        if f64::from(ps.0) <= rect[2] - f64::from(VIEW_PADDING) * 2.
+            && f64::from(ps.1) <= rect[3] - f64::from(VIEW_PADDING) * 2.
+        {
+            cr.set_source_color(&COLOR_BG0);
+            cr.move_to(rect[0] + rect[2] / 2., rect[1] + rect[3] / 2.);
+            cr.rel_move_to(f64::from(-ps.0) / 2., f64::from(-ps.1) / 2.);
+            show_layout(cr, &layout);
+        }
         cr.restore().unwrap();
     }
 
