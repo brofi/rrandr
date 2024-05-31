@@ -5,9 +5,9 @@ authors = ["Andy B. <brofi.archlinux@gmail.com>"]
 edition = "2021"
 
 [dependencies]
-x11rb = { version = "0.13.1", features = ["randr"] }
+x11rb = { version = "0.13.1", features = ["randr", "render", "allow-unsafe-code"] }
 gtk = { version = "0.8.2", package = "gtk4", features = ["v4_6"] }
 gdk = { version = "0.8.2", package = "gdk4" }
-cairo-rs = "0.19.4"
+cairo-rs = { version = "0.19.4", features = ["xcb"] }
 pango = "0.19.5"
 pangocairo = "0.19.2"

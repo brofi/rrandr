@@ -21,9 +21,9 @@ pub const VIEW_PADDING: u16 = 10;
 const SCREEN_LINE_WIDTH: f64 = 2.;
 const SELECTION_LINE_WIDTH: f64 = 4.;
 const COLOR_GREEN: RGBA = RGBA::new(0.722, 0.733, 0.149, 1.);
-const COLOR_FG: RGBA = RGBA::new(0.922, 0.859, 0.698, 1.);
+pub const COLOR_FG: RGBA = RGBA::new(0.922, 0.859, 0.698, 1.);
 const COLOR_BG0_H: RGBA = RGBA::new(0.114, 0.125, 0.129, 1.);
-const COLOR_BG0: RGBA = RGBA::new(0.157, 0.157, 0.157, 1.);
+pub const COLOR_BG0: RGBA = RGBA::new(0.157, 0.157, 0.157, 1.);
 
 // needed because to tansfer ownership because: function requires argument type
 // to outlive `'static` https://doc.rust-lang.org/rust-by-example/scope/lifetime/static_lifetime.html
@@ -53,6 +53,7 @@ impl View {
         outputs: Vec<Output>,
         size: ScreenSizeRange,
         apply_callback: impl Fn(Vec<Output>) -> bool + 'static,
+        identify_callback: impl Fn() + 'static,
     ) -> impl IsA<Widget> {
         let outputs_orig = outputs.clone();
         let shared = Rc::new(Self {
@@ -158,8 +159,19 @@ impl View {
 
         let box_controls = gtk::Box::builder()
             .orientation(Orientation::Horizontal)
+            .spacing(i32::from(VIEW_PADDING))
             .halign(Align::End)
             .valign(Align::End)
+            .build();
+        let btn_id = Button::builder()
+            .label("_Identify")
+            .use_underline(true)
+            .tooltip_text("Identify outputs")
+            .build();
+        btn_id.connect_clicked(move |_btn| identify_callback());
+        box_controls.append(&btn_id);
+        let box_apply_reset = gtk::Box::builder()
+            .orientation(Orientation::Horizontal)
             .css_classes(["linked"])
             .build();
         let btn_apply = Button::builder()
@@ -189,7 +201,7 @@ impl View {
                     disabled_area.queue_draw();
                 }
         }));
-        box_controls.append(&btn_apply);
+        box_apply_reset.append(&btn_apply);
         let btn_reset = Button::builder()
             .label("_Reset")
             .use_underline(true)
@@ -201,8 +213,9 @@ impl View {
             @strong disabled_area,
             @strong flow_box_details as details_ui
             => move |_btn| shared.on_reset_clicked(&enabled_area, &disabled_area, &details_ui)));
-        box_controls.append(&btn_reset);
+        box_apply_reset.append(&btn_reset);
 
+        box_controls.append(&box_apply_reset);
         box_bottom.append(&box_controls);
         root.append(&box_bottom);
 

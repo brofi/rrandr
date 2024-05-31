@@ -9,15 +9,20 @@ mod view;
 use core::fmt;
 use std::collections::HashMap;
 use std::error::Error;
+use std::time::{Duration, Instant};
 
+use cairo::ffi::{cairo_device_finish, cairo_device_flush};
+use cairo::{XCBDrawable, XCBSurface};
 use gtk::glib::ExitCode;
 use gtk::prelude::*;
 use gtk::{Application, ApplicationWindow};
 use math::Rect;
+use pango::{Alignment, FontDescription, Weight};
+use pangocairo::functions::{create_layout, show_layout};
 use view::View;
-use x11rb::connection::Connection as XConnection;
+use x11rb::connection::{Connection as XConnection, RequestConnection};
 use x11rb::cookie::{Cookie, VoidCookie};
-use x11rb::errors::{ConnectionError, ReplyError};
+use x11rb::errors::{ConnectionError, ReplyError, ReplyOrIdError};
 use x11rb::protocol::randr::{
     get_crtc_info, get_output_info, get_output_primary, get_output_property,
     get_screen_resources_current, get_screen_size_range, set_crtc_config, set_output_primary,
@@ -25,12 +30,20 @@ use x11rb::protocol::randr::{
     GetScreenResourcesCurrentReply, GetScreenSizeRangeReply, Mode as ModeId, ModeFlag, ModeInfo,
     Output as OutputId, Rotation, ScreenSize, SetConfig,
 };
-use x11rb::protocol::xproto::{intern_atom, AtomEnum, Screen};
+use x11rb::protocol::xproto::{
+    intern_atom, AtomEnum, ConnectionExt, CreateWindowAux, EventMask, Screen, Visualtype, Window,
+    WindowClass,
+};
+use x11rb::protocol::Event;
 use x11rb::rust_connection::RustConnection;
-use x11rb::x11_utils::X11Error;
+use x11rb::x11_utils::{Serialize, X11Error};
+use x11rb::xcb_ffi::XCBConnection;
 use x11rb::CURRENT_TIME;
 
+use crate::view::{COLOR_BG0, COLOR_FG};
+
 type ScreenSizeRange = GetScreenSizeRangeReply;
+type ScreenResources = GetScreenResourcesCurrentReply;
 type OutputInfo = GetOutputInfoReply;
 type CrtcInfo = GetCrtcInfoReply;
 type Resolution = [u16; 2];
@@ -39,6 +52,10 @@ const APP_ID: &str = "com.github.brofi.rrandr";
 const RESOLUTION_JOIN_CHAR: char = 'x';
 const MM_PER_INCH: f32 = 25.4;
 const PPI_DEFAULT: u8 = 96;
+
+const POPUP_WINDOW_PAD: f64 = 20.;
+const POPUP_OUTPUT_RATIO: f64 = 1. / 8.;
+const POPUP_SHOW_SECS: f32 = 2.5;
 
 #[derive(Clone, Debug)]
 pub struct Output {
@@ -173,6 +190,13 @@ fn get_bounds(outputs: &[Output]) -> Rect {
     Rect::bounds(outputs.iter().filter(|&o| o.enabled).map(Output::rect).collect::<Vec<_>>())
 }
 
+struct Popup {
+    _wid: Window,
+    surface: XCBSurface,
+    rect: Rect,
+    text: String,
+}
+
 fn main() -> ExitCode {
     let (conn, screen_num) = x11rb::connect(None).expect("connection to X Server");
     let screen = &conn.setup().roots[screen_num];
@@ -226,9 +250,17 @@ fn main() -> ExitCode {
     }
     let app = Application::builder().application_id(APP_ID).build();
     app.connect_activate(move |app| {
-        build_ui(app, outputs.clone(), screen_size_range, move |outputs| {
-            on_apply_clicked(&screen_size_range, &outputs)
-        });
+        build_ui(
+            app,
+            outputs.clone(),
+            screen_size_range,
+            move |outputs| on_apply_clicked(&screen_size_range, &outputs),
+            || {
+                if let Err(e) = on_identify_clicked() {
+                    println!("Failed to identify outputs: {e:?}");
+                }
+            },
+        );
     });
     app.run()
 }
@@ -238,6 +270,7 @@ fn build_ui(
     outputs: Vec<Output>,
     size: ScreenSizeRange,
     on_apply: impl Fn(Vec<Output>) -> bool + 'static,
+    on_identify: impl Fn() + 'static,
 ) {
     let window = ApplicationWindow::builder()
         .application(app)
@@ -246,9 +279,166 @@ fn build_ui(
         .title("RRandR")
         .build();
 
-    let view = View::create(outputs, size, on_apply);
+    let view = View::create(outputs, size, on_apply, on_identify);
     window.set_child(Some(&view));
     window.present();
+}
+
+fn create_popup_window(
+    conn: &impl XConnection,
+    screen_num: usize,
+    rect: &Rect,
+) -> Result<Window, ReplyOrIdError> {
+    let screen = &conn.setup().roots[screen_num];
+    let wid = conn.generate_id()?;
+    let waux = CreateWindowAux::new()
+        .event_mask(EventMask::EXPOSURE)
+        .background_pixel(x11rb::NONE)
+        .override_redirect(1);
+    conn.create_window(
+        screen.root_depth,
+        wid,
+        screen.root,
+        rect.x(),
+        rect.y(),
+        rect.width(),
+        rect.height(),
+        0,
+        WindowClass::INPUT_OUTPUT,
+        screen.root_visual,
+        &waux,
+    )?;
+    conn.map_window(wid)?;
+    Ok(wid)
+}
+
+fn create_popup_surface(
+    conn: &XCBConnection,
+    screen_num: usize,
+    wid: Window,
+    width: i32,
+    height: i32,
+) -> Result<XCBSurface, cairo::Error> {
+    let cairo_conn =
+        unsafe { cairo::XCBConnection::from_raw_none(conn.get_raw_xcb_connection() as _) };
+    let cairo_visual = unsafe {
+        cairo::XCBVisualType::from_raw_none(
+            get_root_visual_type(&conn, screen_num).unwrap().serialize().as_mut_ptr() as _,
+        )
+    };
+    cairo::XCBSurface::create(&cairo_conn, &XCBDrawable(wid), &cairo_visual, width, height)
+}
+
+fn get_root_visual_type(conn: &impl XConnection, screen_num: usize) -> Option<Visualtype> {
+    let screen = &conn.setup().roots[screen_num];
+    for depth in &screen.allowed_depths {
+        for visual in &depth.visuals {
+            if visual.visual_id == screen.root_visual {
+                return Some(*visual);
+            }
+        }
+    }
+    None
+}
+
+fn create_popup_windows(
+    conn: &XCBConnection,
+    screen_num: usize,
+) -> Result<HashMap<Window, Popup>, Box<dyn Error>> {
+    let mut windows = HashMap::new();
+    let screen = &conn.setup().roots[screen_num];
+    let res = get_screen_resources_current(&conn, screen.root)?.reply()?;
+    let rr_modes: HashMap<ModeId, &ModeInfo> = res.modes.iter().map(|m| (m.id, m)).collect();
+    for output in &res.outputs {
+        let output_info = get_output_info(conn, *output, res.timestamp)?.reply()?;
+        if output_info.crtc > 0 {
+            let crtc_info = get_crtc_info(conn, output_info.crtc, res.timestamp)?.reply()?;
+            let mode = rr_modes[&crtc_info.mode];
+            let width = (f64::from(mode.width) * POPUP_OUTPUT_RATIO).round() as u16;
+            let height = (f64::from(mode.height) * POPUP_OUTPUT_RATIO).round() as u16;
+            let x = (f64::from(crtc_info.x) + POPUP_WINDOW_PAD).round() as i16;
+            let y = (f64::from(crtc_info.y) - POPUP_WINDOW_PAD + f64::from(mode.height)
+                - f64::from(height))
+            .round() as i16;
+            let rect = Rect::new(x, y, width, height);
+            let wid = create_popup_window(&conn, screen_num, &rect)?;
+            let surface =
+                create_popup_surface(conn, screen_num, wid, i32::from(width), i32::from(height))?;
+            windows.insert(
+                wid,
+                Popup {
+                    _wid: wid,
+                    surface,
+                    rect,
+                    text: String::from_utf8_lossy(&output_info.name).to_string(),
+                },
+            );
+        }
+    }
+    Ok(windows)
+}
+
+fn on_identify_clicked() -> Result<(), Box<dyn Error>> {
+    let (conn, screen_num) = XCBConnection::connect(None)?;
+    let popups = create_popup_windows(&conn, screen_num)?;
+    conn.flush()?;
+
+    let mut desc = FontDescription::new();
+    desc.set_family("monospace");
+    // desc.set_size(14);
+    desc.set_weight(Weight::Bold);
+
+    let now = Instant::now();
+    let secs = Duration::from_secs_f32(POPUP_SHOW_SECS);
+    while now.elapsed() < secs {
+        match conn.poll_for_event()? {
+            Some(Event::Expose(e)) => {
+                if let Some(popup) = popups.get(&e.window) {
+                    let surface = &popup.surface;
+                    let cr = cairo::Context::new(surface)?;
+                    draw_popup(&cr, &popup.rect, &desc, &popup.text)?;
+                    surface.flush();
+                    unsafe { cairo_device_flush(surface.device().unwrap().to_raw_none()) };
+                }
+            }
+            Some(Event::Error(e)) => return Err(x_error_to_string(&e).into()),
+            _ => (),
+        }
+    }
+    for popup in popups.values() {
+        unsafe { cairo_device_finish(popup.surface.device().unwrap().to_raw_none()) };
+        popup.surface.finish();
+    }
+    Ok(())
+}
+
+fn draw_popup(
+    cr: &cairo::Context,
+    rect: &Rect,
+    desc: &FontDescription,
+    text: &str,
+) -> Result<(), cairo::Error> {
+    let w = f64::from(rect.width());
+    let h = f64::from(rect.height());
+
+    cr.set_source_rgba(
+        f64::from(COLOR_FG.red()),
+        f64::from(COLOR_FG.green()),
+        f64::from(COLOR_FG.blue()),
+        0.75,
+    );
+    cr.rectangle(0., 0., w, h);
+    cr.fill()?;
+
+    cr.set_source_color(&COLOR_BG0);
+    let layout = create_layout(&cr);
+    layout.set_font_description(Some(&desc));
+    layout.set_alignment(Alignment::Center);
+    layout.set_text(text);
+    let ps = layout.pixel_size();
+    cr.move_to((w - f64::from(ps.0)) / 2., (h - f64::from(ps.1)) / 2.);
+    show_layout(&cr, &layout);
+    Ok(())
 }
 
 fn on_apply_clicked(screen_size_range: &ScreenSizeRange, outputs: &Vec<Output>) -> bool {
@@ -501,10 +691,10 @@ fn revert(conn: &RustConnection, screen: &Screen, rr_crtcs: &HashMap<CrtcId, Crt
 }
 
 // TODO checkout GetXIDListRequest
-fn request_outputs<'a>(
-    conn: &'a RustConnection,
-    res: &GetScreenResourcesCurrentReply,
-) -> Result<HashMap<OutputId, Cookie<'a, RustConnection, OutputInfo>>, ConnectionError> {
+fn request_outputs<'a, Conn: RequestConnection>(
+    conn: &'a Conn,
+    res: &ScreenResources,
+) -> Result<HashMap<OutputId, Cookie<'a, Conn, OutputInfo>>, ConnectionError> {
     let mut cookies = HashMap::new();
     for output in &res.outputs {
         cookies.insert(*output, get_output_info(conn, *output, res.timestamp)?);
@@ -512,10 +702,10 @@ fn request_outputs<'a>(
     Ok(cookies)
 }
 
-fn request_crtcs<'a>(
-    conn: &'a RustConnection,
-    res: &GetScreenResourcesCurrentReply,
-) -> Result<HashMap<CrtcId, Cookie<'a, RustConnection, CrtcInfo>>, ConnectionError> {
+fn request_crtcs<'a, Conn: RequestConnection>(
+    conn: &'a Conn,
+    res: &ScreenResources,
+) -> Result<HashMap<CrtcId, Cookie<'a, Conn, CrtcInfo>>, ConnectionError> {
     let mut cookies = HashMap::new();
     for crtc in &res.crtcs {
         cookies.insert(*crtc, get_crtc_info(conn, *crtc, res.timestamp)?);
@@ -524,7 +714,7 @@ fn request_crtcs<'a>(
 }
 
 fn get_outputs(
-    cookies: HashMap<OutputId, Cookie<RustConnection, OutputInfo>>,
+    cookies: HashMap<OutputId, Cookie<impl RequestConnection, OutputInfo>>,
 ) -> Result<HashMap<OutputId, OutputInfo>, ReplyError> {
     let mut outputs = HashMap::new();
     for (output, c) in cookies {
@@ -534,7 +724,7 @@ fn get_outputs(
 }
 
 fn get_crtcs(
-    cookies: HashMap<CrtcId, Cookie<RustConnection, CrtcInfo>>,
+    cookies: HashMap<CrtcId, Cookie<impl RequestConnection, CrtcInfo>>,
 ) -> Result<HashMap<CrtcId, CrtcInfo>, ReplyError> {
     let mut crtcs = HashMap::new();
     for (crtc, c) in cookies {
