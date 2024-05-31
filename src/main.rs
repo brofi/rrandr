@@ -20,7 +20,8 @@ use gtk::glib::ExitCode;
 use gtk::prelude::*;
 use gtk::{Application, ApplicationWindow};
 use math::Rect;
-use pango::{Alignment, FontDescription, Weight};
+use pango::ffi::PANGO_SCALE;
+use pango::{Alignment, FontDescription, Layout, Weight};
 use pangocairo::functions::{create_layout, show_layout};
 use view::View;
 use x11rb::connection::{Connection as XConnection, RequestConnection};
@@ -346,8 +347,7 @@ fn create_popup_windows(
     let res = get_screen_resources_current(&conn, screen.root)?.reply()?;
     let rr_modes: HashMap<ModeId, &ModeInfo> = res.modes.iter().map(|m| (m.id, m)).collect();
     let mut desc = FontDescription::new();
-    desc.set_family("monospace");
-    // desc.set_size(14);
+    desc.set_family("Sans");
     desc.set_weight(Weight::Bold);
     for output in &res.outputs {
         let output_info = get_output_info(conn, *output, res.timestamp)?.reply()?;
@@ -365,7 +365,12 @@ fn create_popup_windows(
             let surface =
                 create_popup_surface(conn, screen_num, wid, i32::from(width), i32::from(height))?;
             let cr = cairo::Context::new(&surface)?;
-            draw_popup(&cr, &rect, &desc, &String::from_utf8_lossy(&output_info.name).to_string())?;
+            draw_popup(
+                &cr,
+                &rect,
+                &mut desc,
+                &String::from_utf8_lossy(&output_info.name).to_string(),
+            )?;
             surface.flush();
             windows.insert(wid, surface);
         }
@@ -409,30 +414,51 @@ fn on_identify_clicked() -> Result<(), Box<dyn Error>> {
 fn draw_popup(
     cr: &cairo::Context,
     rect: &Rect,
-    desc: &FontDescription,
+    desc: &mut FontDescription,
     text: &str,
 ) -> Result<(), cairo::Error> {
-    let w = f64::from(rect.width());
-    let h = f64::from(rect.height());
-
     cr.set_source_rgba(
         f64::from(COLOR_FG.red()),
         f64::from(COLOR_FG.green()),
         f64::from(COLOR_FG.blue()),
         0.75,
     );
-    cr.rectangle(0., 0., w, h);
+    cr.rectangle(0., 0., f64::from(rect.width()), f64::from(rect.height()));
     cr.fill()?;
 
     cr.set_source_color(&COLOR_BG0);
-    let layout = create_layout(&cr);
-    layout.set_font_description(Some(&desc));
-    layout.set_alignment(Alignment::Center);
-    layout.set_text(text);
-    let ps = layout.pixel_size();
-    cr.move_to((w - f64::from(ps.0)) / 2., (h - f64::from(ps.1)) / 2.);
+    let layout = get_layout(&cr, rect.width(), rect.height(), POPUP_WINDOW_PAD, desc, text);
+    let (w, h) = layout.pixel_size();
+    cr.move_to(
+        f64::from(i32::from(rect.width()) - w) / 2.,
+        f64::from(i32::from(rect.height()) - h) / 2.,
+    );
     show_layout(&cr, &layout);
     Ok(())
+}
+
+fn get_layout(
+    cr: &cairo::Context,
+    width: u16,
+    height: u16,
+    pad: f64,
+    desc: &mut FontDescription,
+    text: &str,
+) -> Layout {
+    let layout = create_layout(&cr);
+    layout.set_alignment(Alignment::Center);
+    layout.set_text(text);
+    let pscale = f64::from(PANGO_SCALE);
+    let size = f64::from(width.max(height)) * pscale;
+    desc.set_absolute_size(size);
+    layout.set_font_description(Some(&desc));
+    let (w, h) = layout.pixel_size();
+    let scale = ((f64::from(width) - 2. * pad) / f64::from(w))
+        .min((f64::from(height) - 2. * pad) / f64::from(h));
+    let size = (size * scale / pscale).floor() * pscale;
+    desc.set_absolute_size(size);
+    layout.set_font_description(Some(&desc));
+    layout
 }
 
 fn on_apply_clicked(screen_size_range: &ScreenSizeRange, outputs: &Vec<Output>) -> bool {
