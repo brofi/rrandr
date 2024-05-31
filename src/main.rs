@@ -3,16 +3,19 @@
 #![allow(clippy::too_many_lines)]
 // #![warn(clippy::restriction)]
 
+mod cairo_surface;
 mod math;
 mod view;
 
 use core::fmt;
 use std::collections::HashMap;
 use std::error::Error;
+use std::thread;
 use std::time::{Duration, Instant};
 
-use cairo::ffi::{cairo_device_finish, cairo_device_flush};
-use cairo::{XCBDrawable, XCBSurface};
+use cairo::ffi::cairo_device_finish;
+use cairo::XCBDrawable;
+use cairo_surface::XCBSurfaceS;
 use gtk::glib::ExitCode;
 use gtk::prelude::*;
 use gtk::{Application, ApplicationWindow};
@@ -190,13 +193,6 @@ fn get_bounds(outputs: &[Output]) -> Rect {
     Rect::bounds(outputs.iter().filter(|&o| o.enabled).map(Output::rect).collect::<Vec<_>>())
 }
 
-struct Popup {
-    _wid: Window,
-    surface: XCBSurface,
-    rect: Rect,
-    text: String,
-}
-
 fn main() -> ExitCode {
     let (conn, screen_num) = x11rb::connect(None).expect("connection to X Server");
     let screen = &conn.setup().roots[screen_num];
@@ -292,7 +288,7 @@ fn create_popup_window(
     let screen = &conn.setup().roots[screen_num];
     let wid = conn.generate_id()?;
     let waux = CreateWindowAux::new()
-        .event_mask(EventMask::EXPOSURE)
+        .event_mask(EventMask::BUTTON_PRESS)
         .background_pixel(x11rb::NONE)
         .override_redirect(1);
     conn.create_window(
@@ -318,7 +314,7 @@ fn create_popup_surface(
     wid: Window,
     width: i32,
     height: i32,
-) -> Result<XCBSurface, cairo::Error> {
+) -> Result<XCBSurfaceS, cairo::Error> {
     let cairo_conn =
         unsafe { cairo::XCBConnection::from_raw_none(conn.get_raw_xcb_connection() as _) };
     let cairo_visual = unsafe {
@@ -326,7 +322,7 @@ fn create_popup_surface(
             get_root_visual_type(&conn, screen_num).unwrap().serialize().as_mut_ptr() as _,
         )
     };
-    cairo::XCBSurface::create(&cairo_conn, &XCBDrawable(wid), &cairo_visual, width, height)
+    XCBSurfaceS::create(&cairo_conn, &XCBDrawable(wid), &cairo_visual, width, height)
 }
 
 fn get_root_visual_type(conn: &impl XConnection, screen_num: usize) -> Option<Visualtype> {
@@ -344,11 +340,15 @@ fn get_root_visual_type(conn: &impl XConnection, screen_num: usize) -> Option<Vi
 fn create_popup_windows(
     conn: &XCBConnection,
     screen_num: usize,
-) -> Result<HashMap<Window, Popup>, Box<dyn Error>> {
+) -> Result<HashMap<Window, XCBSurfaceS>, Box<dyn Error>> {
     let mut windows = HashMap::new();
     let screen = &conn.setup().roots[screen_num];
     let res = get_screen_resources_current(&conn, screen.root)?.reply()?;
     let rr_modes: HashMap<ModeId, &ModeInfo> = res.modes.iter().map(|m| (m.id, m)).collect();
+    let mut desc = FontDescription::new();
+    desc.set_family("monospace");
+    // desc.set_size(14);
+    desc.set_weight(Weight::Bold);
     for output in &res.outputs {
         let output_info = get_output_info(conn, *output, res.timestamp)?.reply()?;
         if output_info.crtc > 0 {
@@ -364,15 +364,10 @@ fn create_popup_windows(
             let wid = create_popup_window(&conn, screen_num, &rect)?;
             let surface =
                 create_popup_surface(conn, screen_num, wid, i32::from(width), i32::from(height))?;
-            windows.insert(
-                wid,
-                Popup {
-                    _wid: wid,
-                    surface,
-                    rect,
-                    text: String::from_utf8_lossy(&output_info.name).to_string(),
-                },
-            );
+            let cr = cairo::Context::new(&surface)?;
+            draw_popup(&cr, &rect, &desc, &String::from_utf8_lossy(&output_info.name).to_string())?;
+            surface.flush();
+            windows.insert(wid, surface);
         }
     }
     Ok(windows)
@@ -383,32 +378,31 @@ fn on_identify_clicked() -> Result<(), Box<dyn Error>> {
     let popups = create_popup_windows(&conn, screen_num)?;
     conn.flush()?;
 
-    let mut desc = FontDescription::new();
-    desc.set_family("monospace");
-    // desc.set_size(14);
-    desc.set_weight(Weight::Bold);
-
-    let now = Instant::now();
-    let secs = Duration::from_secs_f32(POPUP_SHOW_SECS);
-    while now.elapsed() < secs {
-        match conn.poll_for_event()? {
-            Some(Event::Expose(e)) => {
-                if let Some(popup) = popups.get(&e.window) {
-                    let surface = &popup.surface;
-                    let cr = cairo::Context::new(surface)?;
-                    draw_popup(&cr, &popup.rect, &desc, &popup.text)?;
-                    surface.flush();
-                    unsafe { cairo_device_flush(surface.device().unwrap().to_raw_none()) };
+    thread::spawn(move || -> Result<(), ReplyError> {
+        let now = Instant::now();
+        let secs = Duration::from_secs_f32(POPUP_SHOW_SECS);
+        let mut result = Ok(());
+        while now.elapsed() < secs {
+            match conn.poll_for_event()? {
+                Some(Event::ButtonPress(e)) => {
+                    if e.detail == 1 {
+                        break;
+                    }
                 }
+                Some(Event::Error(e)) => {
+                    println!("{}", x_error_to_string(&e));
+                    result = Err(e.into());
+                    break;
+                }
+                _ => (),
             }
-            Some(Event::Error(e)) => return Err(x_error_to_string(&e).into()),
-            _ => (),
         }
-    }
-    for popup in popups.values() {
-        unsafe { cairo_device_finish(popup.surface.device().unwrap().to_raw_none()) };
-        popup.surface.finish();
-    }
+        for surface in popups.values() {
+            unsafe { cairo_device_finish(surface.device().unwrap().to_raw_none()) };
+            surface.finish();
+        }
+        result
+    });
     Ok(())
 }
 
