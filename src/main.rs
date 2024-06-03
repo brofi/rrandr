@@ -6,6 +6,7 @@
 mod cairo_surface;
 mod math;
 mod view;
+mod widget;
 
 use core::fmt;
 use std::collections::HashMap;

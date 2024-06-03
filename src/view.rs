@@ -4,18 +4,19 @@ use std::error::Error;
 use std::num::IntErrorKind;
 use std::rc::Rc;
 
-use gdk::glib::{clone, Bytes, SignalHandlerId, Type, Value};
+use gdk::glib::{clone, Bytes, Type, Value};
 use gdk::{ContentProvider, Drag, DragAction, MemoryTexture, Paintable, RGBA};
 use gtk::prelude::*;
 use gtk::{
-    Align, Button, CheckButton, DragSource, DrawingArea, DropControllerMotion, DropDown,
-    DropTarget, EventControllerMotion, FlowBox, FlowBoxChild, Frame, GestureClick, GestureDrag,
-    InputPurpose, Label, Orientation, Paned, SelectionMode, StringList, Switch, Widget,
+    Align, Button, DragSource, DrawingArea, DropControllerMotion, DropTarget,
+    EventControllerMotion, FlowBox, FlowBoxChild, Frame, GestureClick, GestureDrag, InputPurpose,
+    Label, Orientation, Paned, SelectionMode, StringList, Widget,
 };
 use pango::{Alignment, FontDescription, Weight};
 use pangocairo::functions::{create_layout, show_layout};
 
 use crate::math::{Point, Rect};
+use crate::widget::{CheckButton, DropDown, Entry, Switch};
 use crate::{get_bounds, Output, ScreenSizeRange};
 
 pub const VIEW_PADDING: u16 = 10;
@@ -29,76 +30,6 @@ pub const COLOR_BG0: RGBA = RGBA::new(0.157, 0.157, 0.157, 1.);
 enum Axis {
     X,
     Y,
-}
-
-#[derive(Clone)]
-struct Entry {
-    widget: gtk::Entry,
-    insert_text_handler_id: Rc<RefCell<Option<SignalHandlerId>>>,
-    delete_text_handler_id: Rc<RefCell<Option<SignalHandlerId>>>,
-}
-
-impl Entry {
-    fn new(widget: gtk::Entry) -> Self {
-        Self {
-            widget,
-            insert_text_handler_id: Rc::new(RefCell::new(None)),
-            delete_text_handler_id: Rc::new(RefCell::new(None)),
-        }
-    }
-
-    fn connect_insert_text(&mut self, f: impl Fn(&Self, &str, &mut i32) + 'static) {
-        if let Some(editable) = self.widget.delegate() {
-            *self.insert_text_handler_id.borrow_mut() = Some(editable.connect_insert_text({
-                let entry = self.clone();
-                move |editable, text, position| {
-                    f(&entry, text, position);
-                    editable.stop_signal_emission_by_name("insert_text");
-                }
-            }));
-        }
-    }
-
-    fn connect_delete_text(&mut self, f: impl Fn(&Self, i32, i32) + 'static) {
-        if let Some(editable) = self.widget.delegate() {
-            *self.delete_text_handler_id.borrow_mut() = Some(editable.connect_delete_text({
-                let entry = self.clone();
-                move |editable, start, end| {
-                    f(&entry, start, end);
-                    editable.stop_signal_emission_by_name("delete_text");
-                }
-            }));
-        }
-    }
-
-    fn set_text(&self, text: &str) {
-        if self.insert_text_handler_id.borrow().is_some()
-            && self.delete_text_handler_id.borrow().is_some()
-        {
-            self.delete_text(0, -1);
-            self.insert_text(text, &mut 0);
-        }
-    }
-
-    fn insert_text(&self, text: &str, position: &mut i32) {
-        if let Some(handler_id) = self.insert_text_handler_id.borrow().as_ref() {
-            if let Some(editable) = self.widget.delegate() {
-                editable.block_signal(handler_id);
-                self.widget.insert_text(text, position);
-                editable.unblock_signal(handler_id);
-            }
-        }
-    }
-
-    fn delete_text(&self, start_pos: i32, end_pos: i32) {
-        if let Some(handler_id) = self.delete_text_handler_id.borrow().as_ref() {
-            if let Some(editable) = self.widget.delegate() {
-                editable.block_signal(handler_id);
-                self.widget.delete_text(start_pos, end_pos);
-                editable.unblock_signal(handler_id);
-            }
-        }
-    }
 }
 
 // needed because to tansfer ownership because: function requires argument type
@@ -117,11 +48,7 @@ pub struct View {
     translate: RefCell<[i16; 2]>,
     bounds: RefCell<Rect>,
 
-    // dragged_disabled_output: RefCell<Option<usize>>,
     dragging_disabled_output: RefCell<bool>,
-
-    skip_update_refresh_model: RefCell<bool>,
-    skip_update_output: RefCell<bool>,
 }
 
 impl View {
@@ -145,9 +72,6 @@ impl View {
 
             // dragged_disabled_output: RefCell::new(None),
             dragging_disabled_output: RefCell::new(false),
-
-            skip_update_refresh_model: RefCell::new(false),
-            skip_update_output: RefCell::new(false),
         });
 
         let root = gtk::Box::builder()
@@ -189,17 +113,20 @@ impl View {
             .hexpand(true)
             .build();
 
-        let sw_enabled = Switch::builder().tooltip_text("Enable/Disable").build();
-        flow_box_details.append(&Self::create_detail_child("Enabled", &sw_enabled));
+        let sw_enabled = gtk::Switch::builder().tooltip_text("Enable/Disable").build();
+        let mut sw_enabled = Switch::new(sw_enabled);
+        flow_box_details.append(&Self::create_detail_child("Enabled", &sw_enabled.widget));
 
         let box_mode = gtk::Box::builder()
             .orientation(Orientation::Horizontal)
             .css_classes(["linked"])
             .build();
-        let dd_resolution = DropDown::builder().tooltip_text("Resolution").build();
-        let dd_refresh = DropDown::builder().tooltip_text("Refresh rate").build();
-        box_mode.append(&dd_resolution);
-        box_mode.append(&dd_refresh);
+        let dd_resolution = gtk::DropDown::builder().tooltip_text("Resolution").build();
+        let mut dd_resolution = DropDown::new(dd_resolution);
+        let dd_refresh = gtk::DropDown::builder().tooltip_text("Refresh rate").build();
+        let mut dd_refresh = DropDown::new(dd_refresh);
+        box_mode.append(&dd_resolution.widget);
+        box_mode.append(&dd_refresh.widget);
         flow_box_details.append(&Self::create_detail_child("Mode", &box_mode));
 
         let box_pos = gtk::Box::builder()
@@ -260,8 +187,9 @@ impl View {
         box_pos.append(&en_position_y.widget);
         flow_box_details.append(&Self::create_detail_child("Position", &box_pos));
 
-        let cb_primary = CheckButton::builder().tooltip_text("Set as primary").build();
-        flow_box_details.append(&Self::create_detail_child("Primary", &cb_primary));
+        let cb_primary = gtk::CheckButton::builder().tooltip_text("Set as primary").build();
+        let mut cb_primary = CheckButton::new(cb_primary);
+        flow_box_details.append(&Self::create_detail_child("Primary", &cb_primary.widget));
 
         box_bottom.append(&flow_box_details);
 
@@ -355,6 +283,7 @@ impl View {
             let shared = Rc::clone(&shared);
             let sw_enabled = sw_enabled.clone();
             let dd_resolution = dd_resolution.clone();
+            let dd_refresh = dd_refresh.clone();
             let cb_primary = cb_primary.clone();
             let en_position_x = en_position_x.clone();
             let en_position_y = en_position_y.clone();
@@ -367,6 +296,7 @@ impl View {
                     start_y,
                     &sw_enabled,
                     &dd_resolution,
+                    &dd_refresh,
                     &cb_primary,
                     &en_position_x,
                     &en_position_y,
@@ -438,11 +368,12 @@ impl View {
                 @strong disabled_area,
                 @strong sw_enabled,
                 @strong dd_resolution,
+                @strong dd_refresh,
                 @strong cb_primary,
                 @strong en_position_x,
                 @strong en_position_y,
                 @strong flow_box_details as details_ui
-                => move |dt, v, x, y| shared.on_dragdrop_drop(dt, v, x, y, &disabled_area, &sw_enabled, &dd_resolution, &cb_primary, &en_position_x, &en_position_y, &details_ui))
+                => move |dt, v, x, y| shared.on_dragdrop_drop(dt, v, x, y, &disabled_area, &sw_enabled, &dd_resolution, &dd_refresh, &cb_primary, &en_position_x, &en_position_y, &details_ui))
         );
         drop_target.connect_motion(
             clone!(@strong shared => move |dt, x, y| Self::on_dragdrop_motion(dt, x, y)),
@@ -698,6 +629,7 @@ impl View {
         start_y: f64,
         sw_enabled: &Switch,
         dd_resolution: &DropDown,
+        dd_refresh: &DropDown,
         cb_primary: &CheckButton,
         en_position_x: &Entry,
         en_position_y: &Entry,
@@ -731,7 +663,14 @@ impl View {
         disabled_area.queue_draw();
         // Do details UI updates out of scope because their triggered callbacks need to
         // borrow
-        self.update_details_ui(sw_enabled, dd_resolution, cb_primary, en_position_x, en_position_y);
+        self.update_details_ui(
+            sw_enabled,
+            dd_resolution,
+            dd_refresh,
+            cb_primary,
+            en_position_x,
+            en_position_y,
+        );
         self.update_details_visibility(details_ui);
     }
 
@@ -751,51 +690,31 @@ impl View {
         &self,
         sw_enabled: &Switch,
         dd_resolution: &DropDown,
+        dd_refresh: &DropDown,
         cb_primary: &CheckButton,
         en_position_x: &Entry,
         en_position_y: &Entry,
     ) {
         if let Some(i) = *self.selected_output.borrow() {
-            *self.skip_update_output.borrow_mut() = true;
-
-            // Update Actionables
-            let enabled = self.outputs.borrow()[i].enabled;
-            sw_enabled.set_active(enabled);
-            let primary = self.outputs.borrow()[i].primary;
-            cb_primary.set_active(primary);
+            sw_enabled.set_active(self.outputs.borrow()[i].enabled);
+            cb_primary.set_active(self.outputs.borrow()[i].primary);
             if let Some(pos) = self.outputs.borrow()[i].pos {
                 en_position_x.set_text(&pos.0.to_string());
                 en_position_y.set_text(&pos.1.to_string());
             }
-
-            // Update resolution drop down.
-            // Note: `DropDown::set_model` and `DropDown::set_selected` trigger
-            // `on_refresh_rate_selected`.
-            // When changing the dropdown model the triggered call should not
-            // change the output data. Otherwise switching through outputs
-            // would mean resetting them back to default values.
-
-            // When the index of the resolution dropdown should be 0 the refresh
-            // rate dropdown has to be updated after a model change because there
-            // won't be another triggered call. That is because setting the
-            // selection to 0 after a model change doesn't have an effect (because
-            // 0 is the default).
-            let dd_res_index = self.outputs.borrow()[i].get_current_resolution_dropdown_index();
-            *self.skip_update_refresh_model.borrow_mut() =
-                dd_res_index.is_none() || dd_res_index.is_some_and(|i| i > 0);
-
-            // Change the dropdown model
             let resolutions = self.outputs.borrow()[i].get_resolutions_dropdown();
             dd_resolution.set_model(Some(&Self::into_string_list(&resolutions)));
-
-            if dd_res_index.is_some() {
-                // Always update the refresh rate dropdown
-                *self.skip_update_refresh_model.borrow_mut() = false;
-                dd_resolution
-                    .set_selected(u32::try_from(dd_res_index.unwrap()).expect("less resolutions"));
+            if let Some(res_idx) = self.outputs.borrow()[i].get_current_resolution_dropdown_index()
+            {
+                dd_resolution.set_selected(u32::try_from(res_idx).expect("less resolutions"));
+                let refresh_rates = self.outputs.borrow()[i].get_refresh_rates_dropdown(res_idx);
+                dd_refresh.set_model(Some(&Self::into_string_list(&refresh_rates)));
+                if let Some(ref_idx) =
+                    self.outputs.borrow()[i].get_current_refresh_rate_dropdown_index(res_idx)
+                {
+                    dd_refresh.set_selected(u32::try_from(ref_idx).expect("less refresh rates"));
+                }
             }
-            *self.skip_update_refresh_model.borrow_mut() = false;
-            *self.skip_update_output.borrow_mut() = false;
         }
     }
 
@@ -1055,10 +974,7 @@ impl View {
             self.get_disabled_output_index_at(x, y, disabled_area.width(), disabled_area.height())
         {
             *self.selected_output.borrow_mut() = Some(i);
-            *self.skip_update_output.borrow_mut() = true;
-            let enabled = self.outputs.borrow()[i].enabled;
-            sw_enabled.set_active(enabled);
-            *self.skip_update_output.borrow_mut() = false;
+            sw_enabled.set_active(self.outputs.borrow()[i].enabled);
         } else {
             *self.selected_output.borrow_mut() = None;
         }
@@ -1155,6 +1071,7 @@ impl View {
         disabled_area: &DrawingArea,
         sw_enabled: &Switch,
         dd_resolution: &DropDown,
+        dd_refresh: &DropDown,
         cb_primary: &CheckButton,
         en_position_x: &Entry,
         en_position_y: &Entry,
@@ -1196,7 +1113,14 @@ impl View {
         }
         // Enable selection
         *self.selected_output.borrow_mut() = Some(i);
-        self.update_details_ui(sw_enabled, dd_resolution, cb_primary, en_position_x, en_position_y);
+        self.update_details_ui(
+            sw_enabled,
+            dd_resolution,
+            dd_refresh,
+            cb_primary,
+            en_position_x,
+            en_position_y,
+        );
         self.update_details_visibility(details_ui);
         // Update drawing areas
         disabled_area.queue_draw();
@@ -1251,56 +1175,45 @@ impl View {
                 return;
             }
 
-            let dd_selected = dd_resolution.selected() as usize;
+            let dd_selected = dd_resolution.widget.selected() as usize;
 
             // Update current mode
-            if !*self.skip_update_output.borrow() {
-                let mode =
-                    &outputs[i].modes[outputs[i].resolution_dropdown_mode_index(dd_selected)];
-                if outputs[i].mode.as_ref().is_some_and(|m| m.id != mode.id)
-                    || outputs[i].mode.is_none()
-                {
-                    outputs[i].mode = Some(mode.clone());
-                    Self::mind_the_gap_and_overlap(&mut outputs);
-                    Self::resize(
-                        drawing_area.width(),
-                        drawing_area.height(),
-                        self.size,
-                        &mut self.scale.borrow_mut(),
-                        &mut self.translate.borrow_mut(),
-                        &mut self.bounds.borrow_mut(),
-                        &mut outputs,
-                    );
-                    let new_pos = outputs[i].pos.unwrap();
-                    en_position_x.set_text(&new_pos.0.to_string());
-                    en_position_y.set_text(&new_pos.1.to_string());
-                    drawing_area.queue_draw();
-                }
+            let mode = &outputs[i].modes[outputs[i].resolution_dropdown_mode_index(dd_selected)];
+            if outputs[i].mode.as_ref().is_some_and(|m| m.id != mode.id)
+                || outputs[i].mode.is_none()
+            {
+                outputs[i].mode = Some(mode.clone());
+                Self::mind_the_gap_and_overlap(&mut outputs);
+                Self::resize(
+                    drawing_area.width(),
+                    drawing_area.height(),
+                    self.size,
+                    &mut self.scale.borrow_mut(),
+                    &mut self.translate.borrow_mut(),
+                    &mut self.bounds.borrow_mut(),
+                    &mut outputs,
+                );
+                let new_pos = outputs[i].pos.unwrap();
+                en_position_x.set_text(&new_pos.0.to_string());
+                en_position_y.set_text(&new_pos.1.to_string());
+                drawing_area.queue_draw();
             }
 
             // Update refresh rate dropdown
-            if !*self.skip_update_refresh_model.borrow() {
-                dd_refresh_model = Some(Self::into_string_list(
-                    &outputs[i].get_refresh_rates_dropdown(dd_selected),
-                ));
-                dd_refresh_index = outputs[i].get_current_refresh_rate_dropdown_index(dd_selected);
-            }
+            dd_refresh_model =
+                Some(Self::into_string_list(&outputs[i].get_refresh_rates_dropdown(dd_selected)));
+            dd_refresh_index = outputs[i].get_current_refresh_rate_dropdown_index(dd_selected);
         }
         // Do outside scope so borrowing doesn't fail in on_refresh_rate_selected
         if dd_refresh_model.is_some() {
-            *self.skip_update_output.borrow_mut() = true;
             dd_refresh.set_model(dd_refresh_model.as_ref());
             if let Some(idx) = dd_refresh_index {
                 dd_refresh.set_selected(u32::try_from(idx).expect("less refresh rates"));
             }
-            *self.skip_update_output.borrow_mut() = false;
         }
     }
 
     fn on_refresh_rate_selected(&self, dd_refresh: &DropDown, dd_resolution: &DropDown) {
-        if *self.skip_update_output.borrow() {
-            return;
-        }
         if let Some(i) = *self.selected_output.borrow() {
             let mut outputs = self.outputs.borrow_mut();
             if !outputs[i].enabled {
@@ -1309,8 +1222,8 @@ impl View {
 
             // Update current mode
             let mode = &outputs[i].modes[outputs[i].refresh_rate_dropdown_mode_index(
-                dd_resolution.selected() as usize,
-                dd_refresh.selected() as usize,
+                dd_resolution.widget.selected() as usize,
+                dd_refresh.widget.selected() as usize,
             )];
             if outputs[i].mode.as_ref().is_some_and(|m| m.id != mode.id)
                 || outputs[i].mode.is_none()
@@ -1321,15 +1234,12 @@ impl View {
     }
 
     fn on_primary_checked(&self, cb_primary: &CheckButton, drawing_area: &DrawingArea) {
-        if *self.skip_update_output.borrow() {
-            return;
-        }
         if let Some(i) = *self.selected_output.borrow() {
             let mut outputs = self.outputs.borrow_mut();
             if !outputs[i].enabled {
                 return;
             }
-            let active = cb_primary.is_active();
+            let active = cb_primary.widget.is_active();
             if active != outputs[i].primary {
                 outputs[i].primary = active;
                 if active {
@@ -1351,16 +1261,12 @@ impl View {
         disabled_area: &DrawingArea,
         details_ui: &impl IsA<Widget>,
     ) {
-        if *self.skip_update_output.borrow() {
-            return;
-        }
         let Some(i) = *self.selected_output.borrow() else {
             return;
         };
-
         {
             let mut outputs = self.outputs.borrow_mut();
-            let active = sw_enabled.is_active();
+            let active = sw_enabled.widget.is_active();
             if outputs[i].enabled != active {
                 // Update output
                 outputs[i].enabled = active;
