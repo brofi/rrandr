@@ -56,7 +56,7 @@ impl View {
         outputs: Vec<Output>,
         size: ScreenSizeRange,
         apply_callback: impl Fn(Vec<Output>) -> bool + 'static,
-        identify_callback: impl Fn() + 'static,
+        identify_callback: impl Fn(&Button) + 'static,
     ) -> impl IsA<Widget> {
         let outputs_orig = outputs.clone();
         let shared = Rc::new(Self {
@@ -204,7 +204,7 @@ impl View {
             .use_underline(true)
             .tooltip_text("Identify outputs")
             .build();
-        btn_id.connect_clicked(move |_btn| identify_callback());
+        btn_id.connect_clicked(move |btn| identify_callback(btn));
         box_controls.append(&btn_id);
         let box_apply_reset = gtk::Box::builder()
             .orientation(Orientation::Horizontal)

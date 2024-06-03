@@ -3,7 +3,6 @@
 #![allow(clippy::too_many_lines)]
 // #![warn(clippy::restriction)]
 
-mod cairo_surface;
 mod math;
 mod view;
 mod widget;
@@ -11,15 +10,15 @@ mod widget;
 use core::fmt;
 use std::collections::HashMap;
 use std::error::Error;
-use std::thread;
 use std::time::{Duration, Instant};
 
 use cairo::ffi::cairo_device_finish;
-use cairo::XCBDrawable;
-use cairo_surface::XCBSurfaceS;
+use cairo::{XCBDrawable, XCBSurface};
+use gdk::gio::spawn_blocking;
+use gdk::glib::spawn_future_local;
 use gtk::glib::ExitCode;
 use gtk::prelude::*;
-use gtk::{Application, ApplicationWindow};
+use gtk::{Application, ApplicationWindow, Button};
 use math::Rect;
 use pango::ffi::PANGO_SCALE;
 use pango::{Alignment, FontDescription, Layout, Weight};
@@ -253,8 +252,8 @@ fn main() -> ExitCode {
             outputs.clone(),
             screen_size_range,
             move |outputs| on_apply_clicked(&screen_size_range, &outputs),
-            || {
-                if let Err(e) = on_identify_clicked() {
+            |btn| {
+                if let Err(e) = on_identify_clicked(btn) {
                     println!("Failed to identify outputs: {e:?}");
                 }
             },
@@ -268,7 +267,7 @@ fn build_ui(
     outputs: Vec<Output>,
     size: ScreenSizeRange,
     on_apply: impl Fn(Vec<Output>) -> bool + 'static,
-    on_identify: impl Fn() + 'static,
+    on_identify: impl Fn(&Button) + 'static,
 ) {
     let window = ApplicationWindow::builder()
         .application(app)
@@ -316,7 +315,7 @@ fn create_popup_surface(
     wid: Window,
     width: i32,
     height: i32,
-) -> Result<XCBSurfaceS, cairo::Error> {
+) -> Result<XCBSurface, cairo::Error> {
     let cairo_conn =
         unsafe { cairo::XCBConnection::from_raw_none(conn.get_raw_xcb_connection() as _) };
     let cairo_visual = unsafe {
@@ -324,7 +323,7 @@ fn create_popup_surface(
             get_root_visual_type(&conn, screen_num).unwrap().serialize().as_mut_ptr() as _,
         )
     };
-    XCBSurfaceS::create(&cairo_conn, &XCBDrawable(wid), &cairo_visual, width, height)
+    XCBSurface::create(&cairo_conn, &XCBDrawable(wid), &cairo_visual, width, height)
 }
 
 fn get_root_visual_type(conn: &impl XConnection, screen_num: usize) -> Option<Visualtype> {
@@ -342,7 +341,7 @@ fn get_root_visual_type(conn: &impl XConnection, screen_num: usize) -> Option<Vi
 fn create_popup_windows(
     conn: &XCBConnection,
     screen_num: usize,
-) -> Result<HashMap<Window, XCBSurfaceS>, Box<dyn Error>> {
+) -> Result<HashMap<Window, XCBSurface>, Box<dyn Error>> {
     let mut windows = HashMap::new();
     let screen = &conn.setup().roots[screen_num];
     let res = get_screen_resources_current(&conn, screen.root)?.reply()?;
@@ -379,15 +378,33 @@ fn create_popup_windows(
     Ok(windows)
 }
 
-fn on_identify_clicked() -> Result<(), Box<dyn Error>> {
+fn on_identify_clicked(btn: &Button) -> Result<(), Box<dyn Error>> {
     let (conn, screen_num) = XCBConnection::connect(None)?;
     let popups = create_popup_windows(&conn, screen_num)?;
     conn.flush()?;
 
-    thread::spawn(move || -> Result<(), ReplyError> {
+    spawn_future_local({
+        let btn = btn.clone();
+        async move {
+            btn.set_sensitive(false);
+            spawn_blocking(move || -> Result<(), ReplyError> { loop_x(&conn, POPUP_SHOW_SECS) })
+                .await
+                .expect("future awaited sucessfully")
+                .expect("show popups finished sucessfully");
+            btn.set_sensitive(true);
+            for surface in popups.values() {
+                unsafe { cairo_device_finish(surface.device().unwrap().to_raw_none()) };
+                surface.finish();
+            }
+        }
+    });
+
+    Ok(())
+}
+
+fn loop_x(conn: &XCBConnection, secs: f32) -> Result<(), ReplyError> {
         let now = Instant::now();
-        let secs = Duration::from_secs_f32(POPUP_SHOW_SECS);
-        let mut result = Ok(());
+    let secs = Duration::from_secs_f32(secs);
         while now.elapsed() < secs {
             match conn.poll_for_event()? {
                 Some(Event::ButtonPress(e)) => {
@@ -397,18 +414,11 @@ fn on_identify_clicked() -> Result<(), Box<dyn Error>> {
                 }
                 Some(Event::Error(e)) => {
                     println!("{}", x_error_to_string(&e));
-                    result = Err(e.into());
-                    break;
+                return Err(e.into());
                 }
                 _ => (),
             }
         }
-        for surface in popups.values() {
-            unsafe { cairo_device_finish(surface.device().unwrap().to_raw_none()) };
-            surface.finish();
-        }
-        result
-    });
     Ok(())
 }
 
