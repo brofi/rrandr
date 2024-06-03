@@ -1,15 +1,16 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::error::Error;
+use std::num::IntErrorKind;
 use std::rc::Rc;
 
-use gdk::glib::{clone, Bytes, Type, Value};
+use gdk::glib::{clone, Bytes, SignalHandlerId, Type, Value};
 use gdk::{ContentProvider, Drag, DragAction, MemoryTexture, Paintable, RGBA};
 use gtk::prelude::*;
 use gtk::{
     Align, Button, CheckButton, DragSource, DrawingArea, DropControllerMotion, DropDown,
-    DropTarget, Entry, EventControllerMotion, FlowBox, FlowBoxChild, Frame, GestureClick,
-    GestureDrag, Label, Orientation, Paned, SelectionMode, StringList, Switch, Widget,
+    DropTarget, EventControllerMotion, FlowBox, FlowBoxChild, Frame, GestureClick, GestureDrag,
+    InputPurpose, Label, Orientation, Paned, SelectionMode, StringList, Switch, Widget,
 };
 use pango::{Alignment, FontDescription, Weight};
 use pangocairo::functions::{create_layout, show_layout};
@@ -24,6 +25,81 @@ const COLOR_GREEN: RGBA = RGBA::new(0.722, 0.733, 0.149, 1.);
 pub const COLOR_FG: RGBA = RGBA::new(0.922, 0.859, 0.698, 1.);
 const COLOR_BG0_H: RGBA = RGBA::new(0.114, 0.125, 0.129, 1.);
 pub const COLOR_BG0: RGBA = RGBA::new(0.157, 0.157, 0.157, 1.);
+
+enum Axis {
+    X,
+    Y,
+}
+
+#[derive(Clone)]
+struct Entry {
+    widget: gtk::Entry,
+    insert_text_handler_id: Rc<RefCell<Option<SignalHandlerId>>>,
+    delete_text_handler_id: Rc<RefCell<Option<SignalHandlerId>>>,
+}
+
+impl Entry {
+    fn new(widget: gtk::Entry) -> Self {
+        Self {
+            widget,
+            insert_text_handler_id: Rc::new(RefCell::new(None)),
+            delete_text_handler_id: Rc::new(RefCell::new(None)),
+        }
+    }
+
+    fn connect_insert_text(&mut self, f: impl Fn(&Self, &str, &mut i32) + 'static) {
+        if let Some(editable) = self.widget.delegate() {
+            *self.insert_text_handler_id.borrow_mut() = Some(editable.connect_insert_text({
+                let entry = self.clone();
+                move |editable, text, position| {
+                    f(&entry, text, position);
+                    editable.stop_signal_emission_by_name("insert_text");
+                }
+            }));
+        }
+    }
+
+    fn connect_delete_text(&mut self, f: impl Fn(&Self, i32, i32) + 'static) {
+        if let Some(editable) = self.widget.delegate() {
+            *self.delete_text_handler_id.borrow_mut() = Some(editable.connect_delete_text({
+                let entry = self.clone();
+                move |editable, start, end| {
+                    f(&entry, start, end);
+                    editable.stop_signal_emission_by_name("delete_text");
+                }
+            }));
+        }
+    }
+
+    fn set_text(&self, text: &str) {
+        if self.insert_text_handler_id.borrow().is_some()
+            && self.delete_text_handler_id.borrow().is_some()
+        {
+            self.delete_text(0, -1);
+            self.insert_text(text, &mut 0);
+        }
+    }
+
+    fn insert_text(&self, text: &str, position: &mut i32) {
+        if let Some(handler_id) = self.insert_text_handler_id.borrow().as_ref() {
+            if let Some(editable) = self.widget.delegate() {
+                editable.block_signal(handler_id);
+                self.widget.insert_text(text, position);
+                editable.unblock_signal(handler_id);
+            }
+        }
+    }
+
+    fn delete_text(&self, start_pos: i32, end_pos: i32) {
+        if let Some(handler_id) = self.delete_text_handler_id.borrow().as_ref() {
+            if let Some(editable) = self.widget.delegate() {
+                editable.block_signal(handler_id);
+                self.widget.delete_text(start_pos, end_pos);
+                editable.unblock_signal(handler_id);
+            }
+        }
+    }
+}
 
 // needed because to tansfer ownership because: function requires argument type
 // to outlive `'static` https://doc.rust-lang.org/rust-by-example/scope/lifetime/static_lifetime.html
@@ -130,26 +206,58 @@ impl View {
             .orientation(Orientation::Horizontal)
             .css_classes(["linked"])
             .build();
-        let en_position_x = Entry::builder()
+        let en_position_x = gtk::Entry::builder()
+            .input_purpose(InputPurpose::Digits)
             .text("0")
             .placeholder_text("x")
             .tooltip_text("Horizontal position")
-            .editable(false)
+            .max_length(6)
             .width_chars(5)
             .max_width_chars(5)
             .build();
         EntryExt::set_alignment(&en_position_x, 1.);
-        let en_position_y = Entry::builder()
+        let mut en_position_x = Entry::new(en_position_x);
+        en_position_x.connect_insert_text({
+            let shared = shared.clone();
+            let enabled_area = enabled_area.clone();
+            move |entry, text, position| {
+                shared.on_position_insert(&entry, text, position, Axis::X, &enabled_area)
+            }
+        });
+        en_position_x.connect_delete_text({
+            let shared = shared.clone();
+            let enabled_area = enabled_area.clone();
+            move |entry, start, end| {
+                shared.on_position_delete(&entry, start, end, Axis::X, &enabled_area)
+            }
+        });
+        let en_position_y = gtk::Entry::builder()
+            .input_purpose(InputPurpose::Digits)
             .text("0")
             .placeholder_text("y")
             .tooltip_text("Vertical position")
-            .editable(false)
+            .max_length(6)
             .width_chars(5)
             .max_width_chars(5)
             .build();
         EntryExt::set_alignment(&en_position_y, 1.);
-        box_pos.append(&en_position_x);
-        box_pos.append(&en_position_y);
+        let mut en_position_y = Entry::new(en_position_y);
+        en_position_y.connect_insert_text({
+            let shared = shared.clone();
+            let enabled_area = enabled_area.clone();
+            move |entry, text, position| {
+                shared.on_position_insert(&entry, text, position, Axis::Y, &enabled_area)
+            }
+        });
+        en_position_y.connect_delete_text({
+            let shared = shared.clone();
+            let enabled_area = enabled_area.clone();
+            move |entry, start, end| {
+                shared.on_position_delete(&entry, start, end, Axis::Y, &enabled_area)
+            }
+        });
+        box_pos.append(&en_position_x.widget);
+        box_pos.append(&en_position_y.widget);
         flow_box_details.append(&Self::create_detail_child("Position", &box_pos));
 
         let cb_primary = CheckButton::builder().tooltip_text("Set as primary").build();
@@ -1289,6 +1397,105 @@ impl View {
         );
         enabled_area.queue_draw();
         disabled_area.queue_draw();
+    }
+
+    fn on_position_insert(
+        &self,
+        entry: &Entry,
+        text: &str,
+        position: &mut i32,
+        axis: Axis,
+        enabled_area: &DrawingArea,
+    ) {
+        let idx = usize::try_from(*position).expect("smaller position");
+        let mut new_text = entry.widget.text().to_string();
+        new_text.insert_str(idx, text);
+        if let Some(coord) = self.parse_coord(&new_text, &axis) {
+            if coord.to_string() == new_text {
+                entry.insert_text(text, position);
+            } else if coord.to_string() != entry.widget.text() {
+                entry.set_text(&coord.to_string());
+            }
+            self.update_position(&axis, coord, enabled_area);
+        } else if entry.widget.text().is_empty() {
+            entry.insert_text("0", &mut 0);
+        }
+    }
+
+    fn on_position_delete(
+        &self,
+        entry: &Entry,
+        start_pos: i32,
+        end_pos: i32,
+        axis: Axis,
+        enabled_area: &DrawingArea,
+    ) {
+        let start_idx = usize::try_from(start_pos).expect("smaller start position");
+        let end_idx = usize::try_from(end_pos).expect("smaller end position");
+        let mut new_text = entry.widget.text().to_string();
+        new_text.replace_range(start_idx..end_idx, "");
+        if let Some(coord) = self.parse_coord(&new_text, &axis) {
+            if coord.to_string() == new_text {
+                entry.delete_text(start_pos, end_pos);
+            } else {
+                entry.set_text(&coord.to_string());
+            }
+            self.update_position(&axis, coord, enabled_area);
+        } else {
+            entry.delete_text(start_pos, end_pos);
+            self.update_position(&axis, 0, enabled_area);
+        }
+    }
+
+    fn parse_coord(&self, text: &str, axis: &Axis) -> Option<i16> {
+        if let Some(i) = *self.selected_output.borrow() {
+            if let Some(mode) = self.outputs.borrow_mut()[i].mode.as_ref() {
+                let max = match axis {
+                    Axis::X => i16::try_from(self.size.max_width.saturating_sub(mode.width))
+                        .unwrap_or(i16::MAX),
+                    Axis::Y => i16::try_from(self.size.max_height.saturating_sub(mode.height))
+                        .unwrap_or(i16::MAX),
+                };
+                return match text
+                    .chars()
+                    .filter(char::is_ascii_digit)
+                    .collect::<String>()
+                    .parse::<i16>()
+                {
+                    Ok(c) => Some(c.min(max)),
+                    Err(e) => match e.kind() {
+                        IntErrorKind::PosOverflow => Some(max),
+                        _ => None,
+                    },
+                };
+            }
+        }
+        None
+    }
+
+    fn update_position(&self, axis: &Axis, coord: i16, enabled_area: &DrawingArea) {
+        if let Some(i) = *self.selected_output.borrow() {
+            let mut outputs = self.outputs.borrow_mut();
+            if let Some(pos) = outputs[i].pos {
+                let new_pos = match axis {
+                    Axis::X => (coord, pos.1),
+                    Axis::Y => (pos.0, coord),
+                };
+                if new_pos != pos {
+                    outputs[i].pos = Some(new_pos);
+                    Self::resize(
+                        enabled_area.width(),
+                        enabled_area.height(),
+                        self.size,
+                        &mut self.scale.borrow_mut(),
+                        &mut self.translate.borrow_mut(),
+                        &mut self.bounds.borrow_mut(),
+                        &mut outputs,
+                    );
+                    enabled_area.queue_draw();
+                }
+            }
+        }
     }
 
     fn on_reset_clicked(
