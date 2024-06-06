@@ -5,28 +5,26 @@ use std::num::IntErrorKind;
 use std::rc::Rc;
 
 use gdk::glib::{clone, Bytes, Type, Value};
-use gdk::{ContentProvider, Drag, DragAction, MemoryTexture, Paintable, RGBA};
+use gdk::{ContentProvider, Drag, DragAction, MemoryTexture, Paintable};
 use gtk::prelude::*;
 use gtk::{
     Align, Button, DragSource, DrawingArea, DropControllerMotion, DropTarget,
     EventControllerMotion, FlowBox, FlowBoxChild, Frame, GestureClick, GestureDrag, InputPurpose,
     Label, Orientation, Paned, SelectionMode, StringList, Widget,
 };
-use pango::{Alignment, FontDescription, Weight};
-use pangocairo::functions::{create_layout, show_layout};
 
+use crate::draw::{
+    draw_output, draw_output_label, draw_screen, draw_selected_output, SCREEN_LINE_WIDTH,
+};
 use crate::math::{Point, Rect};
 use crate::widget::{CheckButton, DropDown, Entry, Switch};
 use crate::{get_bounds, Output, ScreenSizeRange};
 
-pub const VIEW_PADDING: u16 = 10;
-const SCREEN_LINE_WIDTH: f64 = 2.;
-const SELECTION_LINE_WIDTH: f64 = 4.;
-const COLOR_GREEN: RGBA = RGBA::new(0.722, 0.733, 0.149, 1.);
-pub const COLOR_FG: RGBA = RGBA::new(0.922, 0.859, 0.698, 1.);
-const COLOR_BG0_H: RGBA = RGBA::new(0.114, 0.125, 0.129, 1.);
-pub const COLOR_BG0: RGBA = RGBA::new(0.157, 0.157, 0.157, 1.);
+type OutputUpdatedCallback = dyn Fn(&Output, &Update);
 
+pub const PADDING: u16 = 10;
+
+#[derive(Clone, Copy)]
 enum Axis {
     X,
     Y,
@@ -37,18 +35,23 @@ enum Axis {
 // It's important to understand this means that any owned data always passes a
 // 'static lifetime bound, but a reference to that owned data generally does
 // not: https://stackoverflow.com/questions/52464653/how-to-move-data-into-multiple-rust-closures
+#[derive(Clone)]
 pub struct View {
-    outputs: RefCell<Vec<Output>>,
-    outputs_orig: RefCell<Vec<Output>>,
+    outputs: Rc<RefCell<Vec<Output>>>,
+    outputs_orig: Rc<RefCell<Vec<Output>>>,
     size: ScreenSizeRange,
 
-    selected_output: RefCell<Option<usize>>,
-    grab_offset: RefCell<(f64, f64)>,
-    scale: RefCell<f64>,
-    translate: RefCell<[i16; 2]>,
-    bounds: RefCell<Rect>,
+    selected_output: Rc<RefCell<Option<usize>>>,
+    grab_offset: Rc<RefCell<(f64, f64)>>,
+    scale: Rc<RefCell<f64>>,
+    translate: Rc<RefCell<[i16; 2]>>,
+    bounds: Rc<RefCell<Rect>>,
 
-    dragging_disabled_output: RefCell<bool>,
+    dragging_disabled_output: Rc<RefCell<bool>>,
+
+    enabled_area: DrawingArea,
+    disabled_area: DrawingArea,
+    details: DetailsView,
 }
 
 impl View {
@@ -59,36 +62,39 @@ impl View {
         identify_callback: impl Fn(&Button) + 'static,
     ) -> impl IsA<Widget> {
         let outputs_orig = outputs.clone();
-        let shared = Rc::new(Self {
-            outputs: RefCell::new(outputs),
-            outputs_orig: RefCell::new(outputs_orig),
+        let mut this = Self {
+            outputs: Rc::new(RefCell::new(outputs)),
+            outputs_orig: Rc::new(RefCell::new(outputs_orig)),
             size,
 
-            selected_output: RefCell::new(None),
-            grab_offset: RefCell::new((0.0, 0.0)),
-            scale: RefCell::new(1.0),
-            translate: RefCell::new([0, 0]),
-            bounds: RefCell::new(Rect::default()),
+            selected_output: Rc::new(RefCell::new(None)),
+            grab_offset: Rc::new(RefCell::new((0.0, 0.0))),
+            scale: Rc::new(RefCell::new(1.0)),
+            translate: Rc::new(RefCell::new([0, 0])),
+            bounds: Rc::new(RefCell::new(Rect::default())),
 
-            // dragged_disabled_output: RefCell::new(None),
-            dragging_disabled_output: RefCell::new(false),
-        });
+            dragging_disabled_output: Rc::new(RefCell::new(false)),
+
+            enabled_area: DrawingArea::new(),
+            disabled_area: DrawingArea::new(),
+            details: DetailsView::new(size),
+        };
 
         let root = gtk::Box::builder()
             .orientation(Orientation::Vertical)
-            .margin_start(i32::from(VIEW_PADDING))
-            .margin_end(i32::from(VIEW_PADDING))
-            .margin_top(i32::from(VIEW_PADDING))
-            .margin_bottom(i32::from(VIEW_PADDING))
-            .spacing(i32::from(VIEW_PADDING))
+            .margin_start(i32::from(PADDING))
+            .margin_end(i32::from(PADDING))
+            .margin_top(i32::from(PADDING))
+            .margin_bottom(i32::from(PADDING))
+            .spacing(i32::from(PADDING))
             .build();
 
-        let enabled_area = DrawingArea::new();
-        let frame_enabled = Frame::builder().label("Layout").child(&enabled_area).build();
-
-        let disabled_area = DrawingArea::new();
-        let frame_disabled =
-            Frame::builder().label("Disabled").child(&disabled_area).width_request(150).build();
+        let frame_enabled = Frame::builder().label("Layout").child(&this.enabled_area).build();
+        let frame_disabled = Frame::builder()
+            .label("Disabled")
+            .child(&this.disabled_area)
+            .width_request(150)
+            .build();
 
         let paned = Paned::builder()
             .start_child(&frame_enabled)
@@ -101,101 +107,14 @@ impl View {
 
         let box_bottom = gtk::Box::builder()
             .orientation(Orientation::Horizontal)
-            .spacing(i32::from(VIEW_PADDING))
-            .build();
-        let flow_box_details = FlowBox::builder()
-            .row_spacing(u32::from(VIEW_PADDING))
-            .column_spacing(u32::from(VIEW_PADDING))
-            .orientation(Orientation::Horizontal)
-            .selection_mode(SelectionMode::None)
-            .halign(Align::Start)
-            .min_children_per_line(2)
-            .hexpand(true)
+            .spacing(i32::from(PADDING))
             .build();
 
-        let sw_enabled = gtk::Switch::builder().tooltip_text("Enable/Disable").build();
-        let mut sw_enabled = Switch::new(sw_enabled);
-        flow_box_details.append(&Self::create_detail_child("Enabled", &sw_enabled.widget));
-
-        let box_mode = gtk::Box::builder()
-            .orientation(Orientation::Horizontal)
-            .css_classes(["linked"])
-            .build();
-        let dd_resolution = gtk::DropDown::builder().tooltip_text("Resolution").build();
-        let mut dd_resolution = DropDown::new(dd_resolution);
-        let dd_refresh = gtk::DropDown::builder().tooltip_text("Refresh rate").build();
-        let mut dd_refresh = DropDown::new(dd_refresh);
-        box_mode.append(&dd_resolution.widget);
-        box_mode.append(&dd_refresh.widget);
-        flow_box_details.append(&Self::create_detail_child("Mode", &box_mode));
-
-        let box_pos = gtk::Box::builder()
-            .orientation(Orientation::Horizontal)
-            .css_classes(["linked"])
-            .build();
-        let en_position_x = gtk::Entry::builder()
-            .input_purpose(InputPurpose::Digits)
-            .text("0")
-            .placeholder_text("x")
-            .tooltip_text("Horizontal position")
-            .max_length(6)
-            .width_chars(5)
-            .max_width_chars(5)
-            .build();
-        EntryExt::set_alignment(&en_position_x, 1.);
-        let mut en_position_x = Entry::new(en_position_x);
-        en_position_x.connect_insert_text({
-            let shared = shared.clone();
-            let enabled_area = enabled_area.clone();
-            move |entry, text, position| {
-                shared.on_position_insert(&entry, text, position, Axis::X, &enabled_area)
-            }
-        });
-        en_position_x.connect_delete_text({
-            let shared = shared.clone();
-            let enabled_area = enabled_area.clone();
-            move |entry, start, end| {
-                shared.on_position_delete(&entry, start, end, Axis::X, &enabled_area)
-            }
-        });
-        let en_position_y = gtk::Entry::builder()
-            .input_purpose(InputPurpose::Digits)
-            .text("0")
-            .placeholder_text("y")
-            .tooltip_text("Vertical position")
-            .max_length(6)
-            .width_chars(5)
-            .max_width_chars(5)
-            .build();
-        EntryExt::set_alignment(&en_position_y, 1.);
-        let mut en_position_y = Entry::new(en_position_y);
-        en_position_y.connect_insert_text({
-            let shared = shared.clone();
-            let enabled_area = enabled_area.clone();
-            move |entry, text, position| {
-                shared.on_position_insert(&entry, text, position, Axis::Y, &enabled_area)
-            }
-        });
-        en_position_y.connect_delete_text({
-            let shared = shared.clone();
-            let enabled_area = enabled_area.clone();
-            move |entry, start, end| {
-                shared.on_position_delete(&entry, start, end, Axis::Y, &enabled_area)
-            }
-        });
-        box_pos.append(&en_position_x.widget);
-        box_pos.append(&en_position_y.widget);
-        flow_box_details.append(&Self::create_detail_child("Position", &box_pos));
-
-        let cb_primary = gtk::CheckButton::builder().tooltip_text("Set as primary").build();
-        let mut cb_primary = CheckButton::new(cb_primary);
-        flow_box_details.append(&Self::create_detail_child("Primary", &cb_primary.widget));
-
-        box_bottom.append(&flow_box_details);
+        box_bottom.append(&this.details.root);
 
         let box_controls = gtk::Box::builder()
             .orientation(Orientation::Horizontal)
-            .spacing(i32::from(VIEW_PADDING))
+            .spacing(i32::from(PADDING))
             .halign(Align::End)
             .valign(Align::End)
             .build();
@@ -216,25 +135,22 @@ impl View {
             .tooltip_text("Apply changes")
             .build();
         btn_apply.connect_clicked(clone!(
-            @strong shared,
-            @strong enabled_area,
-            @strong disabled_area
-            => move |_btn| {
-                if apply_callback(shared.outputs.borrow().clone()) {
-                    shared.outputs_orig.borrow_mut().clone_from(&shared.outputs.borrow());
+            @strong this => move |_btn| {
+                if apply_callback(this.outputs.borrow().clone()) {
+                    this.outputs_orig.borrow_mut().clone_from(&this.outputs.borrow());
                 } else {
-                    shared.outputs.borrow_mut().clone_from(&shared.outputs_orig.borrow());
+                    this.outputs.borrow_mut().clone_from(&this.outputs_orig.borrow());
                     Self::resize(
-                        enabled_area.width(),
-                        enabled_area.height(),
-                        shared.size,
-                        &mut shared.scale.borrow_mut(),
-                        &mut shared.translate.borrow_mut(),
-                        &mut shared.bounds.borrow_mut(),
-                        &mut shared.outputs.borrow_mut(),
+                        this.enabled_area.width(),
+                        this.enabled_area.height(),
+                        this.size,
+                        &mut this.scale.borrow_mut(),
+                        &mut this.translate.borrow_mut(),
+                        &mut this.bounds.borrow_mut(),
+                        &mut this.outputs.borrow_mut(),
                     );
-                    enabled_area.queue_draw();
-                    disabled_area.queue_draw();
+                    this.enabled_area.queue_draw();
+                    this.disabled_area.queue_draw();
                 }
         }));
         box_apply_reset.append(&btn_apply);
@@ -244,188 +160,138 @@ impl View {
             .tooltip_text("Reset changes")
             .build();
         btn_reset.connect_clicked(clone!(
-            @strong shared,
-            @strong enabled_area,
-            @strong disabled_area,
-            @strong flow_box_details as details_ui
-            => move |_btn| shared.on_reset_clicked(&enabled_area, &disabled_area, &details_ui)));
+            @strong this => move |_btn| this.on_reset_clicked()
+        ));
         box_apply_reset.append(&btn_reset);
 
         box_controls.append(&box_apply_reset);
         box_bottom.append(&box_controls);
         root.append(&box_bottom);
 
-        enabled_area.set_draw_func({
-            let shared = Rc::clone(&shared);
-            move |_d, cr, w, h| shared.on_draw(cr, w, h)
-        });
-        disabled_area.set_draw_func({
-            let shared = Rc::clone(&shared);
-            move |_d, cr, w, h| shared.on_draw_disabled(cr, w, h)
-        });
-        enabled_area.connect_resize({
-            let shared = Rc::clone(&shared);
-            move |_d, w, h| {
+        this.enabled_area.set_draw_func(clone!(
+            @strong this => move |_d, cr, w, h| this.on_draw(cr, w, h)
+        ));
+        this.disabled_area.set_draw_func(clone!(
+            @strong this => move |_d, cr, w, h| this.on_draw_disabled(cr, w, h)
+        ));
+        this.enabled_area.connect_resize(clone!(
+            @strong this => move |_d, w, h| {
                 Self::resize(
                     w,
                     h,
-                    shared.size,
-                    &mut shared.scale.borrow_mut(),
-                    &mut shared.translate.borrow_mut(),
-                    &mut shared.bounds.borrow_mut(),
-                    &mut shared.outputs.borrow_mut(),
-                );
-            }
-        });
+                    this.size,
+                    &mut this.scale.borrow_mut(),
+                    &mut this.translate.borrow_mut(),
+                    &mut this.bounds.borrow_mut(),
+                    &mut this.outputs.borrow_mut(),
+            );}
+        ));
 
         let gesture_drag = GestureDrag::new();
-        gesture_drag.connect_drag_begin({
-            let shared = Rc::clone(&shared);
-            let sw_enabled = sw_enabled.clone();
-            let dd_resolution = dd_resolution.clone();
-            let dd_refresh = dd_refresh.clone();
-            let cb_primary = cb_primary.clone();
-            let en_position_x = en_position_x.clone();
-            let en_position_y = en_position_y.clone();
-            let details_ui = flow_box_details.clone();
-            let disabled_area = disabled_area.clone();
-            move |g, start_x, start_y| {
-                shared.on_drag_begin(
-                    g,
-                    start_x,
-                    start_y,
-                    &sw_enabled,
-                    &dd_resolution,
-                    &dd_refresh,
-                    &cb_primary,
-                    &en_position_x,
-                    &en_position_y,
-                    &details_ui,
-                    &disabled_area,
-                );
-            }
-        });
-        gesture_drag.connect_drag_update({
-            let shared = Rc::clone(&shared);
-            let en_position_x = en_position_x.clone();
-            let en_position_y = en_position_y.clone();
-            move |g, offset_x, offset_y| {
-                shared.on_drag_update(g, offset_x, offset_y, &en_position_x, &en_position_y)
-            }
-        });
-        gesture_drag.connect_drag_end({
-            let shared = Rc::clone(&shared);
-            move |g, offset_x, offset_y| shared.on_drag_end(g, offset_x, offset_y)
-        });
-        enabled_area.add_controller(gesture_drag);
+        gesture_drag.connect_drag_begin(clone!(
+            @strong this => move |g, start_x, start_y| this.on_drag_begin(g, start_x, start_y)
+        ));
+        gesture_drag.connect_drag_update(clone!(
+            @strong this => move |g, offset_x, offset_y| this.on_drag_update(g, offset_x, offset_y)
+        ));
+        gesture_drag.connect_drag_end(clone!(
+            @strong this => move |g, offset_x, offset_y| this.on_drag_end(g, offset_x, offset_y)
+        ));
+        this.enabled_area.add_controller(gesture_drag);
 
         let event_controller_motion = EventControllerMotion::new();
-        event_controller_motion.connect_motion({
-            let shared = Rc::clone(&shared);
-            move |ecm, x, y| shared.on_motion(ecm, x, y)
-        });
+        event_controller_motion.connect_motion(clone!(
+            @strong this => move |ecm, x, y| this.on_motion(ecm, x, y)
+        ));
         event_controller_motion.connect_enter(Self::on_enter);
         event_controller_motion.connect_leave(Self::on_leave);
-        enabled_area.add_controller(event_controller_motion);
+        this.enabled_area.add_controller(event_controller_motion);
 
         let drag_source = DragSource::builder().actions(DragAction::MOVE).build();
-        drag_source.connect_prepare(
-            clone!(@strong shared => move |ds, x, y| shared.on_dragdrop_prepare(ds, x, y)),
-        );
-        drag_source.connect_drag_begin(
-            clone!(@strong shared => move |ds, d| shared.on_dragdrop_begin(ds, d)),
-        );
-        drag_source.connect_drag_end(
-            clone!(@strong shared => move |ds, d, del| shared.on_dragdrop_end(ds, d, del)),
-        );
-        disabled_area.add_controller(drag_source);
+        drag_source.connect_prepare(clone!(
+            @strong this => move |ds, x, y| this.on_dragdrop_prepare(ds, x, y)
+        ));
+        drag_source.connect_drag_begin(clone!(
+            @strong this => move |ds, d| this.on_dragdrop_begin(ds, d)
+        ));
+        drag_source.connect_drag_end(clone!(
+            @strong this => move |ds, d, del| this.on_dragdrop_end(ds, d, del)
+        ));
+        this.disabled_area.add_controller(drag_source);
 
         let gesture_click = GestureClick::new();
         gesture_click.connect_pressed(clone!(
-            @strong shared,
-            @strong sw_enabled,
-            @strong enabled_area,
-            @strong flow_box_details as details_ui
-            => move |gc, n_press, x, y| shared.on_disabled_click(gc, n_press, x, y, &sw_enabled, &enabled_area, &details_ui)));
-        disabled_area.add_controller(gesture_click);
+            @strong this => move |gc, n_press, x, y| this.on_disabled_click(gc, n_press, x, y)
+        ));
+        this.disabled_area.add_controller(gesture_click);
 
         let event_controller_motion = EventControllerMotion::new();
-        event_controller_motion.connect_motion(
-            clone!(@strong shared => move |ecm, x, y| shared.on_disabled_motion(ecm, x, y)),
-        );
-        disabled_area.add_controller(event_controller_motion);
+        event_controller_motion.connect_motion(clone!(
+            @strong this => move |ecm, x, y| this.on_disabled_motion(ecm, x, y)
+        ));
+        this.disabled_area.add_controller(event_controller_motion);
 
         let drop_controller_motion = DropControllerMotion::new();
-        drop_controller_motion.connect_motion(
-            clone!(@strong shared => move |dcm, x, y| Self::on_disabled_dragdrop_motion(dcm, x, y)),
-        );
-        disabled_area.add_controller(drop_controller_motion);
+        drop_controller_motion.connect_motion(Self::on_disabled_dragdrop_motion);
+        this.disabled_area.add_controller(drop_controller_motion);
 
         let drop_target = DropTarget::new(Type::U64, DragAction::MOVE);
-        drop_target.connect_drop(
-            clone!(
-                @strong shared,
-                @strong disabled_area,
-                @strong sw_enabled,
-                @strong dd_resolution,
-                @strong dd_refresh,
-                @strong cb_primary,
-                @strong en_position_x,
-                @strong en_position_y,
-                @strong flow_box_details as details_ui
-                => move |dt, v, x, y| shared.on_dragdrop_drop(dt, v, x, y, &disabled_area, &sw_enabled, &dd_resolution, &dd_refresh, &cb_primary, &en_position_x, &en_position_y, &details_ui))
-        );
-        drop_target.connect_motion(
-            clone!(@strong shared => move |dt, x, y| Self::on_dragdrop_motion(dt, x, y)),
-        );
-        enabled_area.add_controller(drop_target);
+        drop_target.connect_drop(clone!(
+            @strong this => move |dt, v, x, y| this.on_dragdrop_drop(dt, v, x, y)
+        ));
+        drop_target.connect_motion(Self::on_dragdrop_motion);
+        this.enabled_area.add_controller(drop_target);
 
-        dd_resolution.connect_selected_item_notify(
-            clone!(@strong shared, @strong dd_refresh, @strong enabled_area => move |dd_resolution| shared.on_resolution_selected(dd_resolution, &dd_refresh, &en_position_x, &en_position_y, &enabled_area)),
-        );
-        dd_refresh.connect_selected_item_notify(
-            clone!(@strong shared => move |dd_refresh| shared.on_refresh_rate_selected(dd_refresh, &dd_resolution)),
-        );
-        cb_primary.connect_active_notify(
-            clone!(@strong shared, @strong enabled_area => move |cb_primary| shared.on_primary_checked(cb_primary, &enabled_area)),
-        );
-        sw_enabled.connect_active_notify(
-            clone!(@strong shared => move |sw_enabled| shared.on_enabled_switched(sw_enabled, &enabled_area, &disabled_area, &flow_box_details)),
-        );
+        this.details.add_output_updated_callback(clone!(
+            @strong this => move |output, update| this.update(output, update)
+        ));
 
         root
     }
 
-    fn create_detail_child<W: IsA<Widget>>(label: &str, ctrl: &W) -> impl IsA<Widget> {
-        let fbc = FlowBoxChild::builder()
-            .name(&("fbc_".to_owned() + &label.to_owned().replace('_', "").to_lowercase()))
-            .halign(Align::Start)
-            .valign(Align::Center)
-            .hexpand(false)
-            .vexpand(false)
-            .focusable(false)
-            .visible(false)
-            .build();
-        let hbox = gtk::Box::builder()
-            .orientation(Orientation::Horizontal)
-            .valign(Align::Center)
-            .spacing(i32::from(VIEW_PADDING))
-            .build();
-        let mut child: Widget = (*ctrl).clone().into();
-        if ctrl.is::<gtk::Box>() {
-            child = ctrl.first_child().expect("Box has a child");
+    fn update(&self, output: &Output, update: &Update) {
+        for o in self.outputs.borrow_mut().iter_mut() {
+            if o.id == output.id {
+                *o = output.clone();
+            } else if output.primary {
+                o.primary = false;
+            }
         }
-        let label = if label.contains('_') { label.to_owned() } else { format!("_{label}") };
-        let label = Label::with_mnemonic(&label);
-        label.set_mnemonic_widget(Some(&child));
-        let gesture_click = GestureClick::new();
-        gesture_click
-            .connect_released(clone!(@strong child => move |_, _, _, _| _ = child.activate()));
-        label.add_controller(gesture_click);
-        hbox.append(&label);
-        hbox.append(ctrl);
-        fbc.set_child(Some(&hbox));
-        fbc
+
+        let pos_changed = match update {
+            Update::Enabled | Update::Resolution => {
+                Self::mind_the_gap_and_overlap(&mut self.outputs.borrow_mut());
+                true
+            }
+            _ => false,
+        };
+
+        match update {
+            Update::Enabled | Update::Resolution | Update::Position => Self::resize(
+                self.enabled_area.width(),
+                self.enabled_area.height(),
+                self.size,
+                &mut self.scale.borrow_mut(),
+                &mut self.translate.borrow_mut(),
+                &mut self.bounds.borrow_mut(),
+                &mut self.outputs.borrow_mut(),
+            ),
+            _ => (),
+        }
+
+        match update {
+            Update::Enabled => {
+                self.enabled_area.queue_draw();
+                self.disabled_area.queue_draw();
+            }
+            Update::Refresh => (),
+            _ => self.enabled_area.queue_draw(),
+        }
+
+        if pos_changed {
+            let outputs = self.outputs.borrow();
+            self.details.update(self.selected_output.borrow().and_then(|i| Some(&outputs[i])));
+        }
     }
 
     #[allow(clippy::cast_possible_truncation)]
@@ -451,35 +317,33 @@ impl View {
             }
         }
         *bounds = get_bounds(outputs);
-        *scale = ((f64::from(w) - (f64::from(VIEW_PADDING) + SCREEN_LINE_WIDTH) * 2.)
+        *scale = ((f64::from(w) - (f64::from(PADDING) + SCREEN_LINE_WIDTH) * 2.)
             / f64::from(bounds.width()))
         .min(
-            (f64::from(h) - (f64::from(VIEW_PADDING) + SCREEN_LINE_WIDTH) * 2.)
+            (f64::from(h) - (f64::from(PADDING) + SCREEN_LINE_WIDTH) * 2.)
                 / f64::from(bounds.height()),
         );
-        let dxy = i16::try_from(VIEW_PADDING).unwrap() + SCREEN_LINE_WIDTH.round() as i16;
+        let dxy = i16::try_from(PADDING).unwrap() + SCREEN_LINE_WIDTH.round() as i16;
         *translate = [dxy, dxy];
     }
 
-    fn on_draw(&self, cr: &cairo::Context, w: i32, h: i32) {
+    fn on_draw(&self, cr: &cairo::Context, _w: i32, _h: i32) {
         let bounds = self.bounds.borrow();
         let scale = self.scale.borrow();
         let translate = self.translate.borrow();
 
-        Self::draw_area_background(cr, w, h);
-
         let screen_rect = bounds.transform(*scale, *translate);
-        Self::draw_screen(cr, screen_rect);
+        draw_screen(cr, screen_rect);
 
         for (i, o) in self.outputs.borrow().iter().enumerate() {
             if !o.enabled {
                 continue;
             }
             let output_rect = o.rect().transform(*scale, *translate);
-            Self::draw_output(cr, output_rect);
+            draw_output(cr, output_rect);
             if let Some(j) = *self.selected_output.borrow() {
                 if i == j {
-                    Self::draw_selected_output(cr, output_rect);
+                    draw_selected_output(cr, output_rect);
                 }
             }
             let mut name = o.name.clone();
@@ -488,15 +352,12 @@ impl View {
                 name = format!("[{name}]");
                 product_name = product_name.map(|s| format!("[{s}]"));
             }
-            Self::draw_output_label(cr, output_rect, &name, product_name.as_deref());
+            draw_output_label(cr, output_rect, &name, product_name.as_deref());
         }
     }
 
     fn on_draw_disabled(&self, cr: &cairo::Context, w: i32, h: i32) {
         let outputs = self.outputs.borrow();
-
-        Self::draw_area_background(cr, w, h);
-
         let disabled_outputs = Self::get_disabled_outputs(&outputs);
         let i_select = self.selected_output.borrow();
         let is_dragging = *self.dragging_disabled_output.borrow();
@@ -508,11 +369,11 @@ impl View {
                 let pos = Self::get_disabled_output_pos(j, dim[1]);
                 let rect =
                     [f64::from(pos[0]), f64::from(pos[1]), f64::from(dim[0]), f64::from(dim[1])];
-                Self::draw_output(cr, rect);
-                Self::draw_output_label(cr, rect, &o.name, o.product_name.as_deref());
+                draw_output(cr, rect);
+                draw_output_label(cr, rect, &o.name, o.product_name.as_deref());
                 if let Some(i) = *i_select {
                     if outputs[i].id == o.id {
-                        Self::draw_selected_output(cr, rect);
+                        draw_selected_output(cr, rect);
                     }
                 }
                 j += 1;
@@ -526,10 +387,9 @@ impl View {
 
     fn get_disabled_output_pos(index: usize, output_height: u16) -> [i16; 2] {
         let index = u32::try_from(index).expect("less disabled outputs");
-        let x = i16::try_from(VIEW_PADDING).unwrap_or(i16::MAX);
-        let y =
-            i16::try_from((index + 1) * u32::from(VIEW_PADDING) + index * u32::from(output_height))
-                .unwrap_or(i16::MAX);
+        let x = i16::try_from(PADDING).unwrap_or(i16::MAX);
+        let y = i16::try_from((index + 1) * u32::from(PADDING) + index * u32::from(output_height))
+            .unwrap_or(i16::MAX);
         [x, y]
     }
 
@@ -542,100 +402,15 @@ impl View {
         let w = u32::try_from(w).expect("disabled area width is positive");
         let h = u32::try_from(h).expect("disabled area height is positive");
         let n_disabled = u32::try_from(n_disabled).expect("less disabled outputs");
-        let max_width = (w.saturating_sub(2 * u32::from(VIEW_PADDING))) as u16;
+        let max_width = (w.saturating_sub(2 * u32::from(PADDING))) as u16;
         let max_height =
-            (h.saturating_sub((n_disabled + 1) * u32::from(VIEW_PADDING) / n_disabled)) as u16;
+            (h.saturating_sub((n_disabled + 1) * u32::from(PADDING) / n_disabled)) as u16;
         let width = max_width.min((f64::from(max_height) * 16. / 9.).round() as u16);
         let height = max_height.min((f64::from(max_width) * 9. / 16.).round() as u16);
         [width, height]
     }
 
-    fn draw_area_background(cr: &cairo::Context, w: i32, h: i32) {
-        cr.rectangle(0.0, 0.0, f64::from(w), f64::from(h));
-        cr.set_source_color(&COLOR_BG0_H);
-        cr.fill().unwrap();
-    }
-
-    fn draw_screen(cr: &cairo::Context, rect: [f64; 4]) {
-        cr.rectangle(
-            rect[0] - SCREEN_LINE_WIDTH / 2.,
-            rect[1] - SCREEN_LINE_WIDTH / 2.,
-            rect[2] + SCREEN_LINE_WIDTH,
-            rect[3] + SCREEN_LINE_WIDTH,
-        );
-        cr.set_source_color(&COLOR_FG);
-        cr.set_line_width(SCREEN_LINE_WIDTH);
-        cr.set_dash(&[4.], 1.);
-        cr.stroke().unwrap();
-    }
-
-    fn draw_output(cr: &cairo::Context, rect: [f64; 4]) {
-        cr.rectangle(rect[0], rect[1], rect[2], rect[3]);
-        cr.set_source_rgba(
-            f64::from(COLOR_FG.red()),
-            f64::from(COLOR_FG.green()),
-            f64::from(COLOR_FG.blue()),
-            0.75,
-        );
-        cr.fill().unwrap();
-    }
-
-    fn draw_selected_output(cr: &cairo::Context, rect: [f64; 4]) {
-        cr.rectangle(
-            rect[0] + SELECTION_LINE_WIDTH / 2.,
-            rect[1] + SELECTION_LINE_WIDTH / 2.,
-            rect[2] - SELECTION_LINE_WIDTH,
-            rect[3] - SELECTION_LINE_WIDTH,
-        );
-        cr.set_source_color(&COLOR_GREEN);
-        cr.set_line_width(SELECTION_LINE_WIDTH);
-        cr.set_dash(&[1., 0.], 0.);
-        cr.stroke().unwrap();
-    }
-
-    fn draw_output_label(
-        cr: &cairo::Context,
-        rect: [f64; 4],
-        name: &str,
-        product_name: Option<&str>,
-    ) {
-        cr.save().unwrap();
-        let mut desc = FontDescription::new();
-        desc.set_family("monospace");
-        // desc.set_size(12);
-        desc.set_weight(Weight::Bold);
-
-        let layout = create_layout(cr);
-        layout.set_font_description(Some(&desc));
-        layout.set_alignment(Alignment::Center);
-        layout.set_text(product_name.unwrap_or(name));
-
-        let ps = layout.pixel_size();
-        if f64::from(ps.0) <= rect[2] - f64::from(VIEW_PADDING) * 2.
-            && f64::from(ps.1) <= rect[3] - f64::from(VIEW_PADDING) * 2.
-        {
-            cr.set_source_color(&COLOR_BG0);
-            cr.move_to(rect[0] + rect[2] / 2., rect[1] + rect[3] / 2.);
-            cr.rel_move_to(f64::from(-ps.0) / 2., f64::from(-ps.1) / 2.);
-            show_layout(cr, &layout);
-        }
-        cr.restore().unwrap();
-    }
-
-    fn on_drag_begin(
-        &self,
-        g: &GestureDrag,
-        start_x: f64,
-        start_y: f64,
-        sw_enabled: &Switch,
-        dd_resolution: &DropDown,
-        dd_refresh: &DropDown,
-        cb_primary: &CheckButton,
-        en_position_x: &Entry,
-        en_position_y: &Entry,
-        details_ui: &impl IsA<Widget>,
-        disabled_area: &DrawingArea,
-    ) {
+    fn on_drag_begin(&self, g: &GestureDrag, start_x: f64, start_y: f64) {
         let drawing_area = g.widget().downcast::<DrawingArea>().unwrap();
         if let Some(i) = self.get_output_index_at(start_x, start_y) {
             let scale = self.scale.borrow();
@@ -660,73 +435,15 @@ impl View {
             *self.selected_output.borrow_mut() = None;
         }
         drawing_area.queue_draw();
-        disabled_area.queue_draw();
+        self.disabled_area.queue_draw();
         // Do details UI updates out of scope because their triggered callbacks need to
         // borrow
-        self.update_details_ui(
-            sw_enabled,
-            dd_resolution,
-            dd_refresh,
-            cb_primary,
-            en_position_x,
-            en_position_y,
-        );
-        self.update_details_visibility(details_ui);
-    }
-
-    fn update_details_visibility(&self, details_ui: &impl IsA<Widget>) {
         let outputs = self.outputs.borrow();
-        let selected_output = self.selected_output.borrow();
-        let mut child = details_ui.first_child();
-        while let Some(c) = child {
-            let visible = selected_output
-                .is_some_and(|i| outputs[i].enabled || c.widget_name() == "fbc_enabled");
-            c.set_visible(visible);
-            child = c.next_sibling();
-        }
-    }
-
-    fn update_details_ui(
-        &self,
-        sw_enabled: &Switch,
-        dd_resolution: &DropDown,
-        dd_refresh: &DropDown,
-        cb_primary: &CheckButton,
-        en_position_x: &Entry,
-        en_position_y: &Entry,
-    ) {
-        if let Some(i) = *self.selected_output.borrow() {
-            sw_enabled.set_active(self.outputs.borrow()[i].enabled);
-            cb_primary.set_active(self.outputs.borrow()[i].primary);
-            if let Some(pos) = self.outputs.borrow()[i].pos {
-                en_position_x.set_text(&pos.0.to_string());
-                en_position_y.set_text(&pos.1.to_string());
-            }
-            let resolutions = self.outputs.borrow()[i].get_resolutions_dropdown();
-            dd_resolution.set_model(Some(&Self::into_string_list(&resolutions)));
-            if let Some(res_idx) = self.outputs.borrow()[i].get_current_resolution_dropdown_index()
-            {
-                dd_resolution.set_selected(u32::try_from(res_idx).expect("less resolutions"));
-                let refresh_rates = self.outputs.borrow()[i].get_refresh_rates_dropdown(res_idx);
-                dd_refresh.set_model(Some(&Self::into_string_list(&refresh_rates)));
-                if let Some(ref_idx) =
-                    self.outputs.borrow()[i].get_current_refresh_rate_dropdown_index(res_idx)
-                {
-                    dd_refresh.set_selected(u32::try_from(ref_idx).expect("less refresh rates"));
-                }
-            }
-        }
+        self.details.update(self.selected_output.borrow().and_then(|i| Some(&outputs[i])));
     }
 
     #[allow(clippy::cast_possible_truncation)]
-    fn on_drag_update(
-        &self,
-        g: &GestureDrag,
-        offset_x: f64,
-        offset_y: f64,
-        en_position_x: &Entry,
-        en_position_y: &Entry,
-    ) {
+    fn on_drag_update(&self, g: &GestureDrag, offset_x: f64, offset_y: f64) {
         if let Some(i) = *self.selected_output.borrow() {
             let mut outputs = self.outputs.borrow_mut();
             let output = &outputs[i];
@@ -786,9 +503,7 @@ impl View {
                     &mut self.bounds.borrow_mut(),
                     &mut outputs,
                 );
-                let resized_pos = outputs[i].pos.unwrap();
-                en_position_x.set_text(&resized_pos.0.to_string());
-                en_position_y.set_text(&resized_pos.1.to_string());
+                self.details.update(Some(&outputs[i]));
                 drawing_area.queue_draw();
             }
         }
@@ -959,28 +674,14 @@ impl View {
         }
     }
 
-    fn on_disabled_click(
-        &self,
-        gc: &GestureClick,
-        _n_press: i32,
-        x: f64,
-        y: f64,
-        sw_enabled: &Switch,
-        enabled_area: &DrawingArea,
-        details_ui: &impl IsA<Widget>,
-    ) {
+    fn on_disabled_click(&self, gc: &GestureClick, _n_press: i32, x: f64, y: f64) {
         let disabled_area = gc.widget().downcast::<DrawingArea>().unwrap();
-        if let Some(i) =
-            self.get_disabled_output_index_at(x, y, disabled_area.width(), disabled_area.height())
-        {
-            *self.selected_output.borrow_mut() = Some(i);
-            sw_enabled.set_active(self.outputs.borrow()[i].enabled);
-        } else {
-            *self.selected_output.borrow_mut() = None;
-        }
-        enabled_area.queue_draw();
+        *self.selected_output.borrow_mut() =
+            self.get_disabled_output_index_at(x, y, disabled_area.width(), disabled_area.height());
+        self.enabled_area.queue_draw();
         disabled_area.queue_draw();
-        self.update_details_visibility(details_ui);
+        let outputs = self.outputs.borrow();
+        self.details.update(self.selected_output.borrow().and_then(|i| Some(&outputs[i])));
     }
 
     fn on_drag_end(&self, g: &GestureDrag, offset_x: f64, offset_y: f64) {
@@ -1062,21 +763,7 @@ impl View {
     }
 
     #[allow(clippy::cast_possible_truncation)]
-    fn on_dragdrop_drop(
-        &self,
-        dt: &DropTarget,
-        v: &Value,
-        x: f64,
-        y: f64,
-        disabled_area: &DrawingArea,
-        sw_enabled: &Switch,
-        dd_resolution: &DropDown,
-        dd_refresh: &DropDown,
-        cb_primary: &CheckButton,
-        en_position_x: &Entry,
-        en_position_y: &Entry,
-        details_ui: &impl IsA<Widget>,
-    ) -> bool {
+    fn on_dragdrop_drop(&self, dt: &DropTarget, v: &Value, x: f64, y: f64) -> bool {
         let Ok(i) = v.get::<u64>() else {
             return false;
         };
@@ -1113,17 +800,9 @@ impl View {
         }
         // Enable selection
         *self.selected_output.borrow_mut() = Some(i);
-        self.update_details_ui(
-            sw_enabled,
-            dd_resolution,
-            dd_refresh,
-            cb_primary,
-            en_position_x,
-            en_position_y,
-        );
-        self.update_details_visibility(details_ui);
+        self.details.update(Some(&self.outputs.borrow()[i]));
         // Update drawing areas
-        disabled_area.queue_draw();
+        self.disabled_area.queue_draw();
         drawing_area.queue_draw();
         true
     }
@@ -1143,8 +822,8 @@ impl View {
         )?;
         let cr = cairo::Context::new(&surface)?;
         let rect = [0., 0., f64::from(width), f64::from(height)];
-        Self::draw_output(&cr, rect);
-        Self::draw_output_label(&cr, rect, name, product_name);
+        draw_output(&cr, rect);
+        draw_output_label(&cr, rect, name, product_name);
         cr.fill()?;
         drop(cr);
         surface.flush();
@@ -1158,274 +837,23 @@ impl View {
         ))
     }
 
-    fn on_resolution_selected(
-        &self,
-        dd_resolution: &DropDown,
-        dd_refresh: &DropDown,
-        en_position_x: &Entry,
-        en_position_y: &Entry,
-        drawing_area: &DrawingArea,
-    ) {
-        let mut dd_refresh_model = None;
-        let mut dd_refresh_index = None;
-
-        if let Some(i) = *self.selected_output.borrow() {
-            let mut outputs = self.outputs.borrow_mut();
-            if !outputs[i].enabled {
-                return;
-            }
-
-            let dd_selected = dd_resolution.widget.selected() as usize;
-
-            // Update current mode
-            let mode = &outputs[i].modes[outputs[i].resolution_dropdown_mode_index(dd_selected)];
-            if outputs[i].mode.as_ref().is_some_and(|m| m.id != mode.id)
-                || outputs[i].mode.is_none()
-            {
-                outputs[i].mode = Some(mode.clone());
-                Self::mind_the_gap_and_overlap(&mut outputs);
-                Self::resize(
-                    drawing_area.width(),
-                    drawing_area.height(),
-                    self.size,
-                    &mut self.scale.borrow_mut(),
-                    &mut self.translate.borrow_mut(),
-                    &mut self.bounds.borrow_mut(),
-                    &mut outputs,
-                );
-                let new_pos = outputs[i].pos.unwrap();
-                en_position_x.set_text(&new_pos.0.to_string());
-                en_position_y.set_text(&new_pos.1.to_string());
-                drawing_area.queue_draw();
-            }
-
-            // Update refresh rate dropdown
-            dd_refresh_model =
-                Some(Self::into_string_list(&outputs[i].get_refresh_rates_dropdown(dd_selected)));
-            dd_refresh_index = outputs[i].get_current_refresh_rate_dropdown_index(dd_selected);
-        }
-        // Do outside scope so borrowing doesn't fail in on_refresh_rate_selected
-        if dd_refresh_model.is_some() {
-            dd_refresh.set_model(dd_refresh_model.as_ref());
-            if let Some(idx) = dd_refresh_index {
-                dd_refresh.set_selected(u32::try_from(idx).expect("less refresh rates"));
-            }
-        }
-    }
-
-    fn on_refresh_rate_selected(&self, dd_refresh: &DropDown, dd_resolution: &DropDown) {
-        if let Some(i) = *self.selected_output.borrow() {
-            let mut outputs = self.outputs.borrow_mut();
-            if !outputs[i].enabled {
-                return;
-            }
-
-            // Update current mode
-            let mode = &outputs[i].modes[outputs[i].refresh_rate_dropdown_mode_index(
-                dd_resolution.widget.selected() as usize,
-                dd_refresh.widget.selected() as usize,
-            )];
-            if outputs[i].mode.as_ref().is_some_and(|m| m.id != mode.id)
-                || outputs[i].mode.is_none()
-            {
-                outputs[i].mode = Some(mode.clone());
-            }
-        }
-    }
-
-    fn on_primary_checked(&self, cb_primary: &CheckButton, drawing_area: &DrawingArea) {
-        if let Some(i) = *self.selected_output.borrow() {
-            let mut outputs = self.outputs.borrow_mut();
-            if !outputs[i].enabled {
-                return;
-            }
-            let active = cb_primary.widget.is_active();
-            if active != outputs[i].primary {
-                outputs[i].primary = active;
-                if active {
-                    for (j, output) in outputs.iter_mut().enumerate() {
-                        if i != j {
-                            output.primary = false;
-                        }
-                    }
-                }
-                drawing_area.queue_draw();
-            }
-        }
-    }
-
-    fn on_enabled_switched(
-        &self,
-        sw_enabled: &Switch,
-        enabled_area: &DrawingArea,
-        disabled_area: &DrawingArea,
-        details_ui: &impl IsA<Widget>,
-    ) {
-        let Some(i) = *self.selected_output.borrow() else {
-            return;
-        };
-        {
-            let mut outputs = self.outputs.borrow_mut();
-            let active = sw_enabled.widget.is_active();
-            if outputs[i].enabled != active {
-                // Update output
-                outputs[i].enabled = active;
-                if active {
-                    // Insert output
-                    outputs[i].enabled = true;
-                    outputs[i].mode = Some(outputs[i].modes[0].clone());
-                    outputs[i].pos = Some((0, 0));
-                    // Enable selection
-                    *self.selected_output.borrow_mut() = Some(i);
-                } else {
-                    // Remove output
-                    outputs[i].primary = false;
-                    outputs[i].pos = None;
-                    outputs[i].mode = None;
-                    // Disable selection
-                    *self.selected_output.borrow_mut() = None;
-                }
-            }
-        }
-
-        Self::mind_the_gap_and_overlap(&mut self.outputs.borrow_mut());
-        self.update_details_visibility(details_ui);
-
-        // Update drawing areas
-        Self::resize(
-            enabled_area.width(),
-            enabled_area.height(),
-            self.size,
-            &mut self.scale.borrow_mut(),
-            &mut self.translate.borrow_mut(),
-            &mut self.bounds.borrow_mut(),
-            &mut self.outputs.borrow_mut(),
-        );
-        enabled_area.queue_draw();
-        disabled_area.queue_draw();
-    }
-
-    fn on_position_insert(
-        &self,
-        entry: &Entry,
-        text: &str,
-        position: &mut i32,
-        axis: Axis,
-        enabled_area: &DrawingArea,
-    ) {
-        let idx = usize::try_from(*position).expect("smaller position");
-        let mut new_text = entry.widget.text().to_string();
-        new_text.insert_str(idx, text);
-        if let Some(coord) = self.parse_coord(&new_text, &axis) {
-            if coord.to_string() == new_text {
-                entry.insert_text(text, position);
-            } else if coord.to_string() != entry.widget.text() {
-                entry.set_text(&coord.to_string());
-            }
-            self.update_position(&axis, coord, enabled_area);
-        } else if entry.widget.text().is_empty() {
-            entry.insert_text("0", &mut 0);
-        }
-    }
-
-    fn on_position_delete(
-        &self,
-        entry: &Entry,
-        start_pos: i32,
-        end_pos: i32,
-        axis: Axis,
-        enabled_area: &DrawingArea,
-    ) {
-        let start_idx = usize::try_from(start_pos).expect("smaller start position");
-        let end_idx = usize::try_from(end_pos).expect("smaller end position");
-        let mut new_text = entry.widget.text().to_string();
-        new_text.replace_range(start_idx..end_idx, "");
-        if let Some(coord) = self.parse_coord(&new_text, &axis) {
-            if coord.to_string() == new_text {
-                entry.delete_text(start_pos, end_pos);
-            } else {
-                entry.set_text(&coord.to_string());
-            }
-            self.update_position(&axis, coord, enabled_area);
-        } else {
-            entry.delete_text(start_pos, end_pos);
-            self.update_position(&axis, 0, enabled_area);
-        }
-    }
-
-    fn parse_coord(&self, text: &str, axis: &Axis) -> Option<i16> {
-        if let Some(i) = *self.selected_output.borrow() {
-            if let Some(mode) = self.outputs.borrow_mut()[i].mode.as_ref() {
-                let max = match axis {
-                    Axis::X => i16::try_from(self.size.max_width.saturating_sub(mode.width))
-                        .unwrap_or(i16::MAX),
-                    Axis::Y => i16::try_from(self.size.max_height.saturating_sub(mode.height))
-                        .unwrap_or(i16::MAX),
-                };
-                return match text
-                    .chars()
-                    .filter(char::is_ascii_digit)
-                    .collect::<String>()
-                    .parse::<i16>()
-                {
-                    Ok(c) => Some(c.min(max)),
-                    Err(e) => match e.kind() {
-                        IntErrorKind::PosOverflow => Some(max),
-                        _ => None,
-                    },
-                };
-            }
-        }
-        None
-    }
-
-    fn update_position(&self, axis: &Axis, coord: i16, enabled_area: &DrawingArea) {
-        if let Some(i) = *self.selected_output.borrow() {
-            let mut outputs = self.outputs.borrow_mut();
-            if let Some(pos) = outputs[i].pos {
-                let new_pos = match axis {
-                    Axis::X => (coord, pos.1),
-                    Axis::Y => (pos.0, coord),
-                };
-                if new_pos != pos {
-                    outputs[i].pos = Some(new_pos);
-                    Self::resize(
-                        enabled_area.width(),
-                        enabled_area.height(),
-                        self.size,
-                        &mut self.scale.borrow_mut(),
-                        &mut self.translate.borrow_mut(),
-                        &mut self.bounds.borrow_mut(),
-                        &mut outputs,
-                    );
-                    enabled_area.queue_draw();
-                }
-            }
-        }
-    }
-
-    fn on_reset_clicked(
-        &self,
-        enabled_area: &DrawingArea,
-        disabled_area: &DrawingArea,
-        details_ui: &impl IsA<Widget>,
-    ) {
+    fn on_reset_clicked(&self) {
         self.outputs.borrow_mut().clone_from(&self.outputs_orig.borrow());
         // Disable selection
         *self.selected_output.borrow_mut() = None;
-        self.update_details_visibility(details_ui);
+        self.details.update(None);
         // Update drawing areas
         Self::resize(
-            enabled_area.width(),
-            enabled_area.height(),
+            self.enabled_area.width(),
+            self.enabled_area.height(),
             self.size,
             &mut self.scale.borrow_mut(),
             &mut self.translate.borrow_mut(),
             &mut self.bounds.borrow_mut(),
             &mut self.outputs.borrow_mut(),
         );
-        enabled_area.queue_draw();
-        disabled_area.queue_draw();
+        self.enabled_area.queue_draw();
+        self.disabled_area.queue_draw();
     }
 
     fn get_output_index_at(&self, x: f64, y: f64) -> Option<usize> {
@@ -1471,24 +899,370 @@ impl View {
         }
         None
     }
+}
 
-    fn into_string_list(list: &[String]) -> StringList {
-        let list = list.iter().map(String::as_str).collect::<Vec<&str>>();
-        StringList::new(list.as_slice())
+enum Update {
+    Enabled,
+    Resolution,
+    Refresh,
+    Position,
+    Primary,
+}
+
+#[derive(Clone)]
+struct DetailsView {
+    output: Rc<RefCell<Option<Output>>>,
+    output_updated_callbacks: Rc<RefCell<Vec<Rc<OutputUpdatedCallback>>>>,
+    size: ScreenSizeRange,
+    root: FlowBox,
+    sw_enabled: Switch,
+    dd_resolution: DropDown,
+    dd_refresh: DropDown,
+    en_position_x: Entry,
+    en_position_y: Entry,
+    cb_primary: CheckButton,
+}
+
+impl DetailsView {
+    fn new(size: ScreenSizeRange) -> Self {
+        let root = FlowBox::builder()
+            .row_spacing(u32::from(PADDING))
+            .column_spacing(u32::from(PADDING))
+            .orientation(Orientation::Horizontal)
+            .selection_mode(SelectionMode::None)
+            .halign(Align::Start)
+            .min_children_per_line(2)
+            .hexpand(true)
+            .build();
+
+        let sw_enabled = gtk::Switch::builder().tooltip_text("Enable/Disable").build();
+        let sw_enabled = Switch::new(sw_enabled);
+        root.append(&Self::create_detail_child("Enabled", &sw_enabled.widget));
+
+        let box_mode = gtk::Box::builder()
+            .orientation(Orientation::Horizontal)
+            .css_classes(["linked"])
+            .build();
+        let dd_resolution = gtk::DropDown::builder().tooltip_text("Resolution").build();
+        let dd_resolution = DropDown::new(dd_resolution);
+        let dd_refresh = gtk::DropDown::builder().tooltip_text("Refresh rate").build();
+        let dd_refresh = DropDown::new(dd_refresh);
+        box_mode.append(&dd_resolution.widget);
+        box_mode.append(&dd_refresh.widget);
+        root.append(&Self::create_detail_child("Mode", &box_mode));
+
+        let box_pos = gtk::Box::builder()
+            .orientation(Orientation::Horizontal)
+            .css_classes(["linked"])
+            .build();
+        let en_position_x = gtk::Entry::builder()
+            .input_purpose(InputPurpose::Digits)
+            .text("0")
+            .placeholder_text("x")
+            .tooltip_text("Horizontal position")
+            .max_length(6)
+            .width_chars(5)
+            .max_width_chars(5)
+            .build();
+        EntryExt::set_alignment(&en_position_x, 1.);
+        let en_position_x = Entry::new(en_position_x);
+
+        let en_position_y = gtk::Entry::builder()
+            .input_purpose(InputPurpose::Digits)
+            .text("0")
+            .placeholder_text("y")
+            .tooltip_text("Vertical position")
+            .max_length(6)
+            .width_chars(5)
+            .max_width_chars(5)
+            .build();
+        EntryExt::set_alignment(&en_position_y, 1.);
+        let en_position_y = Entry::new(en_position_y);
+
+        box_pos.append(&en_position_x.widget);
+        box_pos.append(&en_position_y.widget);
+        root.append(&Self::create_detail_child("Position", &box_pos));
+
+        let cb_primary = gtk::CheckButton::builder().tooltip_text("Set as primary").build();
+        let cb_primary = CheckButton::new(cb_primary);
+        root.append(&Self::create_detail_child("Primary", &cb_primary.widget));
+
+        let mut this = Self {
+            output: Rc::new(RefCell::new(None)),
+            output_updated_callbacks: Rc::new(RefCell::new(Vec::new())),
+            size,
+            root,
+            sw_enabled,
+            dd_resolution,
+            dd_refresh,
+            en_position_x,
+            en_position_y,
+            cb_primary,
+        };
+
+        this.sw_enabled.connect_active_notify(clone!(
+            @strong this => move |sw| this.on_enabled_switched(sw)
+        ));
+        this.dd_resolution.connect_selected_item_notify(clone!(
+            @strong this => move |dd| this.on_resolution_selected(dd)
+        ));
+        this.dd_refresh.connect_selected_item_notify(clone!(
+            @strong this => move |dd| this.on_refresh_rate_selected(dd)
+        ));
+        this.en_position_x.connect_insert_text(clone!(
+            @strong this => move |entry, text, position| this.on_position_insert(entry, text, position, Axis::X)
+        ));
+        this.en_position_x.connect_delete_text(clone!(
+            @strong this => move |entry, start, end| this.on_position_delete(entry, start, end, Axis::X)
+        ));
+        this.en_position_y.connect_insert_text(clone!(
+            @strong this => move |entry, text, position| this.on_position_insert(entry, text, position, Axis::Y)
+        ));
+        this.en_position_y.connect_delete_text(clone!(
+            @strong this => move |entry, start, end| this.on_position_delete(entry, start, end, Axis::Y)
+        ));
+        this.cb_primary.connect_active_notify(clone!(
+            @strong this => move |cb| this.on_primary_checked(cb)
+        ));
+
+        this
     }
 
-    // fn to_local(&self, value: (f64, f64)) -> (f64, f64) {
-    //     let translate = *self.translate.borrow();
-    //     let scale = *self.scale.borrow();
-    //     (
-    //         (value.0 + translate.0) * scale,
-    //         (value.1 + translate.1) * scale,
-    //     )
-    // }
+    fn create_detail_child<W: IsA<Widget>>(label: &str, ctrl: &W) -> impl IsA<Widget> {
+        let fbc = FlowBoxChild::builder()
+            .name(&("fbc_".to_owned() + &label.to_owned().replace('_', "").to_lowercase()))
+            .halign(Align::Start)
+            .valign(Align::Center)
+            .hexpand(false)
+            .vexpand(false)
+            .focusable(false)
+            .visible(false)
+            .build();
+        let hbox = gtk::Box::builder()
+            .orientation(Orientation::Horizontal)
+            .valign(Align::Center)
+            .spacing(i32::from(PADDING))
+            .build();
+        let mut child: Widget = (*ctrl).clone().into();
+        if ctrl.is::<gtk::Box>() {
+            child = ctrl.first_child().expect("Box has a child");
+        }
+        let label = if label.contains('_') { label.to_owned() } else { format!("_{label}") };
+        let label = Label::with_mnemonic(&label);
+        label.set_mnemonic_widget(Some(&child));
+        let gesture_click = GestureClick::new();
+        gesture_click
+            .connect_released(clone!(@strong child => move |_, _, _, _| _ = child.activate()));
+        label.add_controller(gesture_click);
+        hbox.append(&label);
+        hbox.append(ctrl);
+        fbc.set_child(Some(&hbox));
+        fbc
+    }
 
-    // fn to_global(&self, value: (f64, f64)) -> (f64, f64) {
-    //     let translate = *self.translate.borrow();
-    //     let scale = *self.scale.borrow();
-    //     (value.0 / scale - translate.0, value.1 / scale - translate.1)
-    // }
+    fn update(&self, output: Option<&Output>) {
+        if let Some(output) = output {
+            self.sw_enabled.set_active(output.enabled);
+            self.cb_primary.set_active(output.primary);
+            if let Some(pos) = output.pos {
+                self.en_position_x.set_text(&pos.0.to_string());
+                self.en_position_y.set_text(&pos.1.to_string());
+            }
+            let resolutions = output.get_resolutions_dropdown();
+            self.dd_resolution.set_model(Some(&into_string_list(&resolutions)));
+            if let Some(res_idx) = output.get_current_resolution_dropdown_index() {
+                self.dd_resolution.set_selected(u32::try_from(res_idx).expect("less resolutions"));
+                let refresh_rates = output.get_refresh_rates_dropdown(res_idx);
+                self.dd_refresh.set_model(Some(&into_string_list(&refresh_rates)));
+                if let Some(ref_idx) = output.get_current_refresh_rate_dropdown_index(res_idx) {
+                    self.dd_refresh
+                        .set_selected(u32::try_from(ref_idx).expect("less refresh rates"));
+                }
+            }
+        }
+        *self.output.borrow_mut() = output.cloned();
+        self.update_visibility();
+    }
+
+    fn update_visibility(&self) {
+        let mut child = self.root.first_child();
+        while let Some(c) = child {
+            let visible = self
+                .output
+                .borrow()
+                .as_ref()
+                .is_some_and(|o| o.enabled || c.widget_name() == "fbc_enabled");
+            c.set_visible(visible);
+            child = c.next_sibling();
+        }
+    }
+
+    fn on_enabled_switched(&self, sw: &Switch) {
+        let mut updated = None;
+        if let Some(output) = self.output.borrow_mut().as_mut() {
+            let active = sw.widget.is_active();
+            // Update output
+            output.enabled = active;
+            if active {
+                // Insert output
+                output.enabled = true;
+                output.mode = Some(output.modes[0].clone());
+                output.pos = Some((0, 0));
+            } else {
+                // Remove output
+                output.primary = false;
+                output.pos = None;
+                output.mode = None;
+            }
+            updated = Some(output.clone());
+        }
+        if let Some(updated) = updated {
+            self.notify_updated(&updated, &Update::Enabled);
+        }
+        self.update_visibility();
+    }
+
+    fn on_resolution_selected(&self, dd: &DropDown) {
+        let mut updated = None;
+        if let Some(output) = self.output.borrow_mut().as_mut() {
+            if !output.enabled {
+                return;
+            }
+
+            let dd_selected = dd.widget.selected() as usize;
+
+            // Update current mode
+            let mode = &output.modes[output.resolution_dropdown_mode_index(dd_selected)];
+            if output.mode.as_ref().is_some_and(|m| m.id != mode.id) || output.mode.is_none() {
+                output.mode = Some(mode.clone());
+                updated = Some(output.clone());
+            }
+
+            // Update refresh rate dropdown
+            self.dd_refresh.set_model(Some(&into_string_list(
+                &output.get_refresh_rates_dropdown(dd_selected),
+            )));
+            if let Some(idx) = output.get_current_refresh_rate_dropdown_index(dd_selected) {
+                self.dd_refresh.set_selected(u32::try_from(idx).expect("less refresh rates"));
+            }
+        }
+        if let Some(updated) = updated {
+            self.notify_updated(&updated, &Update::Resolution);
+        }
+    }
+
+    fn on_refresh_rate_selected(&self, dd: &DropDown) {
+        if let Some(output) = self.output.borrow_mut().as_mut() {
+            if !output.enabled {
+                return;
+            }
+
+            // Update current mode
+            let mode = &output.modes[output.refresh_rate_dropdown_mode_index(
+                self.dd_resolution.widget.selected() as usize,
+                dd.widget.selected() as usize,
+            )];
+            if output.mode.as_ref().is_some_and(|m| m.id != mode.id) || output.mode.is_none() {
+                output.mode = Some(mode.clone());
+                self.notify_updated(output, &Update::Refresh);
+            }
+        }
+    }
+
+    fn on_position_insert(&self, entry: &Entry, text: &str, position: &mut i32, axis: Axis) {
+        let idx = usize::try_from(*position).expect("smaller position");
+        let mut new_text = entry.widget.text().to_string();
+        new_text.insert_str(idx, text);
+        if let Some(coord) = self.parse_coord(&new_text, axis) {
+            if coord.to_string() == new_text {
+                entry.insert_text(text, position);
+            } else if coord.to_string() != entry.widget.text() {
+                entry.set_text(&coord.to_string());
+            }
+            self.update_position(axis, coord);
+        } else if entry.widget.text().is_empty() {
+            entry.insert_text("0", &mut 0);
+        }
+    }
+
+    fn on_position_delete(&self, entry: &Entry, start_pos: i32, end_pos: i32, axis: Axis) {
+        let start_idx = usize::try_from(start_pos).expect("smaller start position");
+        let end_idx = usize::try_from(end_pos).expect("smaller end position");
+        let mut new_text = entry.widget.text().to_string();
+        new_text.replace_range(start_idx..end_idx, "");
+        if let Some(coord) = self.parse_coord(&new_text, axis) {
+            if coord.to_string() == new_text {
+                entry.delete_text(start_pos, end_pos);
+            } else {
+                entry.set_text(&coord.to_string());
+            }
+            self.update_position(axis, coord);
+        } else {
+            entry.delete_text(start_pos, end_pos);
+            self.update_position(axis, 0);
+        }
+    }
+
+    fn parse_coord(&self, text: &str, axis: Axis) -> Option<i16> {
+        if let Some(output) = self.output.borrow().as_ref() {
+            if let Some(mode) = output.mode.as_ref() {
+                let max = match axis {
+                    Axis::X => i16::try_from(self.size.max_width.saturating_sub(mode.width))
+                        .unwrap_or(i16::MAX),
+                    Axis::Y => i16::try_from(self.size.max_height.saturating_sub(mode.height))
+                        .unwrap_or(i16::MAX),
+                };
+                return match text
+                    .chars()
+                    .filter(char::is_ascii_digit)
+                    .collect::<String>()
+                    .parse::<i16>()
+                {
+                    Ok(c) => Some(c.min(max)),
+                    Err(e) => match e.kind() {
+                        IntErrorKind::PosOverflow => Some(max),
+                        _ => None,
+                    },
+                };
+            }
+        }
+        None
+    }
+
+    fn update_position(&self, axis: Axis, coord: i16) {
+        if let Some(output) = self.output.borrow_mut().as_mut() {
+            if let Some(pos) = output.pos {
+                let new_pos = match axis {
+                    Axis::X => (coord, pos.1),
+                    Axis::Y => (pos.0, coord),
+                };
+                if new_pos != pos {
+                    output.pos = Some(new_pos);
+                    self.notify_updated(output, &Update::Position);
+                }
+            }
+        }
+    }
+
+    fn on_primary_checked(&self, cb: &CheckButton) {
+        if let Some(output) = self.output.borrow_mut().as_mut() {
+            output.primary = output.enabled && cb.widget.is_active();
+            self.notify_updated(output, &Update::Primary);
+        }
+    }
+
+    fn notify_updated(&self, output: &Output, update: &Update) {
+        for callback in self.output_updated_callbacks.borrow().iter() {
+            callback(output, update);
+        }
+    }
+
+    fn add_output_updated_callback(&mut self, callback: impl Fn(&Output, &Update) + 'static) {
+        self.output_updated_callbacks.borrow_mut().push(Rc::new(callback));
+    }
+}
+
+fn into_string_list(list: &[String]) -> StringList {
+    let list = list.iter().map(String::as_str).collect::<Vec<&str>>();
+    StringList::new(list.as_slice())
 }

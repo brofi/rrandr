@@ -3,6 +3,7 @@
 #![allow(clippy::too_many_lines)]
 // #![warn(clippy::restriction)]
 
+mod draw;
 mod math;
 mod view;
 mod widget;
@@ -14,6 +15,7 @@ use std::time::{Duration, Instant};
 
 use cairo::ffi::cairo_device_finish;
 use cairo::{XCBDrawable, XCBSurface};
+use draw::{COLOR_BG0, COLOR_FG};
 use gdk::gio::spawn_blocking;
 use gdk::glib::spawn_future_local;
 use gtk::glib::ExitCode;
@@ -43,8 +45,6 @@ use x11rb::rust_connection::RustConnection;
 use x11rb::x11_utils::{Serialize, X11Error};
 use x11rb::xcb_ffi::XCBConnection;
 use x11rb::CURRENT_TIME;
-
-use crate::view::{COLOR_BG0, COLOR_FG};
 
 type ScreenSizeRange = GetScreenSizeRangeReply;
 type ScreenResources = GetScreenResourcesCurrentReply;
@@ -317,10 +317,10 @@ fn create_popup_surface(
     height: i32,
 ) -> Result<XCBSurface, cairo::Error> {
     let cairo_conn =
-        unsafe { cairo::XCBConnection::from_raw_none(conn.get_raw_xcb_connection() as _) };
+        unsafe { cairo::XCBConnection::from_raw_none(conn.get_raw_xcb_connection().cast()) };
     let cairo_visual = unsafe {
         cairo::XCBVisualType::from_raw_none(
-            get_root_visual_type(&conn, screen_num).unwrap().serialize().as_mut_ptr() as _,
+            get_root_visual_type(&conn, screen_num).unwrap().serialize().as_mut_ptr().cast(),
         )
     };
     XCBSurface::create(&cairo_conn, &XCBDrawable(wid), &cairo_visual, width, height)
@@ -338,6 +338,8 @@ fn get_root_visual_type(conn: &impl XConnection, screen_num: usize) -> Option<Vi
     None
 }
 
+#[allow(clippy::cast_sign_loss)]
+#[allow(clippy::cast_possible_truncation)]
 fn create_popup_windows(
     conn: &XCBConnection,
     screen_num: usize,
@@ -365,12 +367,7 @@ fn create_popup_windows(
             let surface =
                 create_popup_surface(conn, screen_num, wid, i32::from(width), i32::from(height))?;
             let cr = cairo::Context::new(&surface)?;
-            draw_popup(
-                &cr,
-                &rect,
-                &mut desc,
-                &String::from_utf8_lossy(&output_info.name).to_string(),
-            )?;
+            draw_popup(&cr, &rect, &mut desc, &String::from_utf8_lossy(&output_info.name))?;
             surface.flush();
             windows.insert(wid, surface);
         }
@@ -403,22 +400,22 @@ fn on_identify_clicked(btn: &Button) -> Result<(), Box<dyn Error>> {
 }
 
 fn loop_x(conn: &XCBConnection, secs: f32) -> Result<(), ReplyError> {
-        let now = Instant::now();
+    let now = Instant::now();
     let secs = Duration::from_secs_f32(secs);
-        while now.elapsed() < secs {
-            match conn.poll_for_event()? {
-                Some(Event::ButtonPress(e)) => {
-                    if e.detail == 1 {
-                        break;
-                    }
+    while now.elapsed() < secs {
+        match conn.poll_for_event()? {
+            Some(Event::ButtonPress(e)) => {
+                if e.detail == 1 {
+                    break;
                 }
-                Some(Event::Error(e)) => {
-                    println!("{}", x_error_to_string(&e));
-                return Err(e.into());
-                }
-                _ => (),
             }
+            Some(Event::Error(e)) => {
+                println!("{}", x_error_to_string(&e));
+                return Err(e.into());
+            }
+            _ => (),
         }
+    }
     Ok(())
 }
 
@@ -438,13 +435,13 @@ fn draw_popup(
     cr.fill()?;
 
     cr.set_source_color(&COLOR_BG0);
-    let layout = get_layout(&cr, rect.width(), rect.height(), POPUP_WINDOW_PAD, desc, text);
+    let layout = get_layout(cr, rect.width(), rect.height(), POPUP_WINDOW_PAD, desc, text);
     let (w, h) = layout.pixel_size();
     cr.move_to(
         f64::from(i32::from(rect.width()) - w) / 2.,
         f64::from(i32::from(rect.height()) - h) / 2.,
     );
-    show_layout(&cr, &layout);
+    show_layout(cr, &layout);
     Ok(())
 }
 
@@ -456,19 +453,19 @@ fn get_layout(
     desc: &mut FontDescription,
     text: &str,
 ) -> Layout {
-    let layout = create_layout(&cr);
+    let layout = create_layout(cr);
     layout.set_alignment(Alignment::Center);
     layout.set_text(text);
     let pscale = f64::from(PANGO_SCALE);
     let size = f64::from(width.max(height)) * pscale;
     desc.set_absolute_size(size);
-    layout.set_font_description(Some(&desc));
+    layout.set_font_description(Some(desc));
     let (w, h) = layout.pixel_size();
     let scale = ((f64::from(width) - 2. * pad) / f64::from(w))
         .min((f64::from(height) - 2. * pad) / f64::from(h));
     let size = (size * scale / pscale).floor() * pscale;
     desc.set_absolute_size(size);
-    layout.set_font_description(Some(&desc));
+    layout.set_font_description(Some(desc));
     layout
 }
 
