@@ -75,6 +75,21 @@ pub struct Output {
 }
 
 impl Output {
+    fn enable(&mut self) { self.enable_at(-1, -1); }
+
+    fn enable_at(&mut self, x: i16, y: i16) {
+        self.enabled = true;
+        self.mode = Some(self.modes[0].clone());
+        self.pos = Some((x, y));
+    }
+
+    fn disable(&mut self) {
+        self.enabled = false;
+        self.primary = false;
+        self.pos = None;
+        self.mode = None;
+    }
+
     fn ppi(&self) -> f64 {
         if let Some(mode) = self.mode.as_ref() {
             if self.dim[1] > 0 {
@@ -165,6 +180,10 @@ impl Output {
     }
 }
 
+impl PartialEq for Output {
+    fn eq(&self, other: &Self) -> bool { self.id == other.id }
+}
+
 #[derive(Clone, Debug)]
 struct Mode {
     id: ModeId,
@@ -188,10 +207,6 @@ impl fmt::Display for Mode {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}x{}_{:.2}", self.width, self.height, self.refresh)
     }
-}
-
-fn get_bounds(outputs: &[Output]) -> Rect {
-    Rect::bounds(outputs.iter().filter(|&o| o.enabled).map(Output::rect).collect::<Vec<_>>())
 }
 
 fn main() -> ExitCode {
@@ -276,8 +291,8 @@ fn build_ui(
         .title("RRandR")
         .build();
 
-    let view = View::create(outputs, size, on_apply, on_identify);
-    window.set_child(Some(&view));
+    let view = View::new(size, outputs, on_apply, on_identify);
+    window.set_child(Some(&view.root));
     window.present();
 }
 
@@ -578,7 +593,8 @@ fn get_screen_size(
     outputs: &[Output],
     primary: Option<&Output>,
 ) -> ScreenSize {
-    let bounds = get_bounds(outputs);
+    let bounds =
+        Rect::bounds(outputs.iter().filter(|&o| o.enabled).map(Output::rect).collect::<Vec<_>>());
     let width = screen_size_range.min_width.max(screen_size_range.max_width.min(bounds.width()));
     let height = screen_size_range.min_height.max(screen_size_range.max_width.min(bounds.height()));
 

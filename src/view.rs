@@ -12,15 +12,17 @@ use gtk::{
     EventControllerMotion, FlowBox, FlowBoxChild, Frame, GestureClick, GestureDrag, InputPurpose,
     Label, Orientation, Paned, SelectionMode, StringList, Widget,
 };
+use x11rb::protocol::randr::Output as OutputId;
 
 use crate::draw::{
     draw_output, draw_output_label, draw_screen, draw_selected_output, SCREEN_LINE_WIDTH,
 };
 use crate::math::{Point, Rect};
 use crate::widget::{CheckButton, DropDown, Entry, Switch};
-use crate::{get_bounds, Output, ScreenSizeRange};
+use crate::{Output, ScreenSizeRange};
 
 type OutputUpdatedCallback = dyn Fn(&Output, &Update);
+type OutputSelectedCallback = dyn Fn(Option<&Output>);
 
 pub const PADDING: u16 = 10;
 
@@ -37,49 +39,27 @@ enum Axis {
 // not: https://stackoverflow.com/questions/52464653/how-to-move-data-into-multiple-rust-closures
 #[derive(Clone)]
 pub struct View {
+    pub root: gtk::Box,
+    size: ScreenSizeRange,
     outputs: Rc<RefCell<Vec<Output>>>,
     outputs_orig: Rc<RefCell<Vec<Output>>>,
-    size: ScreenSizeRange,
-
     selected_output: Rc<RefCell<Option<usize>>>,
     grab_offset: Rc<RefCell<(f64, f64)>>,
     scale: Rc<RefCell<f64>>,
     translate: Rc<RefCell<[i16; 2]>>,
     bounds: Rc<RefCell<Rect>>,
-
-    dragging_disabled_output: Rc<RefCell<bool>>,
-
-    enabled_area: DrawingArea,
-    disabled_area: DrawingArea,
+    drawing_area: DrawingArea,
     details: DetailsView,
+    disabled: DisabledView,
 }
 
 impl View {
-    pub fn create(
-        outputs: Vec<Output>,
+    pub fn new(
         size: ScreenSizeRange,
+        outputs: Vec<Output>,
         apply_callback: impl Fn(Vec<Output>) -> bool + 'static,
         identify_callback: impl Fn(&Button) + 'static,
-    ) -> impl IsA<Widget> {
-        let outputs_orig = outputs.clone();
-        let mut this = Self {
-            outputs: Rc::new(RefCell::new(outputs)),
-            outputs_orig: Rc::new(RefCell::new(outputs_orig)),
-            size,
-
-            selected_output: Rc::new(RefCell::new(None)),
-            grab_offset: Rc::new(RefCell::new((0.0, 0.0))),
-            scale: Rc::new(RefCell::new(1.0)),
-            translate: Rc::new(RefCell::new([0, 0])),
-            bounds: Rc::new(RefCell::new(Rect::default())),
-
-            dragging_disabled_output: Rc::new(RefCell::new(false)),
-
-            enabled_area: DrawingArea::new(),
-            disabled_area: DrawingArea::new(),
-            details: DetailsView::new(size),
-        };
-
+    ) -> Self {
         let root = gtk::Box::builder()
             .orientation(Orientation::Vertical)
             .margin_start(i32::from(PADDING))
@@ -89,10 +69,30 @@ impl View {
             .spacing(i32::from(PADDING))
             .build();
 
-        let frame_enabled = Frame::builder().label("Layout").child(&this.enabled_area).build();
+        let enabled_outputs =
+            outputs.iter().filter(|&n| n.enabled).map(Output::clone).collect::<Vec<_>>();
+        let disabled_outputs =
+            outputs.iter().filter(|&n| !n.enabled).map(Output::clone).collect::<Vec<_>>();
+
+        let mut this = Self {
+            root,
+            size,
+            outputs: Rc::new(RefCell::new(enabled_outputs)),
+            outputs_orig: Rc::new(RefCell::new(outputs)),
+            selected_output: Rc::new(RefCell::new(None)),
+            grab_offset: Rc::new(RefCell::new((0.0, 0.0))),
+            scale: Rc::new(RefCell::new(1.0)),
+            translate: Rc::new(RefCell::new([0, 0])),
+            bounds: Rc::new(RefCell::new(Rect::default())),
+            drawing_area: DrawingArea::new(),
+            details: DetailsView::new(size),
+            disabled: DisabledView::new(disabled_outputs),
+        };
+
+        let frame_enabled = Frame::builder().label("Layout").child(&this.drawing_area).build();
         let frame_disabled = Frame::builder()
             .label("Disabled")
-            .child(&this.disabled_area)
+            .child(&this.disabled.drawing_area)
             .width_request(150)
             .build();
 
@@ -103,7 +103,7 @@ impl View {
             .resize_end_child(false)
             .vexpand(true)
             .build();
-        root.append(&paned);
+        this.root.append(&paned);
 
         let box_bottom = gtk::Box::builder()
             .orientation(Orientation::Horizontal)
@@ -136,21 +136,10 @@ impl View {
             .build();
         btn_apply.connect_clicked(clone!(
             @strong this => move |_btn| {
-                if apply_callback(this.outputs.borrow().clone()) {
-                    this.outputs_orig.borrow_mut().clone_from(&this.outputs.borrow());
+                if apply_callback(this.get_outputs()) {
+                    *this.outputs_orig.borrow_mut() = this.get_outputs();
                 } else {
-                    this.outputs.borrow_mut().clone_from(&this.outputs_orig.borrow());
-                    Self::resize(
-                        this.enabled_area.width(),
-                        this.enabled_area.height(),
-                        this.size,
-                        &mut this.scale.borrow_mut(),
-                        &mut this.translate.borrow_mut(),
-                        &mut this.bounds.borrow_mut(),
-                        &mut this.outputs.borrow_mut(),
-                    );
-                    this.enabled_area.queue_draw();
-                    this.disabled_area.queue_draw();
+                    this.reset();
                 }
         }));
         box_apply_reset.append(&btn_apply);
@@ -159,26 +148,21 @@ impl View {
             .use_underline(true)
             .tooltip_text("Reset changes")
             .build();
-        btn_reset.connect_clicked(clone!(
-            @strong this => move |_btn| this.on_reset_clicked()
-        ));
+        btn_reset.connect_clicked(clone!(@strong this => move |_btn| this.reset()));
         box_apply_reset.append(&btn_reset);
 
         box_controls.append(&box_apply_reset);
         box_bottom.append(&box_controls);
-        root.append(&box_bottom);
+        this.root.append(&box_bottom);
 
-        this.enabled_area.set_draw_func(clone!(
-            @strong this => move |_d, cr, w, h| this.on_draw(cr, w, h)
+        this.drawing_area.set_draw_func(clone!(
+            @strong this => move |_d, cr, width, height| this.on_draw(cr, width, height)
         ));
-        this.disabled_area.set_draw_func(clone!(
-            @strong this => move |_d, cr, w, h| this.on_draw_disabled(cr, w, h)
-        ));
-        this.enabled_area.connect_resize(clone!(
-            @strong this => move |_d, w, h| {
+        this.drawing_area.connect_resize(clone!(
+            @strong this => move |_d, width, height| {
                 Self::resize(
-                    w,
-                    h,
+                    width,
+                    height,
                     this.size,
                     &mut this.scale.borrow_mut(),
                     &mut this.translate.borrow_mut(),
@@ -197,7 +181,7 @@ impl View {
         gesture_drag.connect_drag_end(clone!(
             @strong this => move |g, offset_x, offset_y| this.on_drag_end(g, offset_x, offset_y)
         ));
-        this.enabled_area.add_controller(gesture_drag);
+        this.drawing_area.add_controller(gesture_drag);
 
         let event_controller_motion = EventControllerMotion::new();
         event_controller_motion.connect_motion(clone!(
@@ -205,71 +189,67 @@ impl View {
         ));
         event_controller_motion.connect_enter(Self::on_enter);
         event_controller_motion.connect_leave(Self::on_leave);
-        this.enabled_area.add_controller(event_controller_motion);
+        this.drawing_area.add_controller(event_controller_motion);
 
-        let drag_source = DragSource::builder().actions(DragAction::MOVE).build();
-        drag_source.connect_prepare(clone!(
-            @strong this => move |ds, x, y| this.on_dragdrop_prepare(ds, x, y)
-        ));
-        drag_source.connect_drag_begin(clone!(
-            @strong this => move |ds, d| this.on_dragdrop_begin(ds, d)
-        ));
-        drag_source.connect_drag_end(clone!(
-            @strong this => move |ds, d, del| this.on_dragdrop_end(ds, d, del)
-        ));
-        this.disabled_area.add_controller(drag_source);
-
-        let gesture_click = GestureClick::new();
-        gesture_click.connect_pressed(clone!(
-            @strong this => move |gc, n_press, x, y| this.on_disabled_click(gc, n_press, x, y)
-        ));
-        this.disabled_area.add_controller(gesture_click);
-
-        let event_controller_motion = EventControllerMotion::new();
-        event_controller_motion.connect_motion(clone!(
-            @strong this => move |ecm, x, y| this.on_disabled_motion(ecm, x, y)
-        ));
-        this.disabled_area.add_controller(event_controller_motion);
-
-        let drop_controller_motion = DropControllerMotion::new();
-        drop_controller_motion.connect_motion(Self::on_disabled_dragdrop_motion);
-        this.disabled_area.add_controller(drop_controller_motion);
-
-        let drop_target = DropTarget::new(Type::U64, DragAction::MOVE);
+        let drop_target = DropTarget::new(Type::U32, DragAction::MOVE);
         drop_target.connect_drop(clone!(
-            @strong this => move |dt, v, x, y| this.on_dragdrop_drop(dt, v, x, y)
+            @strong this => move |dt, v, x, y| this.on_drop(dt, v, x, y)
         ));
-        drop_target.connect_motion(Self::on_dragdrop_motion);
-        this.enabled_area.add_controller(drop_target);
+        drop_target.connect_motion(Self::on_drop_motion);
+        this.drawing_area.add_controller(drop_target);
 
         this.details.add_output_updated_callback(clone!(
             @strong this => move |output, update| this.update(output, update)
         ));
 
-        root
+        this.disabled.add_output_selected_callback(clone!(
+            @strong this => move |output| this.on_disabled_selected(output)
+        ));
+
+        this
+    }
+
+    fn get_outputs(&self) -> Vec<Output> {
+        let mut outputs = self.outputs.borrow_mut().to_vec();
+        outputs.extend(self.disabled.outputs.borrow().to_vec());
+        outputs
     }
 
     fn update(&self, output: &Output, update: &Update) {
-        for o in self.outputs.borrow_mut().iter_mut() {
-            if o.id == output.id {
-                *o = output.clone();
-            } else if output.primary {
-                o.primary = false;
+        match update {
+            Update::Enabled => self.enable_output(output.id),
+            Update::Disabled => self.disable_output(output.id),
+            _ => {
+                for o in self.outputs.borrow_mut().iter_mut() {
+                    if o == output {
+                        *o = output.clone();
+                    } else if output.primary {
+                        o.primary = false;
+                    }
+                }
             }
         }
+        self.update_view(update);
+    }
 
-        let pos_changed = match update {
-            Update::Enabled | Update::Resolution => {
-                Self::mind_the_gap_and_overlap(&mut self.outputs.borrow_mut());
-                true
-            }
-            _ => false,
-        };
-
+    fn update_view(&self, update: &Update) {
+        // Mind the gap
         match update {
-            Update::Enabled | Update::Resolution | Update::Position => Self::resize(
-                self.enabled_area.width(),
-                self.enabled_area.height(),
+            Update::Enabled | Update::Disabled | Update::Resolution => {
+                Self::mind_the_gap_and_overlap(&mut self.outputs.borrow_mut());
+            }
+            _ => (),
+        }
+
+        // Resize
+        match update {
+            Update::Enabled
+            | Update::Disabled
+            | Update::Resolution
+            | Update::Position
+            | Update::Reset => Self::resize(
+                self.drawing_area.width(),
+                self.drawing_area.height(),
                 self.size,
                 &mut self.scale.borrow_mut(),
                 &mut self.translate.borrow_mut(),
@@ -279,25 +259,58 @@ impl View {
             _ => (),
         }
 
+        // Redraw
         match update {
-            Update::Enabled => {
-                self.enabled_area.queue_draw();
-                self.disabled_area.queue_draw();
-            }
             Update::Refresh => (),
-            _ => self.enabled_area.queue_draw(),
+            _ => self.drawing_area.queue_draw(),
         }
 
-        if pos_changed {
-            let outputs = self.outputs.borrow();
-            self.details.update(self.selected_output.borrow().and_then(|i| Some(&outputs[i])));
+        // Update disabled view
+        match update {
+            Update::Enabled | Update::Disabled | Update::Reset => self.disabled.update_view(),
+            _ => (),
+        }
+
+        // Update details view
+        match update {
+            Update::Enabled | Update::Resolution => self.update_details(),
+            _ => (),
         }
     }
 
+    fn update_details(&self) {
+        let outputs = self.outputs.borrow();
+        self.details.update(self.selected_output.borrow().and_then(|i| Some(&outputs[i])));
+    }
+
+    fn enable_output(&self, output_id: OutputId) {
+        let mut outputs = self.outputs.borrow_mut();
+        let mut enabled_output = self.disabled.remove_output(output_id);
+        enabled_output.enable();
+        outputs.push(enabled_output);
+        self.select(outputs.len() - 1);
+    }
+
+    fn disable_output(&self, output_id: OutputId) {
+        let mut outputs = self.outputs.borrow_mut();
+        let index = outputs
+            .iter()
+            .position(|o| output_id == o.id)
+            .unwrap_or_else(|| panic!("enabled outputs contains output {output_id}"));
+        let mut disabled_output = outputs.remove(index);
+        disabled_output.disable();
+        self.disabled.add_output(disabled_output);
+        self.deselect();
+    }
+
+    fn select(&self, index: usize) { *self.selected_output.borrow_mut() = Some(index); }
+
+    fn deselect(&self) { *self.selected_output.borrow_mut() = None; }
+
     #[allow(clippy::cast_possible_truncation)]
     fn resize(
-        w: i32,
-        h: i32,
+        width: i32,
+        height: i32,
         size: ScreenSizeRange,
         scale: &mut f64,
         translate: &mut [i16; 2],
@@ -305,7 +318,7 @@ impl View {
         outputs: &mut [Output],
     ) {
         // Translate to x = y = 0
-        *bounds = get_bounds(outputs);
+        *bounds = Self::get_bounds(outputs);
         for output in outputs.iter_mut() {
             if let (Some(pos), Some(mode)) = (output.pos.as_mut(), output.mode.as_ref()) {
                 let max_x =
@@ -316,15 +329,19 @@ impl View {
                 pos.1 = pos.1.saturating_sub(bounds.y()).min(max_y);
             }
         }
-        *bounds = get_bounds(outputs);
-        *scale = ((f64::from(w) - (f64::from(PADDING) + SCREEN_LINE_WIDTH) * 2.)
+        *bounds = Self::get_bounds(outputs);
+        *scale = ((f64::from(width) - (f64::from(PADDING) + SCREEN_LINE_WIDTH) * 2.)
             / f64::from(bounds.width()))
         .min(
-            (f64::from(h) - (f64::from(PADDING) + SCREEN_LINE_WIDTH) * 2.)
+            (f64::from(height) - (f64::from(PADDING) + SCREEN_LINE_WIDTH) * 2.)
                 / f64::from(bounds.height()),
         );
         let dxy = i16::try_from(PADDING).unwrap() + SCREEN_LINE_WIDTH.round() as i16;
         *translate = [dxy, dxy];
+    }
+
+    fn get_bounds(outputs: &[Output]) -> Rect {
+        Rect::bounds(outputs.iter().map(Output::rect).collect::<Vec<_>>())
     }
 
     fn on_draw(&self, cr: &cairo::Context, _w: i32, _h: i32) {
@@ -336,9 +353,6 @@ impl View {
         draw_screen(cr, screen_rect);
 
         for (i, o) in self.outputs.borrow().iter().enumerate() {
-            if !o.enabled {
-                continue;
-            }
             let output_rect = o.rect().transform(*scale, *translate);
             draw_output(cr, output_rect);
             if let Some(j) = *self.selected_output.borrow() {
@@ -354,60 +368,6 @@ impl View {
             }
             draw_output_label(cr, output_rect, &name, product_name.as_deref());
         }
-    }
-
-    fn on_draw_disabled(&self, cr: &cairo::Context, w: i32, h: i32) {
-        let outputs = self.outputs.borrow();
-        let disabled_outputs = Self::get_disabled_outputs(&outputs);
-        let i_select = self.selected_output.borrow();
-        let is_dragging = *self.dragging_disabled_output.borrow();
-        let dim = Self::get_disabled_output_dim(w, h, disabled_outputs.len());
-        let mut j: usize = 0; // seperate index for closing the gaps
-        for &o in &disabled_outputs {
-            if i_select.is_none() || i_select.is_some_and(|i| !is_dragging || outputs[i].id != o.id)
-            {
-                let pos = Self::get_disabled_output_pos(j, dim[1]);
-                let rect =
-                    [f64::from(pos[0]), f64::from(pos[1]), f64::from(dim[0]), f64::from(dim[1])];
-                draw_output(cr, rect);
-                draw_output_label(cr, rect, &o.name, o.product_name.as_deref());
-                if let Some(i) = *i_select {
-                    if outputs[i].id == o.id {
-                        draw_selected_output(cr, rect);
-                    }
-                }
-                j += 1;
-            }
-        }
-    }
-
-    fn get_disabled_outputs(outputs: &[Output]) -> Vec<&Output> {
-        outputs.iter().filter(|&n| !n.enabled).collect::<Vec<_>>()
-    }
-
-    fn get_disabled_output_pos(index: usize, output_height: u16) -> [i16; 2] {
-        let index = u32::try_from(index).expect("less disabled outputs");
-        let x = i16::try_from(PADDING).unwrap_or(i16::MAX);
-        let y = i16::try_from((index + 1) * u32::from(PADDING) + index * u32::from(output_height))
-            .unwrap_or(i16::MAX);
-        [x, y]
-    }
-
-    #[allow(clippy::cast_sign_loss)]
-    #[allow(clippy::cast_possible_truncation)]
-    fn get_disabled_output_dim(w: i32, h: i32, n_disabled: usize) -> [u16; 2] {
-        if n_disabled == 0 {
-            return [0, 0];
-        }
-        let w = u32::try_from(w).expect("disabled area width is positive");
-        let h = u32::try_from(h).expect("disabled area height is positive");
-        let n_disabled = u32::try_from(n_disabled).expect("less disabled outputs");
-        let max_width = (w.saturating_sub(2 * u32::from(PADDING))) as u16;
-        let max_height =
-            (h.saturating_sub((n_disabled + 1) * u32::from(PADDING) / n_disabled)) as u16;
-        let width = max_width.min((f64::from(max_height) * 16. / 9.).round() as u16);
-        let height = max_height.min((f64::from(max_width) * 9. / 16.).round() as u16);
-        [width, height]
     }
 
     fn on_drag_begin(&self, g: &GestureDrag, start_x: f64, start_y: f64) {
@@ -427,19 +387,16 @@ impl View {
             // Push output to back, so it gets drawn last
             let output = outputs.remove(i);
             outputs.push(output);
-            *self.selected_output.borrow_mut() = Some(outputs.len() - 1);
+            self.select(outputs.len() - 1);
+            self.disabled.deselect();
 
             // Update cursor
             drawing_area.set_cursor_from_name(Some("grabbing"));
         } else {
-            *self.selected_output.borrow_mut() = None;
+            self.deselect();
         }
         drawing_area.queue_draw();
-        self.disabled_area.queue_draw();
-        // Do details UI updates out of scope because their triggered callbacks need to
-        // borrow
-        let outputs = self.outputs.borrow();
-        self.details.update(self.selected_output.borrow().and_then(|i| Some(&outputs[i])));
+        self.update_details();
     }
 
     #[allow(clippy::cast_possible_truncation)]
@@ -447,12 +404,12 @@ impl View {
         if let Some(i) = *self.selected_output.borrow() {
             let mut outputs = self.outputs.borrow_mut();
             let output = &outputs[i];
-            let mut scale = self.scale.borrow_mut();
-            let mut translate = self.translate.borrow_mut();
+            let scale = *self.scale.borrow();
+            let [dx, dy] = *self.translate.borrow();
             let grab_offset = self.grab_offset.borrow();
 
             let mut min_side = f64::MAX;
-            for output in outputs.iter().filter(|n| n.enabled) {
+            for output in outputs.iter() {
                 let mode = output.mode.as_ref().expect("dragged output has mode");
                 min_side = min_side.min(f64::from(mode.height));
                 min_side = min_side.min(f64::from(mode.width));
@@ -466,12 +423,10 @@ impl View {
 
             // Calculate new position
             let start = g.start_point().unwrap();
-            let mut new_x = (((start.0 + offset_x - f64::from(translate[0])) / *scale)
-                + grab_offset.0)
-                .round() as i16;
-            let mut new_y = (((start.1 + offset_y - f64::from(translate[1])) / *scale)
-                + grab_offset.1)
-                .round() as i16;
+            let mut new_x =
+                (((start.0 + offset_x - f64::from(dx)) / scale) + grab_offset.0).round() as i16;
+            let mut new_y =
+                (((start.1 + offset_y - f64::from(dy)) / scale) + grab_offset.1).round() as i16;
 
             // Apply snap
             let pos = output.pos.expect("dragged output has position");
@@ -493,20 +448,10 @@ impl View {
             // Update new position
             if new_x != pos.0 || new_y != pos.1 {
                 outputs[i].pos = Some((new_x, new_y));
-                let drawing_area = g.widget().downcast::<DrawingArea>().unwrap();
-                Self::resize(
-                    drawing_area.width(),
-                    drawing_area.height(),
-                    self.size,
-                    &mut scale,
-                    &mut translate,
-                    &mut self.bounds.borrow_mut(),
-                    &mut outputs,
-                );
-                self.details.update(Some(&outputs[i]));
-                drawing_area.queue_draw();
             }
         }
+        self.update_view(&Update::Position);
+        self.update_details();
     }
 
     fn calculate_snap(outputs: &[Output], output_index: usize) -> Point {
@@ -515,9 +460,6 @@ impl View {
         let mut dist = Point::max();
         let mut snap = Point::default();
         for (j, other) in outputs.iter().enumerate() {
-            if !other.enabled {
-                continue;
-            }
             if output_index != j {
                 let other_r = other.rect();
                 let other_center = other_r.center();
@@ -558,13 +500,10 @@ impl View {
     #[allow(clippy::cast_possible_truncation)]
     fn mind_the_gap_and_overlap(outputs: &mut Vec<Output>) {
         let mut data = HashMap::new();
-        let bounds = get_bounds(outputs);
+        let bounds = Self::get_bounds(outputs);
         let bc = bounds.center();
 
         for output in outputs.iter() {
-            if !output.enabled {
-                continue;
-            }
             let r = output.rect();
             let c = r.center();
             let mut e = [0., 0.];
@@ -581,9 +520,6 @@ impl View {
         let mut max_loops = (f64::from(bounds.width().max(bounds.height())) / step) as u16;
         loop {
             for i in 0..outputs.len() {
-                if !outputs[i].enabled {
-                    continue;
-                }
                 // Current position
                 let mut r = data[&outputs[i].id].0.clone();
                 // Unit direction
@@ -617,7 +553,7 @@ impl View {
 
                 // Check if move has caused an overlap with other rects
                 for other in outputs.iter() {
-                    if other.id == outputs[i].id || !other.enabled {
+                    if other.id == outputs[i].id {
                         continue;
                     }
                     if let Some(intersect) = r.intersect(&data[&other.id].0) {
@@ -665,33 +601,21 @@ impl View {
             }
         }
         for output in outputs {
-            if !output.enabled {
-                continue;
-            }
             let pos = output.pos.as_mut().unwrap();
             pos.0 = data[&output.id].0.x();
             pos.1 = data[&output.id].0.y();
         }
     }
 
-    fn on_disabled_click(&self, gc: &GestureClick, _n_press: i32, x: f64, y: f64) {
-        let disabled_area = gc.widget().downcast::<DrawingArea>().unwrap();
-        *self.selected_output.borrow_mut() =
-            self.get_disabled_output_index_at(x, y, disabled_area.width(), disabled_area.height());
-        self.enabled_area.queue_draw();
-        disabled_area.queue_draw();
-        let outputs = self.outputs.borrow();
-        self.details.update(self.selected_output.borrow().and_then(|i| Some(&outputs[i])));
-    }
-
     fn on_drag_end(&self, g: &GestureDrag, offset_x: f64, offset_y: f64) {
         *self.grab_offset.borrow_mut() = (0., 0.);
         // Update cursor
-        let start = g.start_point().unwrap(); // TODO failed again, how?
-        let drawing_area = g.widget().downcast::<DrawingArea>().unwrap();
-        match self.get_output_index_at(start.0 + offset_x, start.1 + offset_y) {
-            Some(_) => drawing_area.set_cursor_from_name(Some("pointer")),
-            None => drawing_area.set_cursor_from_name(Some("default")),
+        if let Some((x, y)) = g.start_point() {
+            let drawing_area = g.widget().downcast::<DrawingArea>().unwrap();
+            match self.get_output_index_at(x + offset_x, y + offset_y) {
+                Some(_) => drawing_area.set_cursor_from_name(Some("pointer")),
+                None => drawing_area.set_cursor_from_name(Some("default")),
+            }
         }
     }
 
@@ -707,107 +631,257 @@ impl View {
         }
     }
 
-    fn on_disabled_motion(&self, ecm: &EventControllerMotion, x: f64, y: f64) {
-        let disabled_area = ecm.widget().downcast::<DrawingArea>().unwrap();
-        match self.get_disabled_output_index_at(x, y, disabled_area.width(), disabled_area.height())
-        {
-            Some(_) => disabled_area.set_cursor_from_name(Some("pointer")),
-            None => disabled_area.set_cursor_from_name(Some("default")),
-        }
-    }
-
-    fn on_disabled_dragdrop_motion(_dcm: &DropControllerMotion, _x: f64, _y: f64) {}
-
     fn on_enter(_ecm: &EventControllerMotion, _x: f64, _y: f64) {}
 
     fn on_leave(_ecm: &EventControllerMotion) {}
 
     #[allow(clippy::cast_possible_truncation)]
-    fn on_dragdrop_prepare(&self, ds: &DragSource, x: f64, y: f64) -> Option<ContentProvider> {
-        let outputs = self.outputs.borrow();
-        let disabled_outputs = Self::get_disabled_outputs(&outputs);
-        let disabled_area = ds.widget().downcast::<DrawingArea>().unwrap();
-        let width = disabled_area.width();
-        let height = disabled_area.height();
-        if let Some(i) = self.get_disabled_output_index_at(x, y, width, height) {
-            let dim = Self::get_disabled_output_dim(width, height, disabled_outputs.len());
-            if let Ok(icon) = Self::create_drag_icon(
-                dim[0],
-                dim[1],
-                &outputs[i].name,
-                outputs[i].product_name.as_deref(),
-            ) {
-                let j = outputs
-                    .iter()
-                    .filter(|&o| !o.enabled)
-                    .position(|o| o.id == outputs[i].id)
-                    .unwrap();
-                let pos = Self::get_disabled_output_pos(j, dim[1]);
-                ds.set_icon(Some(&icon), x as i32, (y - f64::from(pos[1])) as i32);
+    fn on_drop(&self, _dt: &DropTarget, v: &Value, x: f64, y: f64) -> bool {
+        let Ok(id) = v.get::<u32>() else {
+            return false;
+        };
+
+        let mut output = self.disabled.remove_output(id);
+        let scale = *self.scale.borrow();
+        let [dx, dy] = *self.translate.borrow();
+        output.enable_at(
+            ((x - f64::from(dx)).max(0.) / scale).round() as i16,
+            ((y - f64::from(dy)).max(0.) / scale).round() as i16,
+        );
+        self.outputs.borrow_mut().push(output);
+        self.select(self.outputs.borrow_mut().len() - 1);
+        self.update_view(&Update::Enabled);
+
+        true
+    }
+
+    fn on_drop_motion(_dt: &DropTarget, _x: f64, _y: f64) -> DragAction { DragAction::MOVE }
+
+    fn get_output_index_at(&self, x: f64, y: f64) -> Option<usize> {
+        let scale = self.scale.borrow();
+        let translate = self.translate.borrow();
+
+        for (i, output) in self.outputs.borrow().iter().enumerate() {
+            let mut scaled_rect = output.rect();
+            scaled_rect.scale(*scale);
+            scaled_rect.translate(translate[0], translate[1]);
+            if scaled_rect.contains(x, y) {
+                return Some(i);
             }
-            return Some(ContentProvider::for_value(&Value::from(u64::try_from(i).ok()?)));
         }
         None
     }
 
-    fn on_dragdrop_begin(&self, ds: &DragSource, _d: &Drag) {
-        let disabled_area = ds.widget().downcast::<DrawingArea>().unwrap();
-        disabled_area.queue_draw();
-        *self.dragging_disabled_output.borrow_mut() = true;
+    fn on_disabled_selected(&self, output: Option<&Output>) {
+        self.deselect();
+        self.details.update(output);
     }
 
-    fn on_dragdrop_end(&self, ds: &DragSource, _d: &Drag, _del: bool) {
-        let disabled_area = ds.widget().downcast::<DrawingArea>().unwrap();
-        disabled_area.queue_draw();
-        *self.dragging_disabled_output.borrow_mut() = false;
+    fn reset(&self) {
+        let enabled_outputs = self
+            .outputs_orig
+            .borrow()
+            .iter()
+            .filter(|&n| n.enabled)
+            .map(Output::clone)
+            .collect::<Vec<_>>();
+        let disabled_outputs = self
+            .outputs_orig
+            .borrow()
+            .iter()
+            .filter(|&n| !n.enabled)
+            .map(Output::clone)
+            .collect::<Vec<_>>();
+        *self.outputs.borrow_mut() = enabled_outputs;
+        *self.disabled.outputs.borrow_mut() = disabled_outputs;
+
+        self.deselect();
+        self.disabled.deselect();
+        self.update_view(&Update::Reset);
+        self.details.update(None);
     }
+}
+
+#[derive(Clone)]
+struct DisabledView {
+    outputs: Rc<RefCell<Vec<Output>>>,
+    selected_output: Rc<RefCell<Option<usize>>>,
+    output_selected_callbacks: Rc<RefCell<Vec<Rc<OutputSelectedCallback>>>>,
+    is_dragging: Rc<RefCell<bool>>,
+    drawing_area: DrawingArea,
+}
+
+impl DisabledView {
+    fn new(outputs: Vec<Output>) -> Self {
+        let this = Self {
+            outputs: Rc::new(RefCell::new(outputs)),
+            selected_output: Rc::new(RefCell::new(None)),
+            output_selected_callbacks: Rc::new(RefCell::new(Vec::new())),
+            is_dragging: Rc::new(RefCell::new(false)),
+            drawing_area: DrawingArea::new(),
+        };
+
+        this.drawing_area.set_draw_func(clone!(
+            @strong this => move |_d, cr, width, height| this.on_draw(cr, width, height)
+        ));
+
+        let drag_source = DragSource::builder().actions(DragAction::MOVE).build();
+        drag_source.connect_prepare(clone!(
+            @strong this => move |ds, x, y| this.on_drag_prepare(ds, x, y)
+        ));
+        drag_source.connect_drag_begin(clone!(
+            @strong this => move |ds, d| this.on_drag_begin(ds, d)
+        ));
+        drag_source.connect_drag_end(clone!(
+            @strong this => move |ds, d, del| this.on_drag_end(ds, d, del)
+        ));
+        this.drawing_area.add_controller(drag_source);
+
+        let gesture_click = GestureClick::new();
+        gesture_click.connect_pressed(clone!(
+            @strong this => move |gc, n_press, x, y| this.on_click(gc, n_press, x, y)
+        ));
+        this.drawing_area.add_controller(gesture_click);
+
+        let event_controller_motion = EventControllerMotion::new();
+        event_controller_motion.connect_motion(clone!(
+            @strong this => move |ecm, x, y| this.on_motion(ecm, x, y)
+        ));
+        this.drawing_area.add_controller(event_controller_motion);
+
+        let drop_controller_motion = DropControllerMotion::new();
+        drop_controller_motion.connect_motion(Self::on_drop_motion);
+        this.drawing_area.add_controller(drop_controller_motion);
+
+        this
+    }
+
+    fn update_view(&self) { self.drawing_area.queue_draw(); }
+
+    fn add_output(&self, output: Output) {
+        let mut outputs = self.outputs.borrow_mut();
+        if !outputs.contains(&output) {
+            outputs.push(output);
+            self.select(outputs.len() - 1);
+        }
+    }
+
+    fn remove_output(&self, output_id: OutputId) -> Output {
+        let mut outputs = self.outputs.borrow_mut();
+        let index = outputs
+            .iter()
+            .position(|output| output_id == output.id)
+            .unwrap_or_else(|| panic!("disabled outputs contains output {output_id}"));
+        self.deselect();
+        outputs.remove(index)
+    }
+
+    fn select(&self, index: usize) { *self.selected_output.borrow_mut() = Some(index); }
+
+    fn deselect(&self) { *self.selected_output.borrow_mut() = None; }
+
+    fn on_draw(&self, cr: &cairo::Context, width: i32, height: i32) {
+        let outputs = self.outputs.borrow();
+        let i_select = self.selected_output.borrow();
+        let is_dragging = *self.is_dragging.borrow();
+        let [width, height] = Self::get_output_dim(width, height, outputs.len());
+        let mut j: usize = 0; // seperate index for closing the gaps
+        for o in outputs.iter() {
+            if i_select.is_none() || i_select.is_some_and(|i| !is_dragging || outputs[i].id != o.id)
+            {
+                let [x, y] = Self::get_output_pos(j, height);
+                let rect = [f64::from(x), f64::from(y), f64::from(width), f64::from(height)];
+                draw_output(cr, rect);
+                draw_output_label(cr, rect, &o.name, o.product_name.as_deref());
+                if let Some(i) = *i_select {
+                    if outputs[i].id == o.id {
+                        draw_selected_output(cr, rect);
+                    }
+                }
+                j += 1;
+            }
+        }
+    }
+
+    fn get_output_pos(index: usize, output_height: u16) -> [i16; 2] {
+        let index = u32::try_from(index).expect("less disabled outputs");
+        let x = i16::try_from(PADDING).unwrap_or(i16::MAX);
+        let y = i16::try_from((index + 1) * u32::from(PADDING) + index * u32::from(output_height))
+            .unwrap_or(i16::MAX);
+        [x, y]
+    }
+
+    #[allow(clippy::cast_sign_loss)]
+    #[allow(clippy::cast_possible_truncation)]
+    fn get_output_dim(w: i32, h: i32, n_disabled: usize) -> [u16; 2] {
+        if n_disabled == 0 {
+            return [0, 0];
+        }
+        let w = u32::try_from(w).expect("drawing area width is positive");
+        let h = u32::try_from(h).expect("drawing area height is positive");
+        let n_disabled = u32::try_from(n_disabled).expect("less disabled outputs");
+        let max_width = (w.saturating_sub(2 * u32::from(PADDING))) as u16;
+        let max_height =
+            (h.saturating_sub((n_disabled + 1) * u32::from(PADDING) / n_disabled)) as u16;
+        let width = max_width.min((f64::from(max_height) * 16. / 9.).round() as u16);
+        let height = max_height.min((f64::from(max_width) * 9. / 16.).round() as u16);
+        [width, height]
+    }
+
+    fn on_click(&self, gc: &GestureClick, _n_press: i32, x: f64, y: f64) {
+        let drawing_area = gc.widget().downcast::<DrawingArea>().unwrap();
+        if let Some(i) = self.get_output_index_at(x, y, drawing_area.width(), drawing_area.height())
+        {
+            self.select(i);
+            self.notify_selected(Some(&self.outputs.borrow()[i]));
+        } else {
+            self.deselect();
+            self.notify_selected(None);
+        }
+        self.update_view();
+    }
+
+    fn on_motion(&self, ecm: &EventControllerMotion, x: f64, y: f64) {
+        let drawing_area = ecm.widget().downcast::<DrawingArea>().unwrap();
+        match self.get_output_index_at(x, y, drawing_area.width(), drawing_area.height()) {
+            Some(_) => drawing_area.set_cursor_from_name(Some("pointer")),
+            None => drawing_area.set_cursor_from_name(Some("default")),
+        }
+    }
+
+    fn on_drop_motion(_dcm: &DropControllerMotion, _x: f64, _y: f64) {}
 
     #[allow(clippy::cast_possible_truncation)]
-    fn on_dragdrop_drop(&self, dt: &DropTarget, v: &Value, x: f64, y: f64) -> bool {
-        let Ok(i) = v.get::<u64>() else {
-            return false;
-        };
-        let Ok(i) = usize::try_from(i) else {
-            return false;
-        };
-
-        let drawing_area = dt.widget().downcast::<DrawingArea>().unwrap();
-        {
-            let mut outputs = self.outputs.borrow_mut();
-            if i >= outputs.len() || outputs[i].enabled {
-                return false;
+    fn on_drag_prepare(&self, ds: &DragSource, x: f64, y: f64) -> Option<ContentProvider> {
+        let outputs = self.outputs.borrow();
+        let drawing_area = ds.widget().downcast::<DrawingArea>().unwrap();
+        let width = drawing_area.width();
+        let height = drawing_area.height();
+        if let Some(i) = self.get_output_index_at(x, y, width, height) {
+            let [width, height] = Self::get_output_dim(width, height, outputs.len());
+            if let Ok(icon) = Self::create_drag_icon(
+                width,
+                height,
+                &outputs[i].name,
+                outputs[i].product_name.as_deref(),
+            ) {
+                let [_, oy] = Self::get_output_pos(i, height);
+                ds.set_icon(Some(&icon), x as i32, (y - f64::from(oy)) as i32);
             }
-            // Insert output
-            let mut scale = self.scale.borrow_mut();
-            let mut translate = self.translate.borrow_mut();
-            outputs[i].enabled = true;
-            outputs[i].mode = Some(outputs[i].modes[0].clone());
-            outputs[i].pos = Some((
-                ((x - f64::from(translate[0])).max(0.) / *scale).round() as i16,
-                ((y - f64::from(translate[1])).max(0.) / *scale).round() as i16,
-            ));
-
-            Self::mind_the_gap_and_overlap(&mut outputs);
-            Self::resize(
-                drawing_area.width(),
-                drawing_area.height(),
-                self.size,
-                &mut scale,
-                &mut translate,
-                &mut self.bounds.borrow_mut(),
-                &mut outputs,
-            );
+            return Some(ContentProvider::for_value(&Value::from(outputs[i].id)));
         }
-        // Enable selection
-        *self.selected_output.borrow_mut() = Some(i);
-        self.details.update(Some(&self.outputs.borrow()[i]));
-        // Update drawing areas
-        self.disabled_area.queue_draw();
-        drawing_area.queue_draw();
-        true
+        None
     }
 
-    fn on_dragdrop_motion(_dt: &DropTarget, _x: f64, _y: f64) -> DragAction { DragAction::MOVE }
+    fn on_drag_begin(&self, _ds: &DragSource, _d: &Drag) {
+        self.update_view();
+        *self.is_dragging.borrow_mut() = true;
+    }
+
+    fn on_drag_end(&self, _ds: &DragSource, _d: &Drag, _del: bool) {
+        self.update_view();
+        *self.is_dragging.borrow_mut() = false;
+    }
 
     fn create_drag_icon(
         width: u16,
@@ -837,76 +911,41 @@ impl View {
         ))
     }
 
-    fn on_reset_clicked(&self) {
-        self.outputs.borrow_mut().clone_from(&self.outputs_orig.borrow());
-        // Disable selection
-        *self.selected_output.borrow_mut() = None;
-        self.details.update(None);
-        // Update drawing areas
-        Self::resize(
-            self.enabled_area.width(),
-            self.enabled_area.height(),
-            self.size,
-            &mut self.scale.borrow_mut(),
-            &mut self.translate.borrow_mut(),
-            &mut self.bounds.borrow_mut(),
-            &mut self.outputs.borrow_mut(),
-        );
-        self.enabled_area.queue_draw();
-        self.disabled_area.queue_draw();
-    }
-
-    fn get_output_index_at(&self, x: f64, y: f64) -> Option<usize> {
-        let scale = self.scale.borrow();
-        let translate = self.translate.borrow();
-
-        for (i, output) in self.outputs.borrow().iter().enumerate() {
-            if output.enabled {
-                let mut scaled_rect = output.rect();
-                scaled_rect.scale(*scale);
-                scaled_rect.translate(translate[0], translate[1]);
-                if scaled_rect.contains(x, y) {
-                    return Some(i);
-                }
-            }
-        }
-        None
-    }
-
-    fn get_disabled_output_index_at(
-        &self,
-        x: f64,
-        y: f64,
-        width: i32,
-        height: i32,
-    ) -> Option<usize> {
+    fn get_output_index_at(&self, x: f64, y: f64, width: i32, height: i32) -> Option<usize> {
         let outputs = self.outputs.borrow();
-        let disabled_outputs = Self::get_disabled_outputs(&outputs);
-        let dim = Self::get_disabled_output_dim(width, height, disabled_outputs.len());
-        for (i, &disabled_output) in disabled_outputs.iter().enumerate() {
-            let pos = Self::get_disabled_output_pos(i, dim[1]);
-            if x >= f64::from(pos[0])
-                && x <= f64::from(i32::from(pos[0]) + i32::from(dim[0]))
-                && y >= f64::from(pos[1])
-                && y <= f64::from(i32::from(pos[1]) + i32::from(dim[1]))
+        let [width, height] = Self::get_output_dim(width, height, outputs.len());
+        for (i, _) in outputs.iter().enumerate() {
+            let [ox, oy] = Self::get_output_pos(i, height);
+            if x >= f64::from(ox)
+                && x <= f64::from(i32::from(ox) + i32::from(width))
+                && y >= f64::from(oy)
+                && y <= f64::from(i32::from(oy) + i32::from(height))
             {
-                for (j, output) in outputs.iter().enumerate() {
-                    if output.id == disabled_output.id {
-                        return Some(j);
-                    }
-                }
+                return Some(i);
             }
         }
         None
+    }
+
+    fn notify_selected(&self, output: Option<&Output>) {
+        for callback in self.output_selected_callbacks.borrow().iter() {
+            callback(output);
+        }
+    }
+
+    fn add_output_selected_callback(&mut self, callback: impl Fn(Option<&Output>) + 'static) {
+        self.output_selected_callbacks.borrow_mut().push(Rc::new(callback));
     }
 }
 
 enum Update {
     Enabled,
+    Disabled,
     Resolution,
     Refresh,
     Position,
     Primary,
+    Reset,
 }
 
 #[derive(Clone)]
@@ -1099,25 +1138,21 @@ impl DetailsView {
 
     fn on_enabled_switched(&self, sw: &Switch) {
         let mut updated = None;
+        let mut update = None;
         if let Some(output) = self.output.borrow_mut().as_mut() {
             let active = sw.widget.is_active();
             // Update output
-            output.enabled = active;
             if active {
-                // Insert output
-                output.enabled = true;
-                output.mode = Some(output.modes[0].clone());
-                output.pos = Some((0, 0));
+                output.enable();
+                update = Some(Update::Enabled);
             } else {
-                // Remove output
-                output.primary = false;
-                output.pos = None;
-                output.mode = None;
+                output.disable();
+                update = Some(Update::Disabled);
             }
             updated = Some(output.clone());
         }
-        if let Some(updated) = updated {
-            self.notify_updated(&updated, &Update::Enabled);
+        if let (Some(updated), Some(update)) = (updated, update) {
+            self.notify_updated(&updated, &update);
         }
         self.update_visibility();
     }
