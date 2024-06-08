@@ -370,8 +370,7 @@ impl View {
         }
     }
 
-    fn on_drag_begin(&self, g: &GestureDrag, start_x: f64, start_y: f64) {
-        let drawing_area = g.widget().downcast::<DrawingArea>().unwrap();
+    fn on_drag_begin(&self, _g: &GestureDrag, start_x: f64, start_y: f64) {
         if let Some(i) = self.get_output_index_at(start_x, start_y) {
             let scale = self.scale.borrow();
             let translate = self.translate.borrow();
@@ -391,11 +390,11 @@ impl View {
             self.disabled.deselect();
 
             // Update cursor
-            drawing_area.set_cursor_from_name(Some("grabbing"));
+            self.drawing_area.set_cursor_from_name(Some("grabbing"));
         } else {
             self.deselect();
         }
-        drawing_area.queue_draw();
+        self.drawing_area.queue_draw();
         self.update_details();
     }
 
@@ -611,22 +610,20 @@ impl View {
         *self.grab_offset.borrow_mut() = (0., 0.);
         // Update cursor
         if let Some((x, y)) = g.start_point() {
-            let drawing_area = g.widget().downcast::<DrawingArea>().unwrap();
             match self.get_output_index_at(x + offset_x, y + offset_y) {
-                Some(_) => drawing_area.set_cursor_from_name(Some("pointer")),
-                None => drawing_area.set_cursor_from_name(Some("default")),
+                Some(_) => self.drawing_area.set_cursor_from_name(Some("pointer")),
+                None => self.drawing_area.set_cursor_from_name(Some("default")),
             }
         }
     }
 
-    fn on_motion(&self, ecm: &EventControllerMotion, x: f64, y: f64) {
+    fn on_motion(&self, _ecm: &EventControllerMotion, x: f64, y: f64) {
         // TODO if not is_dragging instead
         if self.grab_offset.borrow().0 == 0. || self.grab_offset.borrow().1 == 0. {
             // Update cursor
-            let drawing_area = ecm.widget().downcast::<DrawingArea>().unwrap();
             match self.get_output_index_at(x, y) {
-                Some(_) => drawing_area.set_cursor_from_name(Some("pointer")),
-                None => drawing_area.set_cursor_from_name(Some("default")),
+                Some(_) => self.drawing_area.set_cursor_from_name(Some("pointer")),
+                None => self.drawing_area.set_cursor_from_name(Some("default")),
             }
         }
     }
@@ -828,9 +825,9 @@ impl DisabledView {
         [width, height]
     }
 
-    fn on_click(&self, gc: &GestureClick, _n_press: i32, x: f64, y: f64) {
-        let drawing_area = gc.widget().downcast::<DrawingArea>().unwrap();
-        if let Some(i) = self.get_output_index_at(x, y, drawing_area.width(), drawing_area.height())
+    fn on_click(&self, _gc: &GestureClick, _n_press: i32, x: f64, y: f64) {
+        if let Some(i) =
+            self.get_output_index_at(x, y, self.drawing_area.width(), self.drawing_area.height())
         {
             self.select(i);
             self.notify_selected(Some(&self.outputs.borrow()[i]));
@@ -841,11 +838,11 @@ impl DisabledView {
         self.update_view();
     }
 
-    fn on_motion(&self, ecm: &EventControllerMotion, x: f64, y: f64) {
-        let drawing_area = ecm.widget().downcast::<DrawingArea>().unwrap();
-        match self.get_output_index_at(x, y, drawing_area.width(), drawing_area.height()) {
-            Some(_) => drawing_area.set_cursor_from_name(Some("pointer")),
-            None => drawing_area.set_cursor_from_name(Some("default")),
+    fn on_motion(&self, _ecm: &EventControllerMotion, x: f64, y: f64) {
+        match self.get_output_index_at(x, y, self.drawing_area.width(), self.drawing_area.height())
+        {
+            Some(_) => self.drawing_area.set_cursor_from_name(Some("pointer")),
+            None => self.drawing_area.set_cursor_from_name(Some("default")),
         }
     }
 
@@ -854,9 +851,8 @@ impl DisabledView {
     #[allow(clippy::cast_possible_truncation)]
     fn on_drag_prepare(&self, ds: &DragSource, x: f64, y: f64) -> Option<ContentProvider> {
         let outputs = self.outputs.borrow();
-        let drawing_area = ds.widget().downcast::<DrawingArea>().unwrap();
-        let width = drawing_area.width();
-        let height = drawing_area.height();
+        let width = self.drawing_area.width();
+        let height = self.drawing_area.height();
         if let Some(i) = self.get_output_index_at(x, y, width, height) {
             let [width, height] = Self::get_output_dim(width, height, outputs.len());
             if let Ok(icon) = Self::create_drag_icon(
