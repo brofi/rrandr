@@ -506,6 +506,7 @@ fn on_apply(
                 .heading("Keep changes?")
                 .message(&format!("Reverting in {}...", secs))
                 .actions(["_Keep", "_Revert"])
+                .tooltips(["Keep changes", "Revert changes"])
                 .on_result({
                     let view = view.clone();
                     let rr_crtcs = rr_crtcs.clone();

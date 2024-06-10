@@ -194,6 +194,7 @@ pub struct DialogBuilder {
     heading: Option<String>,
     message: Option<String>,
     actions: Option<[String; 2]>,
+    tooltips: Option<[String; 2]>,
     on_result: Option<Rc<dyn Fn(usize)>>,
 }
 
@@ -205,6 +206,7 @@ impl DialogBuilder {
             heading: None,
             message: None,
             actions: None,
+            tooltips: None,
             on_result: None,
         }
     }
@@ -226,6 +228,11 @@ impl DialogBuilder {
 
     pub fn actions(mut self, actions: [&str; 2]) -> Self {
         self.actions = Some(actions.map(str::to_string));
+        self
+    }
+
+    pub fn tooltips(mut self, tooltips: [&str; 2]) -> Self {
+        self.tooltips = Some(tooltips.map(str::to_string));
         self
     }
 
@@ -282,7 +289,8 @@ impl DialogBuilder {
         match self.actions {
             Some(actions) => {
                 for (i, name) in actions.iter().enumerate() {
-                    let btn = Self::create_action_button(name);
+                    let tooltip = self.tooltips.clone().map_or("".to_owned(), |t| t[i].clone());
+                    let btn = Self::create_action_button(name, &tooltip);
                     box_actions.append(&btn);
                     btn.connect_clicked(
                         clone!(@strong window, @strong self.on_result as on_result => move |_| {
@@ -295,7 +303,7 @@ impl DialogBuilder {
                 }
             }
             _ => {
-                let btn = Self::create_action_button("_Close");
+                let btn = Self::create_action_button("_Close", "");
                 box_actions.append(&btn);
                 btn.connect_clicked(clone!(@strong window => move |_| window.close()));
             }
@@ -309,13 +317,13 @@ impl DialogBuilder {
         Dialog { window, message }
     }
 
-    fn create_action_button(name: &str) -> Button {
+    fn create_action_button(name: &str, tooltip: &str) -> Button {
         Button::builder()
             .label(name)
             .use_underline(true)
             .valign(Align::Baseline)
             .hexpand(true)
-            .tooltip_text(name)
+            .tooltip_text(tooltip)
             .build()
     }
 }
