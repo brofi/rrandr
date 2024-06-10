@@ -498,7 +498,15 @@ fn on_apply(
     let rr_outputs: HashMap<OutputId, OutputInfo> =
         get_outputs(rr_outputs).expect("reply for outputs");
 
-    if apply(&conn, screen_num, screen_size_range, &rr_crtcs, &rr_outputs, &outputs) {
+    let root = screen.root;
+    let screen_size = ScreenSize {
+        width: screen.width_in_pixels,
+        height: screen.height_in_pixels,
+        mwidth: screen.width_in_millimeters,
+        mheight: screen.height_in_millimeters,
+    };
+
+    if apply(&conn, screen, screen_size_range, &rr_crtcs, &rr_outputs, &outputs) {
         let mut secs = CONFIRM_DIALOG_SHOW_SECS.saturating_sub(1);
         let dialog = Rc::new(
             Dialog::builder(window)
@@ -514,9 +522,8 @@ fn on_apply(
                         if i == 0 {
                             view.apply();
                         } else {
-                            let (conn, screen_num) =
-                                x11rb::connect(None).expect("connection to X Server");
-                            revert(&conn, &conn.setup().roots[screen_num], &rr_crtcs);
+                            let (conn, _) = x11rb::connect(None).expect("connection to X Server");
+                            revert(&conn, root, &screen_size, &rr_crtcs);
                             view.reset();
                         }
                     }
@@ -541,9 +548,8 @@ fn on_apply(
                 while let Ok(secs) = receiver.recv().await {
                     dialog.set_message(&format!("Reverting in {}...", secs));
                     if secs == 0 {
-                        let (conn, screen_num) =
-                            x11rb::connect(None).expect("connection to X Server");
-                        revert(&conn, &conn.setup().roots[screen_num], &rr_crtcs);
+                        let (conn, _) = x11rb::connect(None).expect("connection to X Server");
+                        revert(&conn, root, &screen_size, &rr_crtcs);
                         view.reset();
                         dialog.close();
                     }
@@ -557,7 +563,7 @@ fn on_apply(
         });
         dialog.show();
     } else {
-        revert(&conn, screen, &rr_crtcs);
+        revert(&conn, root, &screen_size, &rr_crtcs);
         let dialog = Dialog::builder(window)
             .title("Failure")
             .heading("Failure")
@@ -569,13 +575,12 @@ fn on_apply(
 
 fn apply(
     conn: &RustConnection,
-    screen_num: usize,
+    screen: &Screen,
     screen_size_range: &ScreenSizeRange,
     rr_crtcs: &HashMap<CrtcId, CrtcInfo>,
     rr_outputs: &HashMap<OutputId, OutputInfo>,
     outputs: &Vec<Output>,
 ) -> bool {
-    let screen = &conn.setup().roots[screen_num];
     let primary = outputs.iter().find(|&o| o.primary);
     let screen_size = get_screen_size(screen_size_range, outputs, primary);
     let screen_size_changed = screen.width_in_pixels != screen_size.width
@@ -776,18 +781,23 @@ fn x_error_to_string(e: &X11Error) -> String {
     )
 }
 
-fn revert(conn: &RustConnection, screen: &Screen, rr_crtcs: &HashMap<CrtcId, CrtcInfo>) {
+fn revert(
+    conn: &RustConnection,
+    root: Window,
+    screen_size: &ScreenSize,
+    rr_crtcs: &HashMap<CrtcId, CrtcInfo>,
+) {
     println!("Reverting changes");
     for crtc_id in rr_crtcs.keys() {
         disable_crtc(conn, *crtc_id).expect("disable CRTC");
     }
     set_screen_size(
         conn,
-        screen.root,
-        screen.width_in_pixels,
-        screen.height_in_pixels,
-        screen.width_in_millimeters.into(),
-        screen.height_in_millimeters.into(),
+        root,
+        screen_size.width,
+        screen_size.height,
+        screen_size.mwidth.into(),
+        screen_size.mheight.into(),
     )
     .expect("revert screen size request")
     .check()
