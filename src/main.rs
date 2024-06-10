@@ -3,6 +3,8 @@
 #![allow(clippy::too_many_lines)]
 // #![warn(clippy::restriction)]
 
+mod color;
+mod config;
 mod draw;
 mod math;
 mod view;
@@ -16,16 +18,15 @@ use std::time::{Duration, Instant};
 
 use cairo::ffi::cairo_device_finish;
 use cairo::{XCBDrawable, XCBSurface};
-use draw::{COLOR_BG0, COLOR_FG};
+use config::Config;
+use draw::DrawContext;
 use gdk::gio::spawn_blocking;
 use gdk::glib::{clone, spawn_future_local, timeout_add, ControlFlow, Propagation};
 use gtk::glib::ExitCode;
 use gtk::prelude::*;
 use gtk::{Application, ApplicationWindow, Button};
 use math::Rect;
-use pango::ffi::PANGO_SCALE;
-use pango::{Alignment, FontDescription, Layout, Weight};
-use pangocairo::functions::{create_layout, show_layout};
+use pango::{FontDescription, Weight};
 use view::View;
 use widget::Dialog;
 use x11rb::connection::{Connection as XConnection, RequestConnection};
@@ -214,6 +215,8 @@ impl fmt::Display for Mode {
 }
 
 fn main() -> ExitCode {
+    let config = Config::default();
+
     let (conn, screen_num) = x11rb::connect(None).expect("connection to X Server");
     let screen = &conn.setup().roots[screen_num];
     let res = get_screen_resources_current(&conn, screen.root)
@@ -265,12 +268,14 @@ fn main() -> ExitCode {
         });
     }
     let app = Application::builder().application_id(APP_ID).build();
-    app.connect_activate(move |app| build_ui(app, outputs.clone(), screen_size_range));
+    app.connect_activate(move |app| {
+        build_ui(app, config.clone(), outputs.clone(), screen_size_range)
+    });
     app.set_accels_for_action("window.close", &["<Ctrl>Q", "<Ctrl>W"]);
     app.run()
 }
 
-fn build_ui(app: &Application, outputs: Vec<Output>, size: ScreenSizeRange) {
+fn build_ui(app: &Application, config: Config, outputs: Vec<Output>, size: ScreenSizeRange) {
     let window = Rc::new(
         ApplicationWindow::builder()
             .application(app)
@@ -280,8 +285,8 @@ fn build_ui(app: &Application, outputs: Vec<Output>, size: ScreenSizeRange) {
             .build(),
     );
 
-    let view = View::new(size, outputs, |btn| {
-        if let Err(e) = on_identify_clicked(btn) {
+    let view = View::new(config.clone(), size, outputs, move |btn| {
+        if let Err(e) = on_identify_clicked(&config, btn) {
             println!("Failed to identify outputs: {e:?}");
         }
     });
@@ -354,6 +359,7 @@ fn get_root_visual_type(conn: &impl XConnection, screen_num: usize) -> Option<Vi
 #[allow(clippy::cast_sign_loss)]
 #[allow(clippy::cast_possible_truncation)]
 fn create_popup_windows(
+    config: &Config,
     conn: &XCBConnection,
     screen_num: usize,
 ) -> Result<HashMap<Window, XCBSurface>, Box<dyn Error>> {
@@ -380,7 +386,8 @@ fn create_popup_windows(
             let surface =
                 create_popup_surface(conn, screen_num, wid, i32::from(width), i32::from(height))?;
             let cr = cairo::Context::new(&surface)?;
-            draw_popup(&cr, &rect, &mut desc, &String::from_utf8_lossy(&output_info.name))?;
+            let context = DrawContext::new(cr, config.clone());
+            context.draw_popup(&rect, &mut desc, &String::from_utf8_lossy(&output_info.name))?;
             surface.flush();
             windows.insert(wid, surface);
         }
@@ -388,9 +395,9 @@ fn create_popup_windows(
     Ok(windows)
 }
 
-fn on_identify_clicked(btn: &Button) -> Result<(), Box<dyn Error>> {
+fn on_identify_clicked(config: &Config, btn: &Button) -> Result<(), Box<dyn Error>> {
     let (conn, screen_num) = XCBConnection::connect(None)?;
-    let popups = create_popup_windows(&conn, screen_num)?;
+    let popups = create_popup_windows(config, &conn, screen_num)?;
     conn.flush()?;
 
     spawn_future_local({
@@ -430,56 +437,6 @@ fn loop_x(conn: &XCBConnection, secs: f32) -> Result<(), ReplyError> {
         }
     }
     Ok(())
-}
-
-fn draw_popup(
-    cr: &cairo::Context,
-    rect: &Rect,
-    desc: &mut FontDescription,
-    text: &str,
-) -> Result<(), cairo::Error> {
-    cr.set_source_rgba(
-        f64::from(COLOR_FG.red()),
-        f64::from(COLOR_FG.green()),
-        f64::from(COLOR_FG.blue()),
-        0.75,
-    );
-    cr.rectangle(0., 0., f64::from(rect.width()), f64::from(rect.height()));
-    cr.fill()?;
-
-    cr.set_source_color(&COLOR_BG0);
-    let layout = get_layout(cr, rect.width(), rect.height(), POPUP_WINDOW_PAD, desc, text);
-    let (w, h) = layout.pixel_size();
-    cr.move_to(
-        f64::from(i32::from(rect.width()) - w) / 2.,
-        f64::from(i32::from(rect.height()) - h) / 2.,
-    );
-    show_layout(cr, &layout);
-    Ok(())
-}
-
-fn get_layout(
-    cr: &cairo::Context,
-    width: u16,
-    height: u16,
-    pad: f64,
-    desc: &mut FontDescription,
-    text: &str,
-) -> Layout {
-    let layout = create_layout(cr);
-    layout.set_alignment(Alignment::Center);
-    layout.set_text(text);
-    let pscale = f64::from(PANGO_SCALE);
-    let size = f64::from(width.max(height)) * pscale;
-    desc.set_absolute_size(size);
-    layout.set_font_description(Some(desc));
-    let (w, h) = layout.pixel_size();
-    let scale = ((f64::from(width) - 2. * pad) / f64::from(w))
-        .min((f64::from(height) - 2. * pad) / f64::from(h));
-    let size = (size * scale / pscale).floor() * pscale;
-    desc.set_absolute_size(size);
-    layout.set_font_description(Some(desc));
-    layout
 }
 
 fn on_apply(

@@ -14,9 +14,8 @@ use gtk::{
 };
 use x11rb::protocol::randr::Output as OutputId;
 
-use crate::draw::{
-    draw_output, draw_output_label, draw_screen, draw_selected_output, SCREEN_LINE_WIDTH,
-};
+use crate::config::Config;
+use crate::draw::{DrawContext, SCREEN_LINE_WIDTH};
 use crate::math::{Point, Rect};
 use crate::widget::{CheckButton, DropDown, Entry, Switch};
 use crate::{Output, ScreenSizeRange};
@@ -41,6 +40,7 @@ enum Axis {
 #[derive(Clone)]
 pub struct View {
     pub root: gtk::Box,
+    config: Config,
     size: ScreenSizeRange,
     outputs: Rc<RefCell<Vec<Output>>>,
     outputs_orig: Rc<RefCell<Vec<Output>>>,
@@ -57,6 +57,7 @@ pub struct View {
 
 impl View {
     pub fn new(
+        config: Config,
         size: ScreenSizeRange,
         outputs: Vec<Output>,
         identify_callback: impl Fn(&Button) + 'static,
@@ -77,6 +78,7 @@ impl View {
 
         let mut this = Self {
             root,
+            config: config.clone(),
             size,
             outputs: Rc::new(RefCell::new(enabled_outputs)),
             outputs_orig: Rc::new(RefCell::new(outputs)),
@@ -87,7 +89,7 @@ impl View {
             bounds: Rc::new(RefCell::new(Rect::default())),
             drawing_area: DrawingArea::new(),
             details: DetailsView::new(size),
-            disabled: DisabledView::new(disabled_outputs),
+            disabled: DisabledView::new(config, disabled_outputs),
             apply_callback: Rc::new(RefCell::new(None)),
         };
 
@@ -348,16 +350,17 @@ impl View {
         let bounds = self.bounds.borrow();
         let scale = self.scale.borrow();
         let translate = self.translate.borrow();
+        let context = DrawContext::new(cr.clone(), self.config.clone());
 
         let screen_rect = bounds.transform(*scale, *translate);
-        draw_screen(cr, screen_rect);
+        context.draw_screen(screen_rect);
 
         for (i, o) in self.outputs.borrow().iter().enumerate() {
             let output_rect = o.rect().transform(*scale, *translate);
-            draw_output(cr, output_rect);
+            context.draw_output(output_rect);
             if let Some(j) = *self.selected_output.borrow() {
                 if i == j {
-                    draw_selected_output(cr, output_rect);
+                    context.draw_selected_output(output_rect);
                 }
             }
             let mut name = o.name.clone();
@@ -366,7 +369,7 @@ impl View {
                 name = format!("[{name}]");
                 product_name = product_name.map(|s| format!("[{s}]"));
             }
-            draw_output_label(cr, output_rect, &name, product_name.as_deref());
+            context.draw_output_label(output_rect, &name, product_name.as_deref());
         }
     }
 
@@ -707,6 +710,7 @@ impl View {
 
 #[derive(Clone)]
 struct DisabledView {
+    config: Config,
     outputs: Rc<RefCell<Vec<Output>>>,
     selected_output: Rc<RefCell<Option<usize>>>,
     output_selected_callbacks: Rc<RefCell<Vec<Rc<OutputSelectedCallback>>>>,
@@ -715,8 +719,9 @@ struct DisabledView {
 }
 
 impl DisabledView {
-    fn new(outputs: Vec<Output>) -> Self {
+    fn new(config: Config, outputs: Vec<Output>) -> Self {
         let this = Self {
+            config,
             outputs: Rc::new(RefCell::new(outputs)),
             selected_output: Rc::new(RefCell::new(None)),
             output_selected_callbacks: Rc::new(RefCell::new(Vec::new())),
@@ -787,6 +792,7 @@ impl DisabledView {
         let outputs = self.outputs.borrow();
         let i_select = self.selected_output.borrow();
         let is_dragging = *self.is_dragging.borrow();
+        let context = DrawContext::new(cr.clone(), self.config.clone());
         let [width, height] = Self::get_output_dim(width, height, outputs.len());
         let mut j: usize = 0; // seperate index for closing the gaps
         for o in outputs.iter() {
@@ -794,11 +800,11 @@ impl DisabledView {
             {
                 let [x, y] = Self::get_output_pos(j, height);
                 let rect = [f64::from(x), f64::from(y), f64::from(width), f64::from(height)];
-                draw_output(cr, rect);
-                draw_output_label(cr, rect, &o.name, o.product_name.as_deref());
+                context.draw_output(rect);
+                context.draw_output_label(rect, &o.name, o.product_name.as_deref());
                 if let Some(i) = *i_select {
                     if outputs[i].id == o.id {
-                        draw_selected_output(cr, rect);
+                        context.draw_selected_output(rect);
                     }
                 }
                 j += 1;
@@ -862,6 +868,7 @@ impl DisabledView {
         if let Some(i) = self.get_output_index_at(x, y, width, height) {
             let [width, height] = Self::get_output_dim(width, height, outputs.len());
             if let Ok(icon) = Self::create_drag_icon(
+                &self.config,
                 width,
                 height,
                 &outputs[i].name,
@@ -886,6 +893,7 @@ impl DisabledView {
     }
 
     fn create_drag_icon(
+        config: &Config,
         width: u16,
         height: u16,
         name: &str,
@@ -898,10 +906,10 @@ impl DisabledView {
         )?;
         let cr = cairo::Context::new(&surface)?;
         let rect = [0., 0., f64::from(width), f64::from(height)];
-        draw_output(&cr, rect);
-        draw_output_label(&cr, rect, name, product_name);
-        cr.fill()?;
-        drop(cr);
+        let context = DrawContext::new(cr, config.clone());
+        context.draw_output(rect);
+        context.draw_output_label(rect, name, product_name);
+        drop(context);
         surface.flush();
         let stride = surface.stride().try_into()?;
         Ok(MemoryTexture::new(
