@@ -23,6 +23,7 @@ use crate::{Output, ScreenSizeRange};
 
 type OutputUpdatedCallback = dyn Fn(&Output, &Update);
 type OutputSelectedCallback = dyn Fn(Option<&Output>);
+type ApplyCallback = dyn Fn(Vec<Output>);
 
 pub const PADDING: u16 = 10;
 
@@ -51,13 +52,13 @@ pub struct View {
     drawing_area: DrawingArea,
     details: DetailsView,
     disabled: DisabledView,
+    apply_callback: Rc<RefCell<Option<Rc<ApplyCallback>>>>,
 }
 
 impl View {
     pub fn new(
         size: ScreenSizeRange,
         outputs: Vec<Output>,
-        apply_callback: impl Fn(Vec<Output>) -> bool + 'static,
         identify_callback: impl Fn(&Button) + 'static,
     ) -> Self {
         let root = gtk::Box::builder()
@@ -87,6 +88,7 @@ impl View {
             drawing_area: DrawingArea::new(),
             details: DetailsView::new(size),
             disabled: DisabledView::new(disabled_outputs),
+            apply_callback: Rc::new(RefCell::new(None)),
         };
 
         let frame_enabled = Frame::builder().label("Layout").child(&this.drawing_area).build();
@@ -136,10 +138,8 @@ impl View {
             .build();
         btn_apply.connect_clicked(clone!(
             @strong this => move |_btn| {
-                if apply_callback(this.get_outputs()) {
-                    *this.outputs_orig.borrow_mut() = this.get_outputs();
-                } else {
-                    this.reset();
+                if let Some(callback) = this.apply_callback.borrow().as_ref() {
+                    callback(this.get_outputs());
                 }
         }));
         box_apply_reset.append(&btn_apply);
@@ -674,7 +674,9 @@ impl View {
         self.details.update(output);
     }
 
-    fn reset(&self) {
+    pub fn apply(&self) { *self.outputs_orig.borrow_mut() = self.get_outputs() }
+
+    pub fn reset(&self) {
         let enabled_outputs = self
             .outputs_orig
             .borrow()
@@ -696,6 +698,10 @@ impl View {
         self.disabled.deselect();
         self.update_view(&Update::Reset);
         self.details.update(None);
+    }
+
+    pub fn set_apply_callback(&self, callback: impl Fn(Vec<Output>) + 'static) {
+        *self.apply_callback.borrow_mut() = Some(Rc::new(callback));
     }
 }
 

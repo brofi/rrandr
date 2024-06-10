@@ -11,13 +11,14 @@ mod widget;
 use core::fmt;
 use std::collections::HashMap;
 use std::error::Error;
+use std::rc::Rc;
 use std::time::{Duration, Instant};
 
 use cairo::ffi::cairo_device_finish;
 use cairo::{XCBDrawable, XCBSurface};
 use draw::{COLOR_BG0, COLOR_FG};
 use gdk::gio::spawn_blocking;
-use gdk::glib::spawn_future_local;
+use gdk::glib::{clone, spawn_future_local, timeout_add, ControlFlow};
 use gtk::glib::ExitCode;
 use gtk::prelude::*;
 use gtk::{Application, ApplicationWindow, Button};
@@ -26,6 +27,7 @@ use pango::ffi::PANGO_SCALE;
 use pango::{Alignment, FontDescription, Layout, Weight};
 use pangocairo::functions::{create_layout, show_layout};
 use view::View;
+use widget::Dialog;
 use x11rb::connection::{Connection as XConnection, RequestConnection};
 use x11rb::cookie::{Cookie, VoidCookie};
 use x11rb::errors::{ConnectionError, ReplyError, ReplyOrIdError};
@@ -60,6 +62,8 @@ const PPI_DEFAULT: u8 = 96;
 const POPUP_WINDOW_PAD: f64 = 20.;
 const POPUP_OUTPUT_RATIO: f64 = 1. / 8.;
 const POPUP_SHOW_SECS: f32 = 2.5;
+
+const CONFIRM_DIALOG_SHOW_SECS: u8 = 10;
 
 #[derive(Clone, Debug)]
 pub struct Output {
@@ -261,37 +265,30 @@ fn main() -> ExitCode {
         });
     }
     let app = Application::builder().application_id(APP_ID).build();
-    app.connect_activate(move |app| {
-        build_ui(
-            app,
-            outputs.clone(),
-            screen_size_range,
-            move |outputs| on_apply_clicked(&screen_size_range, &outputs),
-            |btn| {
-                if let Err(e) = on_identify_clicked(btn) {
-                    println!("Failed to identify outputs: {e:?}");
-                }
-            },
-        );
-    });
+    app.connect_activate(move |app| build_ui(app, outputs.clone(), screen_size_range));
     app.run()
 }
 
-fn build_ui(
-    app: &Application,
-    outputs: Vec<Output>,
-    size: ScreenSizeRange,
-    on_apply: impl Fn(Vec<Output>) -> bool + 'static,
-    on_identify: impl Fn(&Button) + 'static,
-) {
-    let window = ApplicationWindow::builder()
-        .application(app)
-        .default_width(800)
-        .default_height(600)
-        .title("RRandR")
-        .build();
+fn build_ui(app: &Application, outputs: Vec<Output>, size: ScreenSizeRange) {
+    let window = Rc::new(
+        ApplicationWindow::builder()
+            .application(app)
+            .default_width(800)
+            .default_height(600)
+            .title("RRandR")
+            .build(),
+    );
 
-    let view = View::new(size, outputs, on_apply, on_identify);
+    let view = View::new(size, outputs, |btn| {
+        if let Err(e) = on_identify_clicked(btn) {
+            println!("Failed to identify outputs: {e:?}");
+        }
+    });
+    view.set_apply_callback(clone!(
+        @strong window,
+        @strong view
+        => move |outputs| on_apply(&window, &view, &size, &outputs)
+    ));
     window.set_child(Some(&view.root));
     window.present();
 }
@@ -484,18 +481,91 @@ fn get_layout(
     layout
 }
 
-fn on_apply_clicked(screen_size_range: &ScreenSizeRange, outputs: &Vec<Output>) -> bool {
+fn on_apply(
+    window: &ApplicationWindow,
+    view: &View,
+    screen_size_range: &ScreenSizeRange,
+    outputs: &Vec<Output>,
+) {
     let (conn, screen_num) = x11rb::connect(None).expect("connection to X Server");
     let screen = &conn.setup().roots[screen_num];
     let res = get_screen_resources_current(&conn, screen.root)
         .expect("cookie to request screen resources");
     let res = res.reply().expect("reply for screen resources");
-    let rr_outputs = request_outputs(&conn, &res).expect("cookies to request outputs");
     let rr_crtcs = request_crtcs(&conn, &res).expect("cookies to request crtcs");
+    let rr_crtcs: HashMap<CrtcId, CrtcInfo> = get_crtcs(rr_crtcs).expect("reply for crtcs");
+    let rr_outputs = request_outputs(&conn, &res).expect("cookies to request outputs");
     let rr_outputs: HashMap<OutputId, OutputInfo> =
         get_outputs(rr_outputs).expect("reply for outputs");
-    let rr_crtcs: HashMap<CrtcId, CrtcInfo> = get_crtcs(rr_crtcs).expect("reply for crtcs");
 
+    if apply(&conn, screen_num, screen_size_range, &rr_crtcs, &rr_outputs, &outputs) {
+        let mut secs = CONFIRM_DIALOG_SHOW_SECS.saturating_sub(1);
+        let dialog = Rc::new(
+            Dialog::builder(window)
+                .title("Confirm changes")
+                .heading("Keep changes?")
+                .message(&format!("Reverting in {}...", secs))
+                .actions(["_Keep", "_Revert"])
+                .on_result({
+                    let view = view.clone();
+                    let rr_crtcs = rr_crtcs.clone();
+                    move |i| {
+                        if i == 0 {
+                            view.apply();
+                        } else {
+                            let (conn, screen_num) =
+                                x11rb::connect(None).expect("connection to X Server");
+                            revert(&conn, &conn.setup().roots[screen_num], &rr_crtcs);
+                            view.reset();
+                        }
+                    }
+                })
+                .build(),
+        );
+        dialog.show();
+
+        let (sender, receiver) = async_channel::bounded(1);
+        timeout_add(Duration::from_secs(1), move || {
+            secs = secs.saturating_sub(1);
+            sender.send_blocking(secs).expect("channel is open");
+            if secs > 0 { ControlFlow::Continue } else { ControlFlow::Break }
+        });
+        spawn_future_local({
+            let dialog = Rc::clone(&dialog);
+            let view = view.clone();
+            async move {
+                while let Ok(secs) = receiver.recv().await {
+                    dialog.set_message(&format!("Reverting in {}...", secs));
+                    if secs == 0 {
+                        let (conn, screen_num) =
+                            x11rb::connect(None).expect("connection to X Server");
+                        revert(&conn, &conn.setup().roots[screen_num], &rr_crtcs);
+                        view.reset();
+                        dialog.close();
+                    }
+                }
+            }
+        });
+    } else {
+        revert(&conn, screen, &rr_crtcs);
+        let dialog = Dialog::builder(window)
+            .title("Failure")
+            .heading("Failure")
+            .message("Changes have been reverted.")
+            .build();
+        dialog.show();
+    }
+}
+
+fn apply(
+    conn: &RustConnection,
+    screen_num: usize,
+    screen_size_range: &ScreenSizeRange,
+    rr_crtcs: &HashMap<CrtcId, CrtcInfo>,
+    rr_outputs: &HashMap<OutputId, OutputInfo>,
+    outputs: &Vec<Output>,
+) -> bool {
+    let screen = &conn.setup().roots[screen_num];
     let primary = outputs.iter().find(|&o| o.primary);
     let screen_size = get_screen_size(screen_size_range, outputs, primary);
     let screen_size_changed = screen.width_in_pixels != screen_size.width
@@ -518,8 +588,7 @@ fn on_apply_clicked(screen_size_range: &ScreenSizeRange, outputs: &Vec<Output>) 
             // that stay enabled but currently don't fit the new screen size.
             // The latter needs to be done to avoid an invalid intermediate
             // configuration when actually setting the new screen size.
-            if handle_reply_error(disable_crtc(&conn, crtc_id), "disable CRTC") {
-                revert(&conn, screen, &rr_crtcs);
+            if handle_reply_error(disable_crtc(conn, crtc_id), "disable CRTC") {
                 return false;
             }
         }
@@ -533,7 +602,7 @@ fn on_apply_clicked(screen_size_range: &ScreenSizeRange, outputs: &Vec<Output>) 
 
         if handle_no_reply_error(
             set_screen_size(
-                &conn,
+                conn,
                 screen.root,
                 screen_size.width,
                 screen_size.height,
@@ -542,7 +611,6 @@ fn on_apply_clicked(screen_size_range: &ScreenSizeRange, outputs: &Vec<Output>) 
             ),
             "set screen size",
         ) {
-            revert(&conn, screen, &rr_crtcs);
             return false;
         }
     }
@@ -565,12 +633,10 @@ fn on_apply_clicked(screen_size_range: &ScreenSizeRange, outputs: &Vec<Output>) 
             if let Some(empty_id) = get_valid_empty_crtc(&rr_crtcs, output.id, output_info) {
                 crtc_id = empty_id;
             } else {
-                revert(&conn, screen, &rr_crtcs);
                 return false;
             }
         }
-        if handle_reply_error(update_crtc(&conn, crtc_id, output), "update CRTC") {
-            revert(&conn, screen, &rr_crtcs);
+        if handle_reply_error(update_crtc(conn, crtc_id, output), "update CRTC") {
             return false;
         }
     }
@@ -578,7 +644,7 @@ fn on_apply_clicked(screen_size_range: &ScreenSizeRange, outputs: &Vec<Output>) 
     // Set primary output
     let primary_id = primary.map(|p| p.id).unwrap_or_default();
     if handle_no_reply_error(
-        set_output_primary(&conn, screen.root, primary_id),
+        set_output_primary(conn, screen.root, primary_id),
         "set primary output",
     ) {
         return false;

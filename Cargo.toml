@@ -11,3 +11,4 @@ gdk = { version = "0.8.2", package = "gdk4" }
 cairo-rs = { version = "0.19.4", features = ["xcb"] }
 pango = "0.19.5"
 pangocairo = "0.19.2"
+async-channel = "2.3.1"
