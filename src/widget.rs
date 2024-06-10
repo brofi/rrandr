@@ -236,8 +236,9 @@ impl DialogBuilder {
 
     pub fn build(self) -> Dialog {
         let window = gtk::Window::builder()
-            .width_request(300 - 2 * i32::from(PADDING))
-            .height_request(150 - 2 * i32::from(PADDING))
+            .default_width(300 - 2 * i32::from(PADDING))
+            .default_height(150 - 2 * i32::from(PADDING))
+            .resizable(false)
             .transient_for(&self.parent)
             .destroy_with_parent(true)
             .modal(true)
