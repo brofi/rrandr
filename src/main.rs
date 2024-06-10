@@ -266,6 +266,7 @@ fn main() -> ExitCode {
     }
     let app = Application::builder().application_id(APP_ID).build();
     app.connect_activate(move |app| build_ui(app, outputs.clone(), screen_size_range));
+    app.set_accels_for_action("window.close", &["<Ctrl>Q", "<Ctrl>W"]);
     app.run()
 }
 

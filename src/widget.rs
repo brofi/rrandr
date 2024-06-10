@@ -3,7 +3,7 @@ use std::rc::Rc;
 
 use gdk::gio::ListModel;
 use gdk::glib::{clone, Propagation, SignalHandlerId};
-use gdk::Key;
+use gdk::{Key, ModifierType};
 use gtk::prelude::*;
 use gtk::{Align, ApplicationWindow, Button, EventControllerKey, Label, Orientation, Window};
 
@@ -253,10 +253,18 @@ impl DialogBuilder {
             .build();
         window.set_title(self.title.as_deref());
         let eck = EventControllerKey::new();
-        eck.connect_key_pressed(|eck, keyval, _keycode, _state| match keyval {
+        eck.connect_key_pressed(|eck, keyval, _keycode, state| match keyval {
             Key::Escape => {
                 eck.widget().downcast::<Window>().unwrap().close();
                 Propagation::Stop
+            }
+            Key::w => {
+                if state.contains(ModifierType::CONTROL_MASK) {
+                    eck.widget().downcast::<Window>().unwrap().close();
+                    Propagation::Stop
+                } else {
+                    Propagation::Proceed
+                }
             }
             _ => Propagation::Proceed,
         });
