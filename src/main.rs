@@ -18,7 +18,7 @@ use cairo::ffi::cairo_device_finish;
 use cairo::{XCBDrawable, XCBSurface};
 use draw::{COLOR_BG0, COLOR_FG};
 use gdk::gio::spawn_blocking;
-use gdk::glib::{clone, spawn_future_local, timeout_add, ControlFlow};
+use gdk::glib::{clone, spawn_future_local, timeout_add, ControlFlow, Propagation};
 use gtk::glib::ExitCode;
 use gtk::prelude::*;
 use gtk::{Application, ApplicationWindow, Button};
@@ -522,15 +522,18 @@ fn on_apply(
                 })
                 .build(),
         );
-        dialog.show();
 
         let (sender, receiver) = async_channel::bounded(1);
         timeout_add(Duration::from_secs(1), move || {
             secs = secs.saturating_sub(1);
-            sender.send_blocking(secs).expect("channel is open");
-            if secs > 0 { ControlFlow::Continue } else { ControlFlow::Break }
+            if sender.send_blocking(secs).is_ok() && secs > 0 {
+                ControlFlow::Continue
+            } else {
+                ControlFlow::Break
+            }
         });
         spawn_future_local({
+            let receiver = receiver.clone();
             let dialog = Rc::clone(&dialog);
             let view = view.clone();
             async move {
@@ -546,6 +549,12 @@ fn on_apply(
                 }
             }
         });
+
+        dialog.set_on_close(move |_| {
+            receiver.close();
+            Propagation::Proceed
+        });
+        dialog.show();
     } else {
         revert(&conn, screen, &rr_crtcs);
         let dialog = Dialog::builder(window)

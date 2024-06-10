@@ -2,9 +2,10 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use gdk::gio::ListModel;
-use gdk::glib::{clone, SignalHandlerId};
+use gdk::glib::{clone, Propagation, SignalHandlerId};
+use gdk::Key;
 use gtk::prelude::*;
-use gtk::{Align, ApplicationWindow, Button, Label, Orientation, Window};
+use gtk::{Align, ApplicationWindow, Button, EventControllerKey, Label, Orientation, Window};
 
 use crate::view::PADDING;
 
@@ -181,6 +182,10 @@ impl Dialog {
     pub fn show(&self) { self.window.present(); }
 
     pub fn close(&self) { self.window.close(); }
+
+    pub fn set_on_close(&self, callback: impl Fn(&Window) -> Propagation + 'static) {
+        self.window.connect_close_request(callback);
+    }
 }
 
 pub struct DialogBuilder {
@@ -239,6 +244,15 @@ impl DialogBuilder {
             .hide_on_close(true)
             .build();
         window.set_title(self.title.as_deref());
+        let eck = EventControllerKey::new();
+        eck.connect_key_pressed(|eck, keyval, _keycode, _state| match keyval {
+            Key::Escape => {
+                eck.widget().downcast::<Window>().unwrap().close();
+                Propagation::Stop
+            }
+            _ => Propagation::Proceed,
+        });
+        window.add_controller(eck);
 
         let root = gtk::Box::builder().orientation(Orientation::Vertical).build();
         let text = gtk::Box::builder()
