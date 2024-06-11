@@ -788,7 +788,7 @@ impl DisabledView {
         let is_dragging = *self.is_dragging.borrow();
         let context = DrawContext::new(cr.clone(), self.config.clone());
         let [width, height] = Self::get_output_dim(width, height, outputs.len());
-        let mut j: usize = 0; // seperate index for closing the gaps
+        let mut j: usize = 0; // separate index for closing the gaps
         for o in outputs.iter() {
             if i_select.is_none() || i_select.is_some_and(|i| !is_dragging || outputs[i].id != o.id)
             {
@@ -825,7 +825,7 @@ impl DisabledView {
         let n_disabled = u32::try_from(n_disabled).expect("less disabled outputs");
         let max_width = (w.saturating_sub(2 * u32::from(PADDING))) as u16;
         let max_height =
-            (h.saturating_sub((n_disabled + 1) * u32::from(PADDING) / n_disabled)) as u16;
+            ((h.saturating_sub((n_disabled + 1) * u32::from(PADDING))) / n_disabled) as u16;
         let width = max_width.min((f64::from(max_height) * 16. / 9.).round() as u16);
         let height = max_height.min((f64::from(max_width) * 9. / 16.).round() as u16);
         [width, height]
