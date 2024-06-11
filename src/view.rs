@@ -9,8 +9,8 @@ use gdk::{ContentProvider, Drag, DragAction, MemoryTexture, Paintable};
 use gtk::prelude::*;
 use gtk::{
     Align, Button, DragSource, DrawingArea, DropControllerMotion, DropTarget,
-    EventControllerMotion, FlowBox, FlowBoxChild, Frame, GestureClick, GestureDrag, InputPurpose,
-    Label, Orientation, Paned, SelectionMode, StringList, Widget,
+    EventControllerMotion, FlowBox, FlowBoxChild, GestureClick, GestureDrag, InputPurpose, Label,
+    Orientation, Paned, SelectionMode, Separator, StringList, Widget,
 };
 use x11rb::protocol::randr::Output as OutputId;
 
@@ -93,16 +93,9 @@ impl View {
             apply_callback: Rc::new(RefCell::new(None)),
         };
 
-        let frame_enabled = Frame::builder().label("Layout").child(&this.drawing_area).build();
-        let frame_disabled = Frame::builder()
-            .label("Disabled")
-            .child(&this.disabled.drawing_area)
-            .width_request(150)
-            .build();
-
         let paned = Paned::builder()
-            .start_child(&frame_enabled)
-            .end_child(&frame_disabled)
+            .start_child(&this.drawing_area)
+            .end_child(&this.disabled.drawing_area)
             .resize_start_child(true)
             .resize_end_child(false)
             .vexpand(true)
@@ -155,6 +148,7 @@ impl View {
 
         box_controls.append(&box_apply_reset);
         box_bottom.append(&box_controls);
+        this.root.append(&Separator::new(Orientation::Horizontal));
         this.root.append(&box_bottom);
 
         this.drawing_area.set_draw_func(clone!(
@@ -726,7 +720,7 @@ impl DisabledView {
             selected_output: Rc::new(RefCell::new(None)),
             output_selected_callbacks: Rc::new(RefCell::new(Vec::new())),
             is_dragging: Rc::new(RefCell::new(false)),
-            drawing_area: DrawingArea::new(),
+            drawing_area: DrawingArea::builder().content_width(150).build(),
         };
 
         this.drawing_area.set_draw_func(clone!(
