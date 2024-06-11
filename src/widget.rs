@@ -5,7 +5,10 @@ use gdk::gio::ListModel;
 use gdk::glib::{clone, Propagation, SignalHandlerId};
 use gdk::{Key, ModifierType};
 use gtk::prelude::*;
-use gtk::{Align, ApplicationWindow, Button, EventControllerKey, Label, Orientation, Window};
+use gtk::{
+    Align, ApplicationWindow, Button, EventControllerKey, Label, ListItem, Orientation,
+    SignalListItemFactory, StringObject, Window,
+};
 
 use crate::view::PADDING;
 
@@ -17,6 +20,8 @@ pub struct DropDown {
 
 impl DropDown {
     pub fn new(widget: gtk::DropDown) -> Self {
+        widget.set_factory(Some(&Self::factory()));
+        widget.set_list_factory(Some(&Self::list_factory()));
         Self { widget, selected_item_notify_handler_id: Rc::new(RefCell::new(None)) }
     }
 
@@ -41,6 +46,43 @@ impl DropDown {
             self.widget.block_signal(handler_id);
             self.widget.set_selected(position);
             self.widget.unblock_signal(handler_id);
+        }
+    }
+
+    fn factory() -> SignalListItemFactory {
+        let factory = SignalListItemFactory::new();
+        factory.connect_setup(|_f, list_item| {
+            list_item.set_child(Some(&Label::new(None)));
+        });
+        factory.connect_bind(|_f, list_item| {
+            Self::bind_label(list_item, Some(&|s| s.replace(' ', "")));
+        });
+        factory
+    }
+
+    fn list_factory() -> SignalListItemFactory {
+        let factory = SignalListItemFactory::new();
+        factory.connect_setup(|_f, list_item| {
+            let label = Label::builder().halign(Align::End).css_classes(["monospace"]).build();
+            list_item.set_child(Some(&label));
+        });
+        factory.connect_bind(|_f, list_item| {
+            Self::bind_label(list_item, None);
+        });
+        factory
+    }
+
+    fn bind_label(list_item: &ListItem, formatter: Option<&dyn Fn(String) -> String>) {
+        if let Some(label) = list_item.child() {
+            if let Ok(label) = label.downcast::<Label>() {
+                if let Some(item) = list_item.item() {
+                    if let Ok(s) =
+                        item.downcast::<StringObject>().and_then(|s| Ok(s.string().to_string()))
+                    {
+                        label.set_label(&formatter.map_or(s.clone(), |f| f(s)));
+                    }
+                }
+            }
         }
     }
 }

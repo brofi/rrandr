@@ -56,7 +56,6 @@ type CrtcInfo = GetCrtcInfoReply;
 type Resolution = [u16; 2];
 
 const APP_ID: &str = "com.github.brofi.rrandr";
-const RESOLUTION_JOIN_CHAR: char = 'x';
 const MM_PER_INCH: f32 = 25.4;
 const PPI_DEFAULT: u8 = 96;
 
@@ -105,7 +104,10 @@ impl Output {
     }
 
     fn get_resolutions_dropdown(&self) -> Vec<String> {
-        self.get_resolutions().iter().map(|&r| Self::resolution_str(r)).collect::<Vec<String>>()
+        let resolutions = self.get_resolutions();
+        let format_width =
+            resolutions.iter().map(|r| r[1].to_string().len()).max().unwrap_or_default();
+        resolutions.iter().map(|&r| Self::resolution_str(r, format_width)).collect::<Vec<String>>()
     }
 
     fn get_current_resolution_dropdown_index(&self) -> Option<usize> {
@@ -171,11 +173,12 @@ impl Output {
             .collect::<Vec<f64>>()
     }
 
-    fn resolution_str(res: Resolution) -> String {
-        format!("{}{RESOLUTION_JOIN_CHAR}{}", res[0], res[1])
+    fn resolution_str(res: Resolution, format_width: usize) -> String {
+        let [w, h] = res;
+        format!("{w} x {h:format_width$}")
     }
 
-    fn refresh_str(refresh: f64) -> String { format!("{refresh:6.2} Hz") }
+    fn refresh_str(refresh: f64) -> String { format!("{refresh:.2} Hz") }
 
     fn rect(&self) -> Rect {
         if let (Some((x, y)), Some(mode)) = (self.pos, self.mode.as_ref()) {
