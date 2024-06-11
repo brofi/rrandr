@@ -401,8 +401,10 @@ impl View {
             self.drawing_area.set_cursor_from_name(Some("grabbing"));
         } else {
             self.deselect();
+            self.disabled.deselect();
         }
         self.drawing_area.queue_draw();
+        self.disabled.drawing_area.queue_draw();
         self.update_details();
     }
 
@@ -679,6 +681,7 @@ impl View {
 
     fn on_disabled_selected(&self, output: Option<&Output>) {
         self.deselect();
+        self.drawing_area.queue_draw();
         self.details.update(output);
     }
 
