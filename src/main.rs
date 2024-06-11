@@ -175,7 +175,7 @@ impl Output {
 
     fn resolution_str(res: Resolution, format_width: usize) -> String {
         let [w, h] = res;
-        format!("{w} x {h:format_width$}")
+        format!("{w} x {h:<format_width$}")
     }
 
     fn refresh_str(refresh: f64) -> String { format!("{refresh:.2} Hz") }
