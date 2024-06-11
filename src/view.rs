@@ -113,7 +113,7 @@ impl View {
             .orientation(Orientation::Horizontal)
             .spacing(i32::from(PADDING))
             .halign(Align::End)
-            .valign(Align::End)
+            .valign(Align::Center)
             .build();
         let btn_id = Button::builder()
             .label("_Identify")
@@ -973,8 +973,8 @@ impl DetailsView {
             .column_spacing(u32::from(PADDING))
             .orientation(Orientation::Horizontal)
             .selection_mode(SelectionMode::None)
-            .halign(Align::Start)
-            .min_children_per_line(2)
+            .max_children_per_line(u32::MAX)
+            .halign(Align::Fill)
             .hexpand(true)
             .build();
 
