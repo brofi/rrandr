@@ -109,13 +109,17 @@ impl View {
 
         box_bottom.append(&this.details.root);
 
-        let box_controls = gtk::Box::builder()
+        // Use FlowBox like a horizontal Box to get the same style (especially padding)
+        // on its children as the details view children.
+        let box_controls = FlowBox::builder()
             .orientation(Orientation::Horizontal)
-            .spacing(i32::from(PADDING))
-            .halign(Align::End)
-            .valign(Align::Center)
+            .selection_mode(SelectionMode::None)
+            .min_children_per_line(2)
+            .max_children_per_line(2)
+            .valign(Align::End)
             .build();
         let btn_id = Button::builder()
+            .margin_end(i32::from(PADDING))
             .label("_Identify")
             .use_underline(true)
             .tooltip_text("Identify outputs")
@@ -145,8 +149,15 @@ impl View {
             .build();
         btn_reset.connect_clicked(clone!(@strong this => move |_btn| this.reset()));
         box_apply_reset.append(&btn_reset);
-
         box_controls.append(&box_apply_reset);
+
+        // Remove focusable from automatically added FlowBoxChild
+        let mut ctrl_child = box_controls.first_child();
+        while let Some(c) = ctrl_child {
+            c.set_focusable(false);
+            ctrl_child = c.next_sibling();
+        }
+
         box_bottom.append(&box_controls);
         this.root.append(&Separator::new(Orientation::Horizontal));
         this.root.append(&box_bottom);
