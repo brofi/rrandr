@@ -4,11 +4,11 @@ use std::error::Error;
 use std::num::IntErrorKind;
 use std::rc::Rc;
 
-use gdk::glib::{clone, Bytes, Type, Value};
-use gdk::{ContentProvider, Drag, DragAction, MemoryTexture, Paintable};
+use gdk::glib::{clone, Bytes, Propagation, Type, Value};
+use gdk::{ContentProvider, Drag, DragAction, Key, MemoryTexture, ModifierType, Paintable};
 use gtk::prelude::*;
 use gtk::{
-    Align, Button, DragSource, DrawingArea, DropControllerMotion, DropTarget,
+    Align, Button, DragSource, DrawingArea, DropControllerMotion, DropTarget, EventControllerKey,
     EventControllerMotion, FlowBox, FlowBoxChild, GestureClick, GestureDrag, InputPurpose, Label,
     Orientation, Paned, SelectionMode, Separator, StringList, Widget,
 };
@@ -87,7 +87,7 @@ impl View {
             scale: Rc::new(RefCell::new(1.0)),
             translate: Rc::new(RefCell::new([0, 0])),
             bounds: Rc::new(RefCell::new(Rect::default())),
-            drawing_area: DrawingArea::new(),
+            drawing_area: DrawingArea::builder().focusable(true).build(),
             details: DetailsView::new(size),
             disabled: DisabledView::new(config, disabled_outputs),
             apply_callback: Rc::new(RefCell::new(None)),
@@ -100,6 +100,11 @@ impl View {
             .resize_end_child(false)
             .vexpand(true)
             .build();
+        let event_controller_key = EventControllerKey::new();
+        event_controller_key.connect_key_pressed(clone!(
+                @strong this => move |eck, keyval, keycode, state| this.on_key_pressed(eck, keyval, keycode, state)
+            ));
+        paned.add_controller(event_controller_key);
         this.root.append(&paned);
 
         let box_bottom = gtk::Box::builder()
@@ -224,8 +229,8 @@ impl View {
 
     fn update(&self, output: &Output, update: &Update) {
         match update {
-            Update::Enabled => self.enable_output(output.id),
-            Update::Disabled => self.disable_output(output.id),
+            Update::Enabled => _ = self.enable_output(output.id),
+            Update::Disabled => _ = self.disable_output(output.id),
             _ => {
                 for o in self.outputs.borrow_mut().iter_mut() {
                     if o == output {
@@ -290,15 +295,16 @@ impl View {
         self.details.update(self.selected_output.borrow().and_then(|i| Some(&outputs[i])));
     }
 
-    fn enable_output(&self, output_id: OutputId) {
+    fn enable_output(&self, output_id: OutputId) -> Output {
         let mut outputs = self.outputs.borrow_mut();
         let mut enabled_output = self.disabled.remove_output(output_id);
         enabled_output.enable();
-        outputs.push(enabled_output);
+        outputs.push(enabled_output.clone());
         self.select(outputs.len() - 1);
+        enabled_output
     }
 
-    fn disable_output(&self, output_id: OutputId) {
+    fn disable_output(&self, output_id: OutputId) -> Output {
         let mut outputs = self.outputs.borrow_mut();
         let index = outputs
             .iter()
@@ -306,11 +312,15 @@ impl View {
             .unwrap_or_else(|| panic!("enabled outputs contains output {output_id}"));
         let mut disabled_output = outputs.remove(index);
         disabled_output.disable();
-        self.disabled.add_output(disabled_output);
+        self.disabled.add_output(disabled_output.clone());
         self.deselect();
+        disabled_output
     }
 
-    fn select(&self, index: usize) { *self.selected_output.borrow_mut() = Some(index); }
+    fn select(&self, index: usize) {
+        self.drawing_area.grab_focus();
+        *self.selected_output.borrow_mut() = Some(index);
+    }
 
     fn deselect(&self) { *self.selected_output.borrow_mut() = None; }
 
@@ -664,6 +674,38 @@ impl View {
 
     fn on_drop_motion(_dt: &DropTarget, _x: f64, _y: f64) -> DragAction { DragAction::MOVE }
 
+    fn on_key_pressed(
+        &self,
+        _eck: &EventControllerKey,
+        keyval: Key,
+        _keycode: u32,
+        _state: ModifierType,
+    ) -> Propagation {
+        match keyval {
+            Key::Delete => {
+                if let Some(output_id) = self.get_selected_output() {
+                    self.details.update(Some(&self.disable_output(output_id)));
+                    self.update_view(&Update::Disabled);
+                    return Propagation::Stop;
+                }
+                if let Some(output_id) = self.disabled.get_selected_output() {
+                    self.details.update(Some(&self.enable_output(output_id)));
+                    self.update_view(&Update::Enabled);
+                    return Propagation::Stop;
+                }
+            }
+            _ => (),
+        };
+        Propagation::Proceed
+    }
+
+    fn get_selected_output(&self) -> Option<OutputId> {
+        if let Some(i) = *self.selected_output.borrow() {
+            return Some(self.outputs.borrow()[i].id);
+        }
+        None
+    }
+
     fn get_output_index_at(&self, x: f64, y: f64) -> Option<usize> {
         let scale = self.scale.borrow();
         let translate = self.translate.borrow();
@@ -734,7 +776,7 @@ impl DisabledView {
             selected_output: Rc::new(RefCell::new(None)),
             output_selected_callbacks: Rc::new(RefCell::new(Vec::new())),
             is_dragging: Rc::new(RefCell::new(false)),
-            drawing_area: DrawingArea::builder().content_width(150).build(),
+            drawing_area: DrawingArea::builder().focusable(true).content_width(150).build(),
         };
 
         this.drawing_area.set_draw_func(clone!(
@@ -850,6 +892,7 @@ impl DisabledView {
             self.get_output_index_at(x, y, self.drawing_area.width(), self.drawing_area.height())
         {
             self.select(i);
+            self.drawing_area.grab_focus();
             self.notify_selected(Some(&self.outputs.borrow()[i]));
         } else {
             self.deselect();
@@ -941,6 +984,13 @@ impl DisabledView {
             {
                 return Some(i);
             }
+        }
+        None
+    }
+
+    fn get_selected_output(&self) -> Option<OutputId> {
+        if let Some(i) = *self.selected_output.borrow() {
+            return Some(self.outputs.borrow()[i].id);
         }
         None
     }
