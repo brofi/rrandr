@@ -49,6 +49,8 @@ pub struct View {
     scale: Rc<RefCell<f64>>,
     translate: Rc<RefCell<[i16; 2]>>,
     bounds: Rc<RefCell<Rect>>,
+    paned: Paned,
+    last_handle_pos: Rc<RefCell<i32>>,
     drawing_area: DrawingArea,
     details: DetailsView,
     disabled: DisabledView,
@@ -76,9 +78,21 @@ impl View {
         let disabled_outputs =
             outputs.iter().filter(|&n| !n.enabled).map(Output::clone).collect::<Vec<_>>();
 
+        let drawing_area = DrawingArea::builder().focusable(true).build();
+        let disabled = DisabledView::new(config.clone(), disabled_outputs);
+
+        let paned = Paned::builder()
+            .start_child(&drawing_area)
+            .end_child(&disabled.drawing_area)
+            .resize_start_child(true)
+            .resize_end_child(false)
+            .vexpand(true)
+            .build();
+        root.append(&paned);
+
         let mut this = Self {
             root,
-            config: config.clone(),
+            config,
             size,
             outputs: Rc::new(RefCell::new(enabled_outputs)),
             outputs_orig: Rc::new(RefCell::new(outputs)),
@@ -87,25 +101,19 @@ impl View {
             scale: Rc::new(RefCell::new(1.0)),
             translate: Rc::new(RefCell::new([0, 0])),
             bounds: Rc::new(RefCell::new(Rect::default())),
-            drawing_area: DrawingArea::builder().focusable(true).build(),
+            paned,
+            last_handle_pos: Rc::new(RefCell::new(0)),
+            drawing_area,
             details: DetailsView::new(size),
-            disabled: DisabledView::new(config, disabled_outputs),
+            disabled,
             apply_callback: Rc::new(RefCell::new(None)),
         };
 
-        let paned = Paned::builder()
-            .start_child(&this.drawing_area)
-            .end_child(&this.disabled.drawing_area)
-            .resize_start_child(true)
-            .resize_end_child(false)
-            .vexpand(true)
-            .build();
         let event_controller_key = EventControllerKey::new();
         event_controller_key.connect_key_pressed(clone!(
                 @strong this => move |eck, keyval, keycode, state| this.on_key_pressed(eck, keyval, keycode, state)
             ));
-        paned.add_controller(event_controller_key);
-        this.root.append(&paned);
+        this.paned.add_controller(event_controller_key);
 
         let box_bottom = gtk::Box::builder()
             .orientation(Orientation::Horizontal)
@@ -692,6 +700,21 @@ impl View {
                     self.details.update(Some(&self.enable_output(output_id)));
                     self.update_view(&Update::Enabled);
                     return Propagation::Stop;
+                }
+            }
+            Key::F9 => {
+                if let Some(handle) =
+                    self.paned.start_child().and_then(|start| start.next_sibling())
+                {
+                    let mut last_pos = self.last_handle_pos.borrow_mut();
+                    let cur_pos = self.paned.position();
+                    let max_pos = self.paned.width() - handle.width();
+                    self.paned.set_position(if cur_pos == max_pos {
+                        *last_pos
+                    } else {
+                        *last_pos = cur_pos;
+                        max_pos
+                    });
                 }
             }
             _ => (),
