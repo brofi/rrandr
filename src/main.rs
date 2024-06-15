@@ -63,7 +63,7 @@ const POPUP_WINDOW_PAD: f64 = 20.;
 const POPUP_OUTPUT_RATIO: f64 = 1. / 8.;
 const POPUP_SHOW_SECS: f32 = 2.5;
 
-const CONFIRM_DIALOG_SHOW_SECS: u8 = 10;
+const CONFIRM_DIALOG_SHOW_SECS: u8 = 15;
 
 #[derive(Clone, Debug)]
 pub struct Output {
