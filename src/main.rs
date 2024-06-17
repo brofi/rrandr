@@ -20,7 +20,7 @@ use cairo::ffi::cairo_device_finish;
 use cairo::{XCBDrawable, XCBSurface};
 use config::Config;
 use draw::DrawContext;
-use gdk::gio::spawn_blocking;
+use gdk::gio::{resources_register_include, spawn_blocking};
 use gdk::glib::{clone, spawn_future_local, timeout_add, ControlFlow, Propagation};
 use gtk::glib::ExitCode;
 use gtk::prelude::*;
@@ -218,6 +218,8 @@ impl fmt::Display for Mode {
 }
 
 fn main() -> ExitCode {
+    resources_register_include!("rrandr.gresource").expect("resources registered");
+
     let config = Config::default();
 
     let (conn, screen_num) = x11rb::connect(None).expect("connection to X Server");
