@@ -55,7 +55,10 @@ impl DropDown {
             list_item.set_child(Some(&Label::new(None)));
         });
         factory.connect_bind(|_f, list_item| {
-            Self::bind_label(list_item, Some(&|s| s.replace(' ', "")));
+            Self::bind_label(
+                list_item,
+                Some(&|s| s.replace(' ', "\u{202F}").replace('x', "\u{00D7}")),
+            );
         });
         factory
     }
