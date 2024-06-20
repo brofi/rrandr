@@ -3,6 +3,12 @@ name = "rrandr"
 version = "0.2.0"
 authors = ["Andy B. <brofi.archlinux@gmail.com>"]
 edition = "2021"
+description = "A graphical interface to the RandR X Window System extension."
+documentation = "https://github.com/brofi/rrandr"
+repository = "https://github.com/brofi/rrandr"
+license = "GPL-3.0-or-later"
+keywords = ["RandR", "X11", "X Window System"]
+categories = ["gui", "config"]
 
 [dependencies]
 x11rb = { version = "0.13.1", features = [
