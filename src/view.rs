@@ -5,12 +5,14 @@ use std::num::IntErrorKind;
 use std::rc::Rc;
 
 use gdk::glib::{clone, Bytes, Propagation, Type, Value};
-use gdk::{ContentProvider, Drag, DragAction, Key, MemoryTexture, ModifierType, Paintable};
+use gdk::{
+    ContentProvider, Drag, DragAction, Key, MemoryTexture, ModifierType, Paintable, Texture,
+};
 use gtk::prelude::*;
 use gtk::{
-    Align, Button, DragSource, DrawingArea, DropControllerMotion, DropTarget, EventControllerKey,
-    EventControllerMotion, FlowBox, FlowBoxChild, GestureClick, GestureDrag, InputPurpose, Label,
-    Orientation, Paned, SelectionMode, Separator, StringList, Widget,
+    AboutDialog, Align, Button, DragSource, DrawingArea, DropControllerMotion, DropTarget,
+    EventControllerKey, EventControllerMotion, FlowBox, FlowBoxChild, GestureClick, GestureDrag,
+    InputPurpose, Label, License, Orientation, Paned, SelectionMode, Separator, StringList, Widget,
 };
 use x11rb::protocol::randr::Output as OutputId;
 
@@ -127,10 +129,33 @@ impl View {
         let box_controls = FlowBox::builder()
             .orientation(Orientation::Horizontal)
             .selection_mode(SelectionMode::None)
-            .min_children_per_line(2)
-            .max_children_per_line(2)
+            .min_children_per_line(3)
+            .max_children_per_line(3)
             .valign(Align::End)
             .build();
+        let btn_about = Button::builder()
+            .margin_end(i32::from(PADDING))
+            .label("_About")
+            .use_underline(true)
+            .tooltip_text("About")
+            .build();
+        box_controls.append(&btn_about);
+        btn_about.connect_clicked(move |_btn| {
+            let about = AboutDialog::builder()
+                .program_name(env!("CARGO_PKG_NAME"))
+                .version(env!("CARGO_PKG_VERSION"))
+                .comments(env!("CARGO_PKG_DESCRIPTION"))
+                .website_label("Repository")
+                .website(env!("CARGO_PKG_REPOSITORY"))
+                .copyright(env!("RRANDR_COPYRIGHT_NOTICE"))
+                .license_type(License::Gpl30)
+                .authors(env!("CARGO_PKG_AUTHORS").split(':').collect::<Vec<_>>())
+                .build();
+            if let Ok(logo) = Texture::from_filename("res/logo.svg") {
+                about.set_logo(Some(&logo));
+            }
+            about.show();
+        });
         let btn_id = Button::builder()
             .margin_end(i32::from(PADDING))
             .label("_Identify")
