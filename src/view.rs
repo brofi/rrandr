@@ -26,7 +26,8 @@ type OutputUpdatedCallback = dyn Fn(&Output, &Update);
 type OutputSelectedCallback = dyn Fn(Option<&Output>);
 type ApplyCallback = dyn Fn(Vec<Output>);
 
-pub const PADDING: u16 = 10;
+pub const PADDING: u16 = 12;
+pub const SPACING: u16 = 6;
 
 #[derive(Clone, Copy)]
 enum Axis {
@@ -68,11 +69,11 @@ impl View {
     ) -> Self {
         let root = gtk::Box::builder()
             .orientation(Orientation::Vertical)
-            .margin_start(i32::from(PADDING))
-            .margin_end(i32::from(PADDING))
-            .margin_top(i32::from(PADDING))
-            .margin_bottom(i32::from(PADDING))
-            .spacing(i32::from(PADDING))
+            .margin_start(PADDING.into())
+            .margin_end(PADDING.into())
+            .margin_top(PADDING.into())
+            .margin_bottom(PADDING.into())
+            .spacing(PADDING.into())
             .build();
 
         let enabled_outputs =
@@ -119,7 +120,7 @@ impl View {
 
         let box_bottom = gtk::Box::builder()
             .orientation(Orientation::Horizontal)
-            .spacing(i32::from(PADDING))
+            .spacing(SPACING.into())
             .build();
 
         box_bottom.append(&this.details.root);
@@ -134,7 +135,7 @@ impl View {
             .valign(Align::End)
             .build();
         let btn_about = Button::builder()
-            .margin_end(i32::from(PADDING))
+            .margin_end(SPACING.into())
             .label("_About")
             .use_underline(true)
             .tooltip_text("About")
@@ -157,7 +158,7 @@ impl View {
             about.show();
         });
         let btn_id = Button::builder()
-            .margin_end(i32::from(PADDING))
+            .margin_end(SPACING.into())
             .label("_Identify")
             .use_underline(true)
             .tooltip_text("Identify outputs")
@@ -1081,8 +1082,8 @@ struct DetailsView {
 impl DetailsView {
     fn new(size: ScreenSizeRange) -> Self {
         let root = FlowBox::builder()
-            .row_spacing(u32::from(PADDING))
-            .column_spacing(u32::from(PADDING))
+            .row_spacing(SPACING.into())
+            .column_spacing(SPACING.into())
             .orientation(Orientation::Horizontal)
             .selection_mode(SelectionMode::None)
             .max_children_per_line(u32::MAX)
@@ -1196,7 +1197,7 @@ impl DetailsView {
         let hbox = gtk::Box::builder()
             .orientation(Orientation::Horizontal)
             .valign(Align::Center)
-            .spacing(i32::from(PADDING))
+            .spacing(SPACING.into())
             .build();
         let mut child: Widget = (*ctrl).clone().into();
         if ctrl.is::<gtk::Box>() {
