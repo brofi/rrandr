@@ -11,12 +11,13 @@ use gdk::{
 use gtk::prelude::*;
 use gtk::{
     AboutDialog, Align, Button, DragSource, DrawingArea, DropControllerMotion, DropTarget,
-    EventControllerKey, EventControllerMotion, FlowBox, FlowBoxChild, GestureClick, GestureDrag,
-    InputPurpose, Label, License, Orientation, Paned, SelectionMode, Separator, StringList, Widget,
+    EventControllerKey, EventControllerMotion, FlowBox, GestureClick, GestureDrag, InputPurpose,
+    License, Orientation, Paned, SelectionMode, Separator, StringList,
 };
 use x11rb::protocol::randr::Output as OutputId;
 
 use crate::config::Config;
+use crate::details_child::DetailsChild;
 use crate::draw::{DrawContext, SCREEN_LINE_WIDTH};
 use crate::math::{Point, Rect};
 use crate::widget::{CheckButton, DropDown, Entry, Switch};
@@ -1093,7 +1094,7 @@ impl DetailsView {
 
         let sw_enabled = gtk::Switch::builder().tooltip_text("Enable/Disable").build();
         let sw_enabled = Switch::new(sw_enabled);
-        root.append(&Self::create_detail_child("Enabled", &sw_enabled.widget));
+        root.append(&DetailsChild::new("Enabled", &sw_enabled.widget));
 
         let box_mode = gtk::Box::builder()
             .orientation(Orientation::Horizontal)
@@ -1105,7 +1106,7 @@ impl DetailsView {
         let dd_refresh = DropDown::new(dd_refresh);
         box_mode.append(&dd_resolution.widget);
         box_mode.append(&dd_refresh.widget);
-        root.append(&Self::create_detail_child("Mode", &box_mode));
+        root.append(&DetailsChild::new("Mode", &box_mode));
 
         let box_pos = gtk::Box::builder()
             .orientation(Orientation::Horizontal)
@@ -1137,11 +1138,11 @@ impl DetailsView {
 
         box_pos.append(&en_position_x.widget);
         box_pos.append(&en_position_y.widget);
-        root.append(&Self::create_detail_child("Position", &box_pos));
+        root.append(&DetailsChild::new("Position", &box_pos));
 
         let cb_primary = gtk::CheckButton::builder().tooltip_text("Set as primary").build();
         let cb_primary = CheckButton::new(cb_primary);
-        root.append(&Self::create_detail_child("Primary", &cb_primary.widget));
+        root.append(&DetailsChild::new("Primary", &cb_primary.widget));
 
         let mut this = Self {
             output: Rc::new(RefCell::new(None)),
@@ -1182,38 +1183,6 @@ impl DetailsView {
         ));
 
         this
-    }
-
-    fn create_detail_child<W: IsA<Widget>>(label: &str, ctrl: &W) -> impl IsA<Widget> {
-        let fbc = FlowBoxChild::builder()
-            .name(&("fbc_".to_owned() + &label.to_owned().replace('_', "").to_lowercase()))
-            .halign(Align::Start)
-            .valign(Align::Center)
-            .hexpand(false)
-            .vexpand(false)
-            .focusable(false)
-            .visible(false)
-            .build();
-        let hbox = gtk::Box::builder()
-            .orientation(Orientation::Horizontal)
-            .valign(Align::Center)
-            .spacing(SPACING.into())
-            .build();
-        let mut child: Widget = (*ctrl).clone().into();
-        if ctrl.is::<gtk::Box>() {
-            child = ctrl.first_child().expect("Box has a child");
-        }
-        let label = if label.contains('_') { label.to_owned() } else { format!("_{label}") };
-        let label = Label::with_mnemonic(&label);
-        label.set_mnemonic_widget(Some(&child));
-        let gesture_click = GestureClick::new();
-        gesture_click
-            .connect_released(clone!(@strong child => move |_, _, _, _| _ = child.activate()));
-        label.add_controller(gesture_click);
-        hbox.append(&label);
-        hbox.append(ctrl);
-        fbc.set_child(Some(&hbox));
-        fbc
     }
 
     fn update(&self, output: Option<&Output>) {

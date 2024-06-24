@@ -5,6 +5,7 @@
 
 mod color;
 mod config;
+mod details_child;
 mod draw;
 mod math;
 mod view;
