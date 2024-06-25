@@ -11,16 +11,19 @@ use gdk::{
 use gtk::prelude::*;
 use gtk::{
     AboutDialog, Align, Button, DragSource, DrawingArea, DropControllerMotion, DropTarget,
-    EventControllerKey, EventControllerMotion, FlowBox, GestureClick, GestureDrag, InputPurpose,
-    License, Orientation, Paned, SelectionMode, Separator, StringList,
+    EventControllerKey, EventControllerMotion, FlowBox, GestureClick, GestureDrag, License,
+    Orientation, Paned, SelectionMode, Separator, StringList,
 };
 use x11rb::protocol::randr::Output as OutputId;
 
 use crate::config::Config;
-use crate::details_child::DetailsChild;
 use crate::draw::{DrawContext, SCREEN_LINE_WIDTH};
 use crate::math::{Point, Rect};
-use crate::widget::{CheckButton, DropDown, Entry, Switch};
+use crate::widget::checkbutton::CheckButton;
+use crate::widget::details_child::DetailsChild;
+use crate::widget::dropdown::DropDown;
+use crate::widget::entry::Entry;
+use crate::widget::switch::Switch;
 use crate::{Output, ScreenSizeRange};
 
 type OutputUpdatedCallback = dyn Fn(&Output, &Update);
@@ -1092,57 +1095,31 @@ impl DetailsView {
             .hexpand(true)
             .build();
 
-        let sw_enabled = gtk::Switch::builder().tooltip_text("Enable/Disable").build();
-        let sw_enabled = Switch::new(sw_enabled);
-        root.append(&DetailsChild::new("Enabled", &sw_enabled.widget));
+        let sw_enabled = Switch::new("Enable/Disable");
+        root.append(&DetailsChild::new("Enabled", &sw_enabled));
 
         let box_mode = gtk::Box::builder()
             .orientation(Orientation::Horizontal)
             .css_classes(["linked"])
             .build();
-        let dd_resolution = gtk::DropDown::builder().tooltip_text("Resolution").build();
-        let dd_resolution = DropDown::new(dd_resolution);
-        let dd_refresh = gtk::DropDown::builder().tooltip_text("Refresh rate").build();
-        let dd_refresh = DropDown::new(dd_refresh);
-        box_mode.append(&dd_resolution.widget);
-        box_mode.append(&dd_refresh.widget);
+        let dd_resolution = DropDown::new("Resolution");
+        let dd_refresh = DropDown::new("Refresh rate");
+        box_mode.append(&dd_resolution);
+        box_mode.append(&dd_refresh);
         root.append(&DetailsChild::new("Mode", &box_mode));
 
         let box_pos = gtk::Box::builder()
             .orientation(Orientation::Horizontal)
             .css_classes(["linked"])
             .build();
-        let en_position_x = gtk::Entry::builder()
-            .input_purpose(InputPurpose::Digits)
-            .text("0")
-            .placeholder_text("x")
-            .tooltip_text("Horizontal position")
-            .max_length(6)
-            .width_chars(5)
-            .max_width_chars(5)
-            .build();
-        EntryExt::set_alignment(&en_position_x, 1.);
-        let en_position_x = Entry::new(en_position_x);
-
-        let en_position_y = gtk::Entry::builder()
-            .input_purpose(InputPurpose::Digits)
-            .text("0")
-            .placeholder_text("y")
-            .tooltip_text("Vertical position")
-            .max_length(6)
-            .width_chars(5)
-            .max_width_chars(5)
-            .build();
-        EntryExt::set_alignment(&en_position_y, 1.);
-        let en_position_y = Entry::new(en_position_y);
-
-        box_pos.append(&en_position_x.widget);
-        box_pos.append(&en_position_y.widget);
+        let en_position_x = Entry::new("Horizontal position", "x");
+        let en_position_y = Entry::new("Vertical position", "y");
+        box_pos.append(&en_position_x);
+        box_pos.append(&en_position_y);
         root.append(&DetailsChild::new("Position", &box_pos));
 
-        let cb_primary = gtk::CheckButton::builder().tooltip_text("Set as primary").build();
-        let cb_primary = CheckButton::new(cb_primary);
-        root.append(&DetailsChild::new("Primary", &cb_primary.widget));
+        let cb_primary = CheckButton::new("Set as primary");
+        root.append(&DetailsChild::new("Primary", &cb_primary));
 
         let mut this = Self {
             output: Rc::new(RefCell::new(None)),
@@ -1222,11 +1199,11 @@ impl DetailsView {
         }
     }
 
-    fn on_enabled_switched(&self, sw: &Switch) {
+    fn on_enabled_switched(&self, sw: &gtk::Switch) {
         let mut updated = None;
         let mut update = None;
         if let Some(output) = self.output.borrow_mut().as_mut() {
-            let active = sw.widget.is_active();
+            let active = sw.is_active();
             // Update output
             if active {
                 output.enable();
@@ -1243,14 +1220,14 @@ impl DetailsView {
         self.update_visibility();
     }
 
-    fn on_resolution_selected(&self, dd: &DropDown) {
+    fn on_resolution_selected(&self, dd: &gtk::DropDown) {
         let mut updated = None;
         if let Some(output) = self.output.borrow_mut().as_mut() {
             if !output.enabled {
                 return;
             }
 
-            let dd_selected = dd.widget.selected() as usize;
+            let dd_selected = dd.selected() as usize;
 
             // Update current mode
             let mode = &output.modes[output.resolution_dropdown_mode_index(dd_selected)];
@@ -1272,7 +1249,7 @@ impl DetailsView {
         }
     }
 
-    fn on_refresh_rate_selected(&self, dd: &DropDown) {
+    fn on_refresh_rate_selected(&self, dd: &gtk::DropDown) {
         if let Some(output) = self.output.borrow_mut().as_mut() {
             if !output.enabled {
                 return;
@@ -1280,8 +1257,8 @@ impl DetailsView {
 
             // Update current mode
             let mode = &output.modes[output.refresh_rate_dropdown_mode_index(
-                self.dd_resolution.widget.selected() as usize,
-                dd.widget.selected() as usize,
+                self.dd_resolution.selected() as usize,
+                dd.selected() as usize,
             )];
             if output.mode.as_ref().is_some_and(|m| m.id != mode.id) || output.mode.is_none() {
                 output.mode = Some(mode.clone());
@@ -1292,16 +1269,16 @@ impl DetailsView {
 
     fn on_position_insert(&self, entry: &Entry, text: &str, position: &mut i32, axis: Axis) {
         let idx = usize::try_from(*position).expect("smaller position");
-        let mut new_text = entry.widget.text().to_string();
+        let mut new_text = entry.text().to_string();
         new_text.insert_str(idx, text);
         if let Some(coord) = self.parse_coord(&new_text, axis) {
             if coord.to_string() == new_text {
                 entry.insert_text(text, position);
-            } else if coord.to_string() != entry.widget.text() {
+            } else if coord.to_string() != entry.text() {
                 entry.set_text(&coord.to_string());
             }
             self.update_position(axis, coord);
-        } else if entry.widget.text().is_empty() {
+        } else if entry.text().is_empty() {
             entry.insert_text("0", &mut 0);
         }
     }
@@ -1309,7 +1286,7 @@ impl DetailsView {
     fn on_position_delete(&self, entry: &Entry, start_pos: i32, end_pos: i32, axis: Axis) {
         let start_idx = usize::try_from(start_pos).expect("smaller start position");
         let end_idx = usize::try_from(end_pos).expect("smaller end position");
-        let mut new_text = entry.widget.text().to_string();
+        let mut new_text = entry.text().to_string();
         new_text.replace_range(start_idx..end_idx, "");
         if let Some(coord) = self.parse_coord(&new_text, axis) {
             if coord.to_string() == new_text {
@@ -1365,9 +1342,9 @@ impl DetailsView {
         }
     }
 
-    fn on_primary_checked(&self, cb: &CheckButton) {
+    fn on_primary_checked(&self, cb: &gtk::CheckButton) {
         if let Some(output) = self.output.borrow_mut().as_mut() {
-            output.primary = output.enabled && cb.widget.is_active();
+            output.primary = output.enabled && cb.is_active();
             self.notify_updated(output, &Update::Primary);
         }
     }

@@ -5,7 +5,7 @@
 
 mod color;
 mod config;
-mod details_child;
+mod dialog;
 mod draw;
 mod math;
 mod view;
@@ -20,6 +20,7 @@ use std::time::{Duration, Instant};
 use cairo::ffi::cairo_device_finish;
 use cairo::{XCBDrawable, XCBSurface};
 use config::Config;
+use dialog::Dialog;
 use draw::DrawContext;
 use gdk::gio::{resources_register_include, spawn_blocking};
 use gdk::glib::{clone, spawn_future_local, timeout_add, ControlFlow, Propagation};
@@ -29,7 +30,6 @@ use gtk::{Application, ApplicationWindow, Button};
 use math::Rect;
 use pango::{FontDescription, Weight};
 use view::View;
-use widget::Dialog;
 use x11rb::connection::{Connection as XConnection, RequestConnection};
 use x11rb::cookie::{Cookie, VoidCookie};
 use x11rb::errors::{ConnectionError, ReplyError, ReplyOrIdError};
