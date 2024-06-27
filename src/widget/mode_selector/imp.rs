@@ -1,44 +1,66 @@
 use std::cell::RefCell;
 
-use gdk::glib::object::ObjectExt;
+use gdk::glib::object::Cast;
 use gdk::glib::subclass::object::{ObjectImpl, ObjectImplExt};
 use gdk::glib::subclass::types::{ObjectSubclass, ObjectSubclassExt};
 use gdk::glib::{object_subclass, SignalHandlerId};
-use gdk::prelude::Cast;
-use gtk::prelude::{ListItemExt, WidgetExt};
+use gtk::prelude::{BoxExt, ListItemExt, WidgetExt};
 use gtk::subclass::widget::{WidgetClassExt, WidgetImpl};
-use gtk::{glib, Align, BinLayout, Label, ListItem, SignalListItemFactory, StringObject, Widget};
+use gtk::{
+    glib, Align, BinLayout, Box, DropDown, Label, ListItem, Orientation, SignalListItemFactory,
+    StringObject, Widget,
+};
 
-#[derive(Default)]
-pub struct DropDown {
-    pub(super) widget: gtk::DropDown,
-    pub(super) selected_item_notify_handler_id: RefCell<Option<SignalHandlerId>>,
+pub struct ModeSelector {
+    pub(super) resolution: DropDown,
+    pub(super) resolution_selected_handler_id: RefCell<Option<SignalHandlerId>>,
+    pub(super) refresh_rate: DropDown,
+    pub(super) refresh_rate_selected_handler_id: RefCell<Option<SignalHandlerId>>,
+}
+
+impl Default for ModeSelector {
+    fn default() -> Self {
+        Self {
+            resolution: create_dropdown("Resolution"),
+            resolution_selected_handler_id: RefCell::default(),
+            refresh_rate: create_dropdown("Refresh rate"),
+            refresh_rate_selected_handler_id: RefCell::default(),
+        }
+    }
 }
 
 #[object_subclass]
-impl ObjectSubclass for DropDown {
+impl ObjectSubclass for ModeSelector {
     type ParentType = Widget;
-    type Type = super::DropDown;
+    type Type = super::ModeSelector;
 
-    const NAME: &'static str = "RrrDropDown";
+    const NAME: &'static str = "RrrModeSelector";
 
     fn class_init(klass: &mut Self::Class) { klass.set_layout_manager_type::<BinLayout>(); }
 }
 
-impl ObjectImpl for DropDown {
+impl ObjectImpl for ModeSelector {
     fn constructed(&self) {
         self.parent_constructed();
-        let obj = self.obj();
-        obj.bind_property("tooltip-text", &self.widget, "tooltip-text").sync_create().build();
-        self.widget.set_factory(Some(&factory()));
-        self.widget.set_list_factory(Some(&list_factory()));
-        self.widget.set_parent(&*obj);
+        let linkbox =
+            Box::builder().orientation(Orientation::Horizontal).css_classes(["linked"]).build();
+        linkbox.append(&self.resolution);
+        linkbox.append(&self.refresh_rate);
+        linkbox.set_parent(&*self.obj());
     }
 
-    fn dispose(&self) { self.widget.unparent() }
+    fn dispose(&self) { self.obj().first_child().unwrap().unparent(); }
 }
 
-impl WidgetImpl for DropDown {}
+impl WidgetImpl for ModeSelector {}
+
+fn create_dropdown(tooltip: &str) -> DropDown {
+    DropDown::builder()
+        .tooltip_text(tooltip)
+        .factory(&factory())
+        .list_factory(&list_factory())
+        .build()
+}
 
 fn factory() -> SignalListItemFactory {
     let factory = SignalListItemFactory::new();

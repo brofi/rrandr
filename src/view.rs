@@ -21,8 +21,8 @@ use crate::draw::{DrawContext, SCREEN_LINE_WIDTH};
 use crate::math::{Point, Rect};
 use crate::widget::checkbutton::CheckButton;
 use crate::widget::details_child::DetailsChild;
-use crate::widget::dropdown::DropDown;
-use crate::widget::entry::Entry;
+use crate::widget::mode_selector::ModeSelector;
+use crate::widget::position_entry::PositionEntry;
 use crate::widget::switch::Switch;
 use crate::{Output, ScreenSizeRange};
 
@@ -34,7 +34,7 @@ pub const PADDING: u16 = 12;
 pub const SPACING: u16 = 6;
 
 #[derive(Clone, Copy)]
-enum Axis {
+pub enum Axis {
     X,
     Y,
 }
@@ -1076,10 +1076,8 @@ struct DetailsView {
     size: ScreenSizeRange,
     root: FlowBox,
     sw_enabled: Switch,
-    dd_resolution: DropDown,
-    dd_refresh: DropDown,
-    en_position_x: Entry,
-    en_position_y: Entry,
+    mode_selector: ModeSelector,
+    position_entry: PositionEntry,
     cb_primary: CheckButton,
 }
 
@@ -1098,61 +1096,45 @@ impl DetailsView {
         let sw_enabled = Switch::new("Enable/Disable");
         root.append(&DetailsChild::new("Enabled", &sw_enabled));
 
-        let box_mode = gtk::Box::builder()
-            .orientation(Orientation::Horizontal)
-            .css_classes(["linked"])
-            .build();
-        let dd_resolution = DropDown::new("Resolution");
-        let dd_refresh = DropDown::new("Refresh rate");
-        box_mode.append(&dd_resolution);
-        box_mode.append(&dd_refresh);
-        root.append(&DetailsChild::new("Mode", &box_mode));
+        let mode_selector = ModeSelector::new();
+        root.append(&DetailsChild::new("Mode", &mode_selector));
 
-        let box_pos = gtk::Box::builder()
-            .orientation(Orientation::Horizontal)
-            .css_classes(["linked"])
-            .build();
-        let en_position_x = Entry::new("Horizontal position", "x");
-        let en_position_y = Entry::new("Vertical position", "y");
-        box_pos.append(&en_position_x);
-        box_pos.append(&en_position_y);
-        root.append(&DetailsChild::new("Position", &box_pos));
+        let position_entry = PositionEntry::new();
+        root.append(&DetailsChild::new("Position", &position_entry));
 
         let cb_primary = CheckButton::new("Set as primary");
         root.append(&DetailsChild::new("Primary", &cb_primary));
 
-        let mut this = Self {
+        let this = Self {
             output: Rc::new(RefCell::new(None)),
             output_updated_callbacks: Rc::new(RefCell::new(Vec::new())),
             size,
             root,
             sw_enabled,
-            dd_resolution,
-            dd_refresh,
-            en_position_x,
-            en_position_y,
+            mode_selector,
+            position_entry,
             cb_primary,
         };
 
         this.sw_enabled.connect_active_notify(clone!(
             @strong this => move |sw| this.on_enabled_switched(sw)
         ));
-        this.dd_resolution.connect_selected_item_notify(clone!(
+        this.mode_selector.connect_resolution_selected(clone!(
             @strong this => move |dd| this.on_resolution_selected(dd)
         ));
-        this.dd_refresh.connect_selected_item_notify(clone!(
+        this.mode_selector.connect_refresh_rate_selected(clone!(
             @strong this => move |dd| this.on_refresh_rate_selected(dd)
         ));
-        this.en_position_x.connect_insert_text(clone!(
+        this.position_entry.connect_insert_x(clone!(
             @strong this => move |entry, text, position| this.on_position_insert(entry, text, position, Axis::X)
         ));
-        this.en_position_x.connect_delete_text(clone!(
+        this.position_entry.connect_delete_x(clone!(
             @strong this => move |entry, start, end| this.on_position_delete(entry, start, end, Axis::X)
         ));
-        this.en_position_y.connect_insert_text(clone!(
+        this.position_entry.connect_insert_y(clone!(
             @strong this => move |entry, text, position| this.on_position_insert(entry, text, position, Axis::Y)
         ));
-        this.en_position_y.connect_delete_text(clone!(
+        this.position_entry.connect_delete_y(clone!(
             @strong this => move |entry, start, end| this.on_position_delete(entry, start, end, Axis::Y)
         ));
         this.cb_primary.connect_active_notify(clone!(
@@ -1167,18 +1149,19 @@ impl DetailsView {
             self.sw_enabled.set_active(output.enabled);
             self.cb_primary.set_active(output.primary);
             if let Some(pos) = output.pos {
-                self.en_position_x.set_text(&pos.0.to_string());
-                self.en_position_y.set_text(&pos.1.to_string());
+                self.position_entry.set_x(&pos.0.to_string());
+                self.position_entry.set_y(&pos.1.to_string());
             }
             let resolutions = output.get_resolutions_dropdown();
-            self.dd_resolution.set_model(Some(&into_string_list(&resolutions)));
+            self.mode_selector.set_resolutions(Some(&into_string_list(&resolutions)));
             if let Some(res_idx) = output.get_current_resolution_dropdown_index() {
-                self.dd_resolution.set_selected(u32::try_from(res_idx).expect("less resolutions"));
+                self.mode_selector
+                    .set_resolution(u32::try_from(res_idx).expect("less resolutions"));
                 let refresh_rates = output.get_refresh_rates_dropdown(res_idx);
-                self.dd_refresh.set_model(Some(&into_string_list(&refresh_rates)));
+                self.mode_selector.set_refresh_rates(Some(&into_string_list(&refresh_rates)));
                 if let Some(ref_idx) = output.get_current_refresh_rate_dropdown_index(res_idx) {
-                    self.dd_refresh
-                        .set_selected(u32::try_from(ref_idx).expect("less refresh rates"));
+                    self.mode_selector
+                        .set_refresh_rate(u32::try_from(ref_idx).expect("less refresh rates"));
                 }
             }
         }
@@ -1237,11 +1220,12 @@ impl DetailsView {
             }
 
             // Update refresh rate dropdown
-            self.dd_refresh.set_model(Some(&into_string_list(
+            self.mode_selector.set_refresh_rates(Some(&into_string_list(
                 &output.get_refresh_rates_dropdown(dd_selected),
             )));
             if let Some(idx) = output.get_current_refresh_rate_dropdown_index(dd_selected) {
-                self.dd_refresh.set_selected(u32::try_from(idx).expect("less refresh rates"));
+                self.mode_selector
+                    .set_refresh_rate(u32::try_from(idx).expect("less refresh rates"));
             }
         }
         if let Some(updated) = updated {
@@ -1257,7 +1241,7 @@ impl DetailsView {
 
             // Update current mode
             let mode = &output.modes[output.refresh_rate_dropdown_mode_index(
-                self.dd_resolution.selected() as usize,
+                self.mode_selector.get_resolution() as usize,
                 dd.selected() as usize,
             )];
             if output.mode.as_ref().is_some_and(|m| m.id != mode.id) || output.mode.is_none() {
@@ -1267,36 +1251,42 @@ impl DetailsView {
         }
     }
 
-    fn on_position_insert(&self, entry: &Entry, text: &str, position: &mut i32, axis: Axis) {
+    fn on_position_insert(
+        &self,
+        entry: &PositionEntry,
+        text: &str,
+        position: &mut i32,
+        axis: Axis,
+    ) {
         let idx = usize::try_from(*position).expect("smaller position");
-        let mut new_text = entry.text().to_string();
+        let mut new_text = entry.text(axis).to_string();
         new_text.insert_str(idx, text);
         if let Some(coord) = self.parse_coord(&new_text, axis) {
             if coord.to_string() == new_text {
-                entry.insert_text(text, position);
-            } else if coord.to_string() != entry.text() {
-                entry.set_text(&coord.to_string());
+                entry.insert_text(text, position, axis);
+            } else if coord.to_string() != entry.text(axis) {
+                entry.set_text(&coord.to_string(), axis);
             }
             self.update_position(axis, coord);
-        } else if entry.text().is_empty() {
-            entry.insert_text("0", &mut 0);
+        } else if entry.text(axis).is_empty() {
+            entry.insert_text("0", &mut 0, axis);
         }
     }
 
-    fn on_position_delete(&self, entry: &Entry, start_pos: i32, end_pos: i32, axis: Axis) {
+    fn on_position_delete(&self, entry: &PositionEntry, start_pos: i32, end_pos: i32, axis: Axis) {
         let start_idx = usize::try_from(start_pos).expect("smaller start position");
         let end_idx = usize::try_from(end_pos).expect("smaller end position");
-        let mut new_text = entry.text().to_string();
+        let mut new_text = entry.text(axis).to_string();
         new_text.replace_range(start_idx..end_idx, "");
         if let Some(coord) = self.parse_coord(&new_text, axis) {
             if coord.to_string() == new_text {
-                entry.delete_text(start_pos, end_pos);
+                entry.delete_text(start_pos, end_pos, axis);
             } else {
-                entry.set_text(&coord.to_string());
+                entry.set_text(&coord.to_string(), axis);
             }
             self.update_position(axis, coord);
         } else {
-            entry.delete_text(start_pos, end_pos);
+            entry.delete_text(start_pos, end_pos, axis);
             self.update_position(axis, 0);
         }
     }
