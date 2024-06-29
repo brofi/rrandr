@@ -1,9 +1,11 @@
 use std::cell::RefCell;
+use std::sync::OnceLock;
 
 use gdk::glib::object::ObjectExt;
 use gdk::glib::subclass::object::{ObjectImpl, ObjectImplExt};
-use gdk::glib::subclass::types::{ObjectSubclass, ObjectSubclassExt};
-use gdk::glib::{object_subclass, SignalHandlerId};
+use gdk::glib::subclass::types::{ObjectSubclass, ObjectSubclassExt, ObjectSubclassIsExt};
+use gdk::glib::subclass::{Signal, SignalClassHandlerToken};
+use gdk::glib::{object_subclass, SignalHandlerId, Value};
 use gtk::prelude::WidgetExt;
 use gtk::subclass::widget::{WidgetClassExt, WidgetImpl};
 use gtk::{glib, BinLayout, Widget};
@@ -21,10 +23,20 @@ impl ObjectSubclass for Switch {
 
     const NAME: &'static str = "RrrSwitch";
 
-    fn class_init(klass: &mut Self::Class) { klass.set_layout_manager_type::<BinLayout>(); }
+    fn class_init(klass: &mut Self::Class) {
+        klass.set_layout_manager_type::<BinLayout>();
+        klass.set_activate_signal(Self::signals()[0].signal_id());
+    }
 }
 
 impl ObjectImpl for Switch {
+    fn signals() -> &'static [Signal] {
+        static SIGNALS: OnceLock<Vec<Signal>> = OnceLock::new();
+        SIGNALS.get_or_init(|| {
+            vec![Signal::builder("activate").run_first().action().class_handler(activate).build()]
+        })
+    }
+
     fn constructed(&self) {
         self.parent_constructed();
         let obj = self.obj();
@@ -35,4 +47,17 @@ impl ObjectImpl for Switch {
     fn dispose(&self) { self.widget.unparent(); }
 }
 
-impl WidgetImpl for Switch {}
+impl WidgetImpl for Switch {
+    fn mnemonic_activate(&self, group_cycling: bool) -> bool {
+        self.widget.mnemonic_activate(group_cycling)
+    }
+}
+
+fn activate(_: &SignalClassHandlerToken, values: &[Value]) -> Option<Value> {
+    if let Some(value) = values.get(0) {
+        if let Ok(this) = value.get::<super::Switch>() {
+            this.imp().widget.activate();
+        }
+    }
+    None
+}

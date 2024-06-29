@@ -3,7 +3,7 @@ use std::cell::RefCell;
 use gdk::glib::subclass::object::{ObjectImpl, ObjectImplExt};
 use gdk::glib::subclass::types::{ObjectSubclass, ObjectSubclassExt};
 use gdk::glib::{object_subclass, SignalHandlerId};
-use gtk::prelude::{BoxExt, EntryExt, WidgetExt};
+use gtk::prelude::{BoxExt, EditableExt, EntryExt, WidgetExt};
 use gtk::subclass::widget::{WidgetClassExt, WidgetImpl};
 use gtk::{glib, BinLayout, Box, Entry, InputPurpose, Orientation, Widget};
 
@@ -52,7 +52,23 @@ impl ObjectImpl for PositionEntry {
     fn dispose(&self) { self.obj().first_child().unwrap().unparent(); }
 }
 
-impl WidgetImpl for PositionEntry {}
+impl WidgetImpl for PositionEntry {
+    fn mnemonic_activate(&self, _: bool) -> bool {
+        let (Some(pos_x_editable), Some(pos_y_editable)) =
+            (self.position_x.delegate(), self.position_y.delegate())
+        else {
+            return false;
+        };
+        if pos_x_editable.has_focus() {
+            self.position_y.grab_focus();
+        } else if pos_y_editable.has_focus() {
+            self.position_x.grab_focus();
+        } else {
+            self.position_x.grab_focus();
+        }
+        true
+    }
+}
 
 fn create_entry(tooltip: &str, placeholder: &str) -> Entry {
     let entry = Entry::builder()
