@@ -1,4 +1,4 @@
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::error::Error;
 use std::num::IntErrorKind;
@@ -53,12 +53,12 @@ pub struct View {
     outputs: Rc<RefCell<Vec<Output>>>,
     outputs_orig: Rc<RefCell<Vec<Output>>>,
     selected_output: Rc<RefCell<Option<usize>>>,
-    grab_offset: Rc<RefCell<(f64, f64)>>,
-    scale: Rc<RefCell<f64>>,
-    translate: Rc<RefCell<[i16; 2]>>,
+    grab_offset: Rc<Cell<[f64; 2]>>,
+    scale: Rc<Cell<f64>>,
+    translate: Rc<Cell<[i16; 2]>>,
     bounds: Rc<RefCell<Rect>>,
     paned: Paned,
-    last_handle_pos: Rc<RefCell<i32>>,
+    last_handle_pos: Rc<Cell<i32>>,
     drawing_area: DrawingArea,
     details: DetailsView,
     disabled: DisabledView,
@@ -105,12 +105,12 @@ impl View {
             outputs: Rc::new(RefCell::new(enabled_outputs)),
             outputs_orig: Rc::new(RefCell::new(outputs)),
             selected_output: Rc::new(RefCell::new(None)),
-            grab_offset: Rc::new(RefCell::new((0.0, 0.0))),
-            scale: Rc::new(RefCell::new(1.0)),
-            translate: Rc::new(RefCell::new([0, 0])),
+            grab_offset: Rc::new(Cell::new([0.0, 0.0])),
+            scale: Rc::new(Cell::new(1.0)),
+            translate: Rc::new(Cell::new([0, 0])),
             bounds: Rc::new(RefCell::new(Rect::default())),
             paned,
-            last_handle_pos: Rc::new(RefCell::new(0)),
+            last_handle_pos: Rc::new(Cell::new(0)),
             drawing_area,
             details: DetailsView::new(size),
             disabled,
@@ -210,16 +210,7 @@ impl View {
             @strong this => move |_d, cr, width, height| this.on_draw(cr, width, height)
         ));
         this.drawing_area.connect_resize(clone!(
-            @strong this => move |_d, width, height| {
-                Self::resize(
-                    width,
-                    height,
-                    this.size,
-                    &mut this.scale.borrow_mut(),
-                    &mut this.translate.borrow_mut(),
-                    &mut this.bounds.borrow_mut(),
-                    &mut this.outputs.borrow_mut(),
-            );}
+            @strong this => move |_d, width, height| this.resize(width, height)
         ));
 
         let gesture_drag = GestureDrag::new();
@@ -298,15 +289,7 @@ impl View {
             | Update::Disabled
             | Update::Resolution
             | Update::Position
-            | Update::Reset => Self::resize(
-                self.drawing_area.width(),
-                self.drawing_area.height(),
-                self.size,
-                &mut self.scale.borrow_mut(),
-                &mut self.translate.borrow_mut(),
-                &mut self.bounds.borrow_mut(),
-                &mut self.outputs.borrow_mut(),
-            ),
+            | Update::Reset => self.resize(self.drawing_area.width(), self.drawing_area.height()),
             _ => (),
         }
 
@@ -364,23 +347,18 @@ impl View {
     fn deselect(&self) { *self.selected_output.borrow_mut() = None; }
 
     #[allow(clippy::cast_possible_truncation)]
-    fn resize(
-        width: i32,
-        height: i32,
-        size: ScreenSizeRange,
-        scale: &mut f64,
-        translate: &mut [i16; 2],
-        bounds: &mut Rect,
-        outputs: &mut [Output],
-    ) {
+    fn resize(&self, width: i32, height: i32) {
+        let outputs = self.outputs.borrow();
+        let mut bounds = self.bounds.borrow_mut();
         // Translate to x = y = 0
-        *bounds = Self::get_bounds(outputs);
-        for output in outputs.iter_mut() {
+        *bounds = Self::get_bounds(&outputs);
+        for output in outputs.iter() {
             if let Some(mode) = output.mode() {
-                let max_x = i16::try_from(size.max_width.saturating_sub(mode.width() as u16))
+                let max_x = i16::try_from(self.size.max_width.saturating_sub(mode.width() as u16))
                     .unwrap_or(i16::MAX);
-                let max_y = i16::try_from(size.max_height.saturating_sub(mode.height() as u16))
-                    .unwrap_or(i16::MAX);
+                let max_y =
+                    i16::try_from(self.size.max_height.saturating_sub(mode.height() as u16))
+                        .unwrap_or(i16::MAX);
                 output.set_pos_x(
                     output.pos_x().saturating_sub(i32::from(bounds.x())).min(i32::from(max_x)),
                 );
@@ -389,15 +367,17 @@ impl View {
                 );
             }
         }
-        *bounds = Self::get_bounds(outputs);
-        *scale = ((f64::from(width) - (f64::from(PADDING) + SCREEN_LINE_WIDTH) * 2.)
-            / f64::from(bounds.width()))
-        .min(
-            (f64::from(height) - (f64::from(PADDING) + SCREEN_LINE_WIDTH) * 2.)
-                / f64::from(bounds.height()),
+        *bounds = Self::get_bounds(&outputs);
+        self.scale.set(
+            ((f64::from(width) - (f64::from(PADDING) + SCREEN_LINE_WIDTH) * 2.)
+                / f64::from(bounds.width()))
+            .min(
+                (f64::from(height) - (f64::from(PADDING) + SCREEN_LINE_WIDTH) * 2.)
+                    / f64::from(bounds.height()),
+            ),
         );
         let dxy = i16::try_from(PADDING).unwrap() + SCREEN_LINE_WIDTH.round() as i16;
-        *translate = [dxy, dxy];
+        self.translate.set([dxy, dxy]);
     }
 
     fn get_bounds(outputs: &[Output]) -> Rect {
@@ -406,15 +386,15 @@ impl View {
 
     fn on_draw(&self, cr: &cairo::Context, _w: i32, _h: i32) {
         let bounds = self.bounds.borrow();
-        let scale = self.scale.borrow();
-        let translate = self.translate.borrow();
+        let scale = self.scale.get();
+        let translate = self.translate.get();
         let context = DrawContext::new(cr.clone(), self.config.clone());
 
-        let screen_rect = bounds.transform(*scale, *translate);
+        let screen_rect = bounds.transform(scale, translate);
         context.draw_screen(screen_rect);
 
         for (i, o) in self.outputs.borrow().iter().enumerate() {
-            let output_rect = o.rect().transform(*scale, *translate);
+            let output_rect = o.rect().transform(scale, translate);
             context.draw_output(output_rect);
             if let Some(j) = *self.selected_output.borrow() {
                 if i == j {
@@ -433,15 +413,15 @@ impl View {
 
     fn on_drag_begin(&self, _g: &GestureDrag, start_x: f64, start_y: f64) {
         if let Some(i) = self.get_output_index_at(start_x, start_y) {
-            let scale = self.scale.borrow();
-            let translate = self.translate.borrow();
+            let scale = self.scale.get();
+            let [dx, dy] = self.translate.get().map(f64::from);
             let mut outputs = self.outputs.borrow_mut();
 
             // Grab offset to output origin in global coordinates
-            *self.grab_offset.borrow_mut() = (
-                f64::from(outputs[i].pos_x()) - (start_x - f64::from(translate[0])) / *scale,
-                f64::from(outputs[i].pos_y()) - (start_y - f64::from(translate[1])) / *scale,
-            );
+            self.grab_offset.set([
+                f64::from(outputs[i].pos_x()) - (start_x - dx) / scale,
+                f64::from(outputs[i].pos_y()) - (start_y - dy) / scale,
+            ]);
 
             // Push output to back, so it gets drawn last
             let output = outputs.remove(i);
@@ -465,9 +445,9 @@ impl View {
         if let Some(i) = *self.selected_output.borrow() {
             let outputs = self.outputs.borrow_mut();
             let output = &outputs[i];
-            let scale = *self.scale.borrow();
-            let [dx, dy] = *self.translate.borrow();
-            let grab_offset = self.grab_offset.borrow();
+            let scale = self.scale.get();
+            let [dx, dy] = self.translate.get().map(f64::from);
+            let [grab_dx, grab_dy] = self.grab_offset.get();
 
             let mut min_side = f64::MAX;
             for output in outputs.iter() {
@@ -484,10 +464,8 @@ impl View {
 
             // Calculate new position
             let start = g.start_point().unwrap();
-            let mut new_x =
-                (((start.0 + offset_x - f64::from(dx)) / scale) + grab_offset.0).round() as i16;
-            let mut new_y =
-                (((start.1 + offset_y - f64::from(dy)) / scale) + grab_offset.1).round() as i16;
+            let mut new_x = (((start.0 + offset_x - dx) / scale) + grab_dx).round() as i16;
+            let mut new_y = (((start.1 + offset_y - dy) / scale) + grab_dy).round() as i16;
 
             // Apply snap
             if snap.x == 0 {
@@ -668,7 +646,7 @@ impl View {
     }
 
     fn on_drag_end(&self, g: &GestureDrag, offset_x: f64, offset_y: f64) {
-        *self.grab_offset.borrow_mut() = (0., 0.);
+        self.grab_offset.set([0., 0.]);
         // Update cursor
         if let Some((x, y)) = g.start_point() {
             match self.get_output_index_at(x + offset_x, y + offset_y) {
@@ -680,7 +658,8 @@ impl View {
 
     fn on_motion(&self, _ecm: &EventControllerMotion, x: f64, y: f64) {
         // TODO if not is_dragging instead
-        if self.grab_offset.borrow().0 == 0. || self.grab_offset.borrow().1 == 0. {
+        let [grab_dx, grab_dy] = self.grab_offset.get();
+        if grab_dx == 0. || grab_dy == 0. {
             // Update cursor
             match self.get_output_index_at(x, y) {
                 Some(_) => self.drawing_area.set_cursor_from_name(Some("pointer")),
@@ -700,11 +679,11 @@ impl View {
         };
 
         let output = self.disabled.remove_output(id);
-        let scale = *self.scale.borrow();
-        let [dx, dy] = *self.translate.borrow();
+        let scale = self.scale.get();
+        let [dx, dy] = self.translate.get().map(f64::from);
         output.enable_at(
-            ((x - f64::from(dx)).max(0.) / scale).round() as i16,
-            ((y - f64::from(dy)).max(0.) / scale).round() as i16,
+            ((x - dx).max(0.) / scale).round() as i16,
+            ((y - dy).max(0.) / scale).round() as i16,
         );
         self.outputs.borrow_mut().push(output);
         self.select(self.outputs.borrow_mut().len() - 1);
@@ -739,13 +718,12 @@ impl View {
                 if let Some(handle) =
                     self.paned.start_child().and_then(|start| start.next_sibling())
                 {
-                    let mut last_pos = self.last_handle_pos.borrow_mut();
                     let cur_pos = self.paned.position();
                     let max_pos = self.paned.width() - handle.width();
                     self.paned.set_position(if cur_pos == max_pos {
-                        *last_pos
+                        self.last_handle_pos.get()
                     } else {
-                        *last_pos = cur_pos;
+                        self.last_handle_pos.set(cur_pos);
                         max_pos
                     });
                 }
@@ -763,13 +741,13 @@ impl View {
     }
 
     fn get_output_index_at(&self, x: f64, y: f64) -> Option<usize> {
-        let scale = self.scale.borrow();
-        let translate = self.translate.borrow();
+        let scale = self.scale.get();
+        let [dx, dy] = self.translate.get();
 
         for (i, output) in self.outputs.borrow().iter().enumerate() {
             let mut scaled_rect = output.rect();
-            scaled_rect.scale(*scale);
-            scaled_rect.translate(translate[0], translate[1]);
+            scaled_rect.scale(scale);
+            scaled_rect.translate(dx, dy);
             if scaled_rect.contains(x, y) {
                 return Some(i);
             }
@@ -820,7 +798,7 @@ struct DisabledView {
     outputs: Rc<RefCell<Vec<Output>>>,
     selected_output: Rc<RefCell<Option<usize>>>,
     output_selected_callbacks: Rc<RefCell<Vec<Rc<OutputSelectedCallback>>>>,
-    is_dragging: Rc<RefCell<bool>>,
+    is_dragging: Rc<Cell<bool>>,
     drawing_area: DrawingArea,
 }
 
@@ -831,7 +809,7 @@ impl DisabledView {
             outputs: Rc::new(RefCell::new(outputs)),
             selected_output: Rc::new(RefCell::new(None)),
             output_selected_callbacks: Rc::new(RefCell::new(Vec::new())),
-            is_dragging: Rc::new(RefCell::new(false)),
+            is_dragging: Rc::new(Cell::new(false)),
             drawing_area: DrawingArea::builder().focusable(true).content_width(150).build(),
         };
 
@@ -897,13 +875,12 @@ impl DisabledView {
     fn on_draw(&self, cr: &cairo::Context, width: i32, height: i32) {
         let outputs = self.outputs.borrow();
         let i_select = self.selected_output.borrow();
-        let is_dragging = *self.is_dragging.borrow();
         let context = DrawContext::new(cr.clone(), self.config.clone());
         let [width, height] = Self::get_output_dim(width, height, outputs.len());
         let mut j: usize = 0; // separate index for closing the gaps
         for o in outputs.iter() {
             if i_select.is_none()
-                || i_select.is_some_and(|i| !is_dragging || outputs[i].id() != o.id())
+                || i_select.is_some_and(|i| !self.is_dragging.get() || outputs[i].id() != o.id())
             {
                 let [x, y] = Self::get_output_pos(j, height);
                 let rect = [f64::from(x), f64::from(y), f64::from(width), f64::from(height)];
@@ -992,12 +969,12 @@ impl DisabledView {
 
     fn on_drag_begin(&self, _ds: &DragSource, _d: &Drag) {
         self.update_view();
-        *self.is_dragging.borrow_mut() = true;
+        self.is_dragging.set(true);
     }
 
     fn on_drag_end(&self, _ds: &DragSource, _d: &Drag, _del: bool) {
         self.update_view();
-        *self.is_dragging.borrow_mut() = false;
+        self.is_dragging.set(false);
     }
 
     fn create_drag_icon(
