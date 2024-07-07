@@ -40,6 +40,10 @@ impl Output {
             .build()
     }
 
+    pub fn modes_vec(&self) -> Vec<Mode> {
+        self.modes().iter().map(|v| v.get::<Mode>().unwrap()).collect::<Vec<_>>()
+    }
+
     pub fn enable(&self) { self.enable_at(-1, -1); }
 
     pub fn enable_at(&self, x: i16, y: i16) {
@@ -90,9 +94,8 @@ impl Output {
 
     pub fn resolution_dropdown_mode_index(&self, index: usize) -> usize {
         let res = self.get_resolutions()[index];
-        self.modes()
+        self.modes_vec()
             .iter()
-            .map(|v| v.get::<Mode>().unwrap())
             .position(|m| m.width() == u32::from(res[0]) && m.height() == u32::from(res[1]))
             .unwrap()
     }
@@ -100,9 +103,8 @@ impl Output {
     pub fn refresh_rate_dropdown_mode_index(&self, resolution_index: usize, index: usize) -> usize {
         let res = self.get_resolutions()[resolution_index];
         let refresh = self.get_refresh_rates(resolution_index)[index];
-        self.modes()
+        self.modes_vec()
             .iter()
-            .map(|v| v.get::<Mode>().unwrap())
             .position(|m| {
                 m.width() == u32::from(res[0])
                     && m.height() == u32::from(res[1])
@@ -134,7 +136,7 @@ impl Output {
 
     fn get_resolutions(&self) -> Vec<Resolution> {
         let mut dd_list = Vec::new();
-        for mode in self.modes().iter().map(|v| v.get::<Mode>().unwrap()) {
+        for mode in self.modes_vec() {
             let r = [mode.width() as u16, mode.height() as u16];
             if !dd_list.contains(&r) {
                 dd_list.push(r);
@@ -145,9 +147,8 @@ impl Output {
 
     fn get_refresh_rates(&self, resolution_index: usize) -> Vec<f64> {
         let res = self.get_resolutions()[resolution_index];
-        self.modes()
+        self.modes_vec()
             .iter()
-            .map(|v| v.get::<Mode>().unwrap())
             .filter(|m| m.width() == u32::from(res[0]) && m.height() == u32::from(res[1]))
             .map(|m| m.refresh())
             .collect::<Vec<f64>>()
@@ -172,7 +173,3 @@ impl Output {
         Rect::default()
     }
 }
-
-// impl PartialEq for Output {
-//     fn eq(&self, other: &Self) -> bool { self.id() == other.id() }
-// }

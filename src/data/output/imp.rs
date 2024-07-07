@@ -59,7 +59,7 @@ impl Default for Output {
 impl ObjectSubclass for Output {
     type Type = super::Output;
 
-    const NAME: &'static str = "OutputData";
+    const NAME: &'static str = "Output";
 }
 
 #[derived_properties]

@@ -1,7 +1,6 @@
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::error::Error;
-use std::num::IntErrorKind;
 use std::rc::Rc;
 
 use gdk::glib::{clone, Bytes, Propagation, Type, Value};
@@ -12,22 +11,16 @@ use gtk::prelude::*;
 use gtk::{
     AboutDialog, Align, Button, DragSource, DrawingArea, DropControllerMotion, DropTarget,
     EventControllerKey, EventControllerMotion, FlowBox, GestureClick, GestureDrag, License,
-    Orientation, Paned, SelectionMode, Separator, StringList,
+    Orientation, Paned, SelectionMode, Separator,
 };
 use x11rb::protocol::randr::Output as OutputId;
 
 use crate::config::Config;
-use crate::data::mode::Mode;
 use crate::draw::{DrawContext, SCREEN_LINE_WIDTH};
 use crate::math::{Point, Rect};
-use crate::widget::checkbutton::CheckButton;
-use crate::widget::details_child::DetailsChild;
-use crate::widget::mode_selector::ModeSelector;
-use crate::widget::position_entry::PositionEntry;
-use crate::widget::switch::Switch;
+use crate::widget::details_box::{DetailsBox, Update};
 use crate::{Output, ScreenSizeRange};
 
-type OutputUpdatedCallback = dyn Fn(&Output, &Update);
 type OutputSelectedCallback = dyn Fn(Option<&Output>);
 type ApplyCallback = dyn Fn(Vec<Output>);
 
@@ -60,7 +53,7 @@ pub struct View {
     paned: Paned,
     last_handle_pos: Rc<Cell<i32>>,
     drawing_area: DrawingArea,
-    details: DetailsView,
+    details: DetailsBox,
     disabled: DisabledView,
     apply_callback: Rc<RefCell<Option<Rc<ApplyCallback>>>>,
 }
@@ -112,7 +105,7 @@ impl View {
             paned,
             last_handle_pos: Rc::new(Cell::new(0)),
             drawing_area,
-            details: DetailsView::new(size),
+            details: DetailsBox::new(size.max_width, size.max_height),
             disabled,
             apply_callback: Rc::new(RefCell::new(None)),
         };
@@ -128,7 +121,7 @@ impl View {
             .spacing(SPACING.into())
             .build();
 
-        box_bottom.append(&this.details.root);
+        box_bottom.append(&this.details);
 
         // Use FlowBox like a horizontal Box to get the same style (especially padding)
         // on its children as the details view children.
@@ -240,8 +233,8 @@ impl View {
         drop_target.connect_motion(Self::on_drop_motion);
         this.drawing_area.add_controller(drop_target);
 
-        this.details.add_output_updated_callback(clone!(
-            @strong this => move |output, update| this.update(output, update)
+        this.details.connect_output_changed(clone!
+            (@strong this => move |_details, output, update| this.update(output, update)
         ));
 
         this.disabled.add_output_selected_callback(clone!(
@@ -257,7 +250,7 @@ impl View {
         outputs
     }
 
-    fn update(&self, output: &Output, update: &Update) {
+    fn update(&self, output: &Output, update: Update) {
         match update {
             Update::Enabled => _ = self.enable_output(output.id()),
             Update::Disabled => _ = self.disable_output(output.id()),
@@ -274,7 +267,7 @@ impl View {
         self.update_view(update);
     }
 
-    fn update_view(&self, update: &Update) {
+    fn update_view(&self, update: Update) {
         // Mind the gap
         match update {
             Update::Enabled | Update::Disabled | Update::Resolution => {
@@ -489,7 +482,7 @@ impl View {
                 outputs[i].set_pos_y(new_y as i32);
             }
         }
-        self.update_view(&Update::Position);
+        self.update_view(Update::Position);
         self.update_details();
     }
 
@@ -687,7 +680,7 @@ impl View {
         );
         self.outputs.borrow_mut().push(output);
         self.select(self.outputs.borrow_mut().len() - 1);
-        self.update_view(&Update::Enabled);
+        self.update_view(Update::Enabled);
 
         true
     }
@@ -705,12 +698,12 @@ impl View {
             Key::Delete => {
                 if let Some(output_id) = self.get_selected_output() {
                     self.details.update(Some(&self.disable_output(output_id)));
-                    self.update_view(&Update::Disabled);
+                    self.update_view(Update::Disabled);
                     return Propagation::Stop;
                 }
                 if let Some(output_id) = self.disabled.get_selected_output() {
                     self.details.update(Some(&self.enable_output(output_id)));
-                    self.update_view(&Update::Enabled);
+                    self.update_view(Update::Enabled);
                     return Propagation::Stop;
                 }
             }
@@ -783,7 +776,7 @@ impl View {
 
         self.deselect();
         self.disabled.deselect();
-        self.update_view(&Update::Reset);
+        self.update_view(Update::Reset);
         self.details.update(None);
     }
 
@@ -1038,307 +1031,4 @@ impl DisabledView {
     fn add_output_selected_callback(&mut self, callback: impl Fn(Option<&Output>) + 'static) {
         self.output_selected_callbacks.borrow_mut().push(Rc::new(callback));
     }
-}
-
-enum Update {
-    Enabled,
-    Disabled,
-    Resolution,
-    Refresh,
-    Position,
-    Primary,
-    Reset,
-}
-
-#[derive(Clone)]
-struct DetailsView {
-    output: Rc<RefCell<Option<Output>>>,
-    output_updated_callbacks: Rc<RefCell<Vec<Rc<OutputUpdatedCallback>>>>,
-    size: ScreenSizeRange,
-    root: FlowBox,
-    sw_enabled: Switch,
-    mode_selector: ModeSelector,
-    position_entry: PositionEntry,
-    cb_primary: CheckButton,
-}
-
-impl DetailsView {
-    fn new(size: ScreenSizeRange) -> Self {
-        let root = FlowBox::builder()
-            .row_spacing(SPACING.into())
-            .column_spacing(SPACING.into())
-            .orientation(Orientation::Horizontal)
-            .selection_mode(SelectionMode::None)
-            .max_children_per_line(u32::MAX)
-            .halign(Align::Fill)
-            .hexpand(true)
-            .build();
-
-        let sw_enabled = Switch::new("Enable/Disable");
-        root.append(&DetailsChild::new("Enabled", &sw_enabled));
-
-        let mode_selector = ModeSelector::new();
-        root.append(&DetailsChild::new("Mode", &mode_selector));
-
-        let position_entry = PositionEntry::new();
-        root.append(&DetailsChild::new("Position", &position_entry));
-
-        let cb_primary = CheckButton::new("Set as primary");
-        root.append(&DetailsChild::new("Primary", &cb_primary));
-
-        let this = Self {
-            output: Rc::new(RefCell::new(None)),
-            output_updated_callbacks: Rc::new(RefCell::new(Vec::new())),
-            size,
-            root,
-            sw_enabled,
-            mode_selector,
-            position_entry,
-            cb_primary,
-        };
-
-        this.sw_enabled.connect_active_notify(clone!(
-            @strong this => move |sw| this.on_enabled_switched(sw)
-        ));
-        this.mode_selector.connect_resolution_selected(clone!(
-            @strong this => move |dd| this.on_resolution_selected(dd)
-        ));
-        this.mode_selector.connect_refresh_rate_selected(clone!(
-            @strong this => move |dd| this.on_refresh_rate_selected(dd)
-        ));
-        this.position_entry.connect_insert_x(clone!(
-            @strong this => move |entry, text, position| this.on_position_insert(entry, text, position, Axis::X)
-        ));
-        this.position_entry.connect_delete_x(clone!(
-            @strong this => move |entry, start, end| this.on_position_delete(entry, start, end, Axis::X)
-        ));
-        this.position_entry.connect_insert_y(clone!(
-            @strong this => move |entry, text, position| this.on_position_insert(entry, text, position, Axis::Y)
-        ));
-        this.position_entry.connect_delete_y(clone!(
-            @strong this => move |entry, start, end| this.on_position_delete(entry, start, end, Axis::Y)
-        ));
-        this.cb_primary.connect_active_notify(clone!(
-            @strong this => move |cb| this.on_primary_checked(cb)
-        ));
-
-        this
-    }
-
-    fn update(&self, output: Option<&Output>) {
-        if let Some(output) = output {
-            self.sw_enabled.set_active(output.enabled());
-            self.cb_primary.set_active(output.primary());
-
-            self.position_entry.set_x(&output.pos_x().to_string());
-            self.position_entry.set_y(&output.pos_y().to_string());
-
-            let resolutions = output.get_resolutions_dropdown();
-            self.mode_selector.set_resolutions(Some(&into_string_list(&resolutions)));
-            if let Some(res_idx) = output.get_current_resolution_dropdown_index() {
-                self.mode_selector
-                    .set_resolution(u32::try_from(res_idx).expect("less resolutions"));
-                let refresh_rates = output.get_refresh_rates_dropdown(res_idx);
-                self.mode_selector.set_refresh_rates(Some(&into_string_list(&refresh_rates)));
-                if let Some(ref_idx) = output.get_current_refresh_rate_dropdown_index(res_idx) {
-                    self.mode_selector
-                        .set_refresh_rate(u32::try_from(ref_idx).expect("less refresh rates"));
-                }
-            }
-        }
-        *self.output.borrow_mut() = output.cloned();
-        self.update_visibility();
-    }
-
-    fn update_visibility(&self) {
-        let mut child = self.root.first_child();
-        while let Some(c) = child {
-            let visible = self
-                .output
-                .borrow()
-                .as_ref()
-                .is_some_and(|o| o.enabled() || c.widget_name() == "fbc_enabled");
-            c.set_visible(visible);
-            child = c.next_sibling();
-        }
-    }
-
-    fn on_enabled_switched(&self, sw: &gtk::Switch) {
-        let mut updated = None;
-        let mut update = None;
-        if let Some(output) = self.output.borrow_mut().as_mut() {
-            let active = sw.is_active();
-            // Update output
-            if active {
-                output.enable();
-                update = Some(Update::Enabled);
-            } else {
-                output.disable();
-                update = Some(Update::Disabled);
-            }
-            updated = Some(output.clone());
-        }
-        if let (Some(updated), Some(update)) = (updated, update) {
-            self.notify_updated(&updated, &update);
-        }
-        self.update_visibility();
-    }
-
-    fn on_resolution_selected(&self, dd: &gtk::DropDown) {
-        let mut updated = None;
-        if let Some(output) = self.output.borrow_mut().as_mut() {
-            if !output.enabled() {
-                return;
-            }
-
-            let dd_selected = dd.selected() as usize;
-
-            // Update current mode
-            let mode = output.modes()[output.resolution_dropdown_mode_index(dd_selected)]
-                .get::<Mode>()
-                .unwrap();
-            if output.mode().is_some_and(|m| m.id() != mode.id()) || output.mode().is_none() {
-                output.set_mode(Some(mode));
-                updated = Some(output.clone());
-            }
-
-            // Update refresh rate dropdown
-            self.mode_selector.set_refresh_rates(Some(&into_string_list(
-                &output.get_refresh_rates_dropdown(dd_selected),
-            )));
-            if let Some(idx) = output.get_current_refresh_rate_dropdown_index(dd_selected) {
-                self.mode_selector
-                    .set_refresh_rate(u32::try_from(idx).expect("less refresh rates"));
-            }
-        }
-        if let Some(updated) = updated {
-            self.notify_updated(&updated, &Update::Resolution);
-        }
-    }
-
-    fn on_refresh_rate_selected(&self, dd: &gtk::DropDown) {
-        if let Some(output) = self.output.borrow_mut().as_mut() {
-            if !output.enabled() {
-                return;
-            }
-
-            // Update current mode
-            let mode = output.modes()[output.refresh_rate_dropdown_mode_index(
-                self.mode_selector.get_resolution() as usize,
-                dd.selected() as usize,
-            )]
-            .get::<Mode>()
-            .unwrap();
-            if output.mode().is_some_and(|m| m.id() != mode.id()) || output.mode().is_none() {
-                output.set_mode(Some(mode));
-                self.notify_updated(output, &Update::Refresh);
-            }
-        }
-    }
-
-    fn on_position_insert(
-        &self,
-        entry: &PositionEntry,
-        text: &str,
-        position: &mut i32,
-        axis: Axis,
-    ) {
-        let idx = usize::try_from(*position).expect("smaller position");
-        let mut new_text = entry.text(axis).to_string();
-        new_text.insert_str(idx, text);
-        if let Some(coord) = self.parse_coord(&new_text, axis) {
-            if coord.to_string() == new_text {
-                entry.insert_text(text, position, axis);
-            } else if coord.to_string() != entry.text(axis) {
-                entry.set_text(&coord.to_string(), axis);
-            }
-            self.update_position(axis, coord);
-        } else if entry.text(axis).is_empty() {
-            entry.insert_text("0", &mut 0, axis);
-        }
-    }
-
-    fn on_position_delete(&self, entry: &PositionEntry, start_pos: i32, end_pos: i32, axis: Axis) {
-        let start_idx = usize::try_from(start_pos).expect("smaller start position");
-        let end_idx = usize::try_from(end_pos).expect("smaller end position");
-        let mut new_text = entry.text(axis).to_string();
-        new_text.replace_range(start_idx..end_idx, "");
-        if let Some(coord) = self.parse_coord(&new_text, axis) {
-            if coord.to_string() == new_text {
-                entry.delete_text(start_pos, end_pos, axis);
-            } else {
-                entry.set_text(&coord.to_string(), axis);
-            }
-            self.update_position(axis, coord);
-        } else {
-            entry.delete_text(start_pos, end_pos, axis);
-            self.update_position(axis, 0);
-        }
-    }
-
-    fn parse_coord(&self, text: &str, axis: Axis) -> Option<i16> {
-        if let Some(output) = self.output.borrow().as_ref() {
-            if let Some(mode) = output.mode() {
-                let max = match axis {
-                    Axis::X => {
-                        i16::try_from(self.size.max_width.saturating_sub(mode.width() as u16))
-                            .unwrap_or(i16::MAX)
-                    }
-                    Axis::Y => {
-                        i16::try_from(self.size.max_height.saturating_sub(mode.height() as u16))
-                            .unwrap_or(i16::MAX)
-                    }
-                };
-                return match text
-                    .chars()
-                    .filter(char::is_ascii_digit)
-                    .collect::<String>()
-                    .parse::<i16>()
-                {
-                    Ok(c) => Some(c.min(max)),
-                    Err(e) => match e.kind() {
-                        IntErrorKind::PosOverflow => Some(max),
-                        _ => None,
-                    },
-                };
-            }
-        }
-        None
-    }
-
-    fn update_position(&self, axis: Axis, coord: i16) {
-        if let Some(output) = self.output.borrow_mut().as_mut() {
-            let (new_x, new_y) = match axis {
-                Axis::X => (coord, output.pos_y() as i16),
-                Axis::Y => (output.pos_x() as i16, coord),
-            };
-            if new_x != output.pos_x() as i16 || new_y != output.pos_y() as i16 {
-                output.set_pos_x(new_x as i32);
-                output.set_pos_y(new_y as i32);
-                self.notify_updated(output, &Update::Position);
-            }
-        }
-    }
-
-    fn on_primary_checked(&self, cb: &gtk::CheckButton) {
-        if let Some(output) = self.output.borrow_mut().as_mut() {
-            output.set_primary(output.enabled() && cb.is_active());
-            self.notify_updated(output, &Update::Primary);
-        }
-    }
-
-    fn notify_updated(&self, output: &Output, update: &Update) {
-        for callback in self.output_updated_callbacks.borrow().iter() {
-            callback(output, update);
-        }
-    }
-
-    fn add_output_updated_callback(&mut self, callback: impl Fn(&Output, &Update) + 'static) {
-        self.output_updated_callbacks.borrow_mut().push(Rc::new(callback));
-    }
-}
-
-fn into_string_list(list: &[String]) -> StringList {
-    let list = list.iter().map(String::as_str).collect::<Vec<&str>>();
-    StringList::new(list.as_slice())
 }

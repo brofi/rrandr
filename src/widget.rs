@@ -1,4 +1,5 @@
 pub mod checkbutton;
+pub mod details_box;
 pub mod details_child;
 pub mod mode_selector;
 pub mod position_entry;
