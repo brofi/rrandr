@@ -17,6 +17,7 @@ use gtk::{
 use x11rb::protocol::randr::Output as OutputId;
 
 use crate::config::Config;
+use crate::data::mode::Mode;
 use crate::draw::{DrawContext, SCREEN_LINE_WIDTH};
 use crate::math::{Point, Rect};
 use crate::widget::checkbutton::CheckButton;
@@ -81,9 +82,9 @@ impl View {
             .build();
 
         let enabled_outputs =
-            outputs.iter().filter(|&n| n.enabled).map(Output::clone).collect::<Vec<_>>();
+            outputs.iter().filter(|&n| n.enabled()).map(Output::clone).collect::<Vec<_>>();
         let disabled_outputs =
-            outputs.iter().filter(|&n| !n.enabled).map(Output::clone).collect::<Vec<_>>();
+            outputs.iter().filter(|&n| !n.enabled()).map(Output::clone).collect::<Vec<_>>();
 
         let drawing_area = DrawingArea::builder().focusable(true).build();
         let disabled = DisabledView::new(config.clone(), disabled_outputs);
@@ -267,14 +268,14 @@ impl View {
 
     fn update(&self, output: &Output, update: &Update) {
         match update {
-            Update::Enabled => _ = self.enable_output(output.id),
-            Update::Disabled => _ = self.disable_output(output.id),
+            Update::Enabled => _ = self.enable_output(output.id()),
+            Update::Disabled => _ = self.disable_output(output.id()),
             _ => {
                 for o in self.outputs.borrow_mut().iter_mut() {
                     if o == output {
                         *o = output.clone();
-                    } else if output.primary {
-                        o.primary = false;
+                    } else if output.primary() {
+                        o.set_primary(false);
                     }
                 }
             }
@@ -335,7 +336,7 @@ impl View {
 
     fn enable_output(&self, output_id: OutputId) -> Output {
         let mut outputs = self.outputs.borrow_mut();
-        let mut enabled_output = self.disabled.remove_output(output_id);
+        let enabled_output = self.disabled.remove_output(output_id);
         enabled_output.enable();
         outputs.push(enabled_output.clone());
         self.select(outputs.len() - 1);
@@ -346,9 +347,9 @@ impl View {
         let mut outputs = self.outputs.borrow_mut();
         let index = outputs
             .iter()
-            .position(|o| output_id == o.id)
+            .position(|o| output_id == o.id())
             .unwrap_or_else(|| panic!("enabled outputs contains output {output_id}"));
-        let mut disabled_output = outputs.remove(index);
+        let disabled_output = outputs.remove(index);
         disabled_output.disable();
         self.disabled.add_output(disabled_output.clone());
         self.deselect();
@@ -375,13 +376,17 @@ impl View {
         // Translate to x = y = 0
         *bounds = Self::get_bounds(outputs);
         for output in outputs.iter_mut() {
-            if let (Some(pos), Some(mode)) = (output.pos.as_mut(), output.mode.as_ref()) {
-                let max_x =
-                    i16::try_from(size.max_width.saturating_sub(mode.width)).unwrap_or(i16::MAX);
-                let max_y =
-                    i16::try_from(size.max_height.saturating_sub(mode.height)).unwrap_or(i16::MAX);
-                pos.0 = pos.0.saturating_sub(bounds.x()).min(max_x);
-                pos.1 = pos.1.saturating_sub(bounds.y()).min(max_y);
+            if let Some(mode) = output.mode() {
+                let max_x = i16::try_from(size.max_width.saturating_sub(mode.width() as u16))
+                    .unwrap_or(i16::MAX);
+                let max_y = i16::try_from(size.max_height.saturating_sub(mode.height() as u16))
+                    .unwrap_or(i16::MAX);
+                output.set_pos_x(
+                    output.pos_x().saturating_sub(i32::from(bounds.x())).min(i32::from(max_x)),
+                );
+                output.set_pos_y(
+                    output.pos_y().saturating_sub(i32::from(bounds.y())).min(i32::from(max_y)),
+                );
             }
         }
         *bounds = Self::get_bounds(outputs);
@@ -416,9 +421,9 @@ impl View {
                     context.draw_selected_output(output_rect);
                 }
             }
-            let mut name = o.name.clone();
-            let mut product_name = o.product_name.clone();
-            if o.primary {
+            let mut name = o.name();
+            let mut product_name = o.product_name();
+            if o.primary() {
                 name = format!("[{name}]");
                 product_name = product_name.map(|s| format!("[{s}]"));
             }
@@ -433,10 +438,9 @@ impl View {
             let mut outputs = self.outputs.borrow_mut();
 
             // Grab offset to output origin in global coordinates
-            let pos = outputs[i].pos.expect("dragged output has position");
             *self.grab_offset.borrow_mut() = (
-                f64::from(pos.0) - (start_x - f64::from(translate[0])) / *scale,
-                f64::from(pos.1) - (start_y - f64::from(translate[1])) / *scale,
+                f64::from(outputs[i].pos_x()) - (start_x - f64::from(translate[0])) / *scale,
+                f64::from(outputs[i].pos_y()) - (start_y - f64::from(translate[1])) / *scale,
             );
 
             // Push output to back, so it gets drawn last
@@ -459,7 +463,7 @@ impl View {
     #[allow(clippy::cast_possible_truncation)]
     fn on_drag_update(&self, g: &GestureDrag, offset_x: f64, offset_y: f64) {
         if let Some(i) = *self.selected_output.borrow() {
-            let mut outputs = self.outputs.borrow_mut();
+            let outputs = self.outputs.borrow_mut();
             let output = &outputs[i];
             let scale = *self.scale.borrow();
             let [dx, dy] = *self.translate.borrow();
@@ -467,9 +471,9 @@ impl View {
 
             let mut min_side = f64::MAX;
             for output in outputs.iter() {
-                let mode = output.mode.as_ref().expect("dragged output has mode");
-                min_side = min_side.min(f64::from(mode.height));
-                min_side = min_side.min(f64::from(mode.width));
+                let mode = output.mode().expect("dragged output has mode");
+                min_side = min_side.min(f64::from(mode.height()));
+                min_side = min_side.min(f64::from(mode.width()));
             }
             // Snap to all snap values should be possible on all scaled sizes.
             // Give some leeway so it doesn't have to be pixel perfect.
@@ -486,25 +490,25 @@ impl View {
                 (((start.1 + offset_y - f64::from(dy)) / scale) + grab_offset.1).round() as i16;
 
             // Apply snap
-            let pos = output.pos.expect("dragged output has position");
             if snap.x == 0 {
-                if f64::from((new_x - pos.0).abs()) < snap_strength {
-                    new_x = pos.0;
+                if f64::from((new_x - output.pos_x() as i16).abs()) < snap_strength {
+                    new_x = output.pos_x() as i16;
                 }
             } else if f64::from(snap.x.abs()) < snap_strength {
-                new_x = pos.0.saturating_add(i16::try_from(snap.x).unwrap());
+                new_x = (output.pos_x() as i16).saturating_add(i16::try_from(snap.x).unwrap());
             }
             if snap.y == 0 {
-                if f64::from((new_y - pos.1).abs()) < snap_strength {
-                    new_y = pos.1;
+                if f64::from((new_y - output.pos_y() as i16).abs()) < snap_strength {
+                    new_y = output.pos_y() as i16;
                 }
             } else if f64::from(snap.y.abs()) < snap_strength {
-                new_y = pos.1.saturating_add(i16::try_from(snap.y).unwrap());
+                new_y = (output.pos_y() as i16).saturating_add(i16::try_from(snap.y).unwrap());
             }
 
             // Update new position
-            if new_x != pos.0 || new_y != pos.1 {
-                outputs[i].pos = Some((new_x, new_y));
+            if new_x != output.pos_x() as i16 || new_y != output.pos_y() as i16 {
+                outputs[i].set_pos_x(new_x as i32);
+                outputs[i].set_pos_y(new_y as i32);
             }
         }
         self.update_view(&Update::Position);
@@ -569,7 +573,7 @@ impl View {
                 let d_len = (d[0].powi(2) + d[1].powi(2)).sqrt();
                 e = [d[0] / d_len, d[1] / d_len];
             }
-            data.insert(output.id, (r, e));
+            data.insert(output.id(), (r, e));
         }
 
         let step = 50.;
@@ -578,9 +582,9 @@ impl View {
         loop {
             for i in 0..outputs.len() {
                 // Current position
-                let mut r = data[&outputs[i].id].0.clone();
+                let mut r = data[&outputs[i].id()].0.clone();
                 // Unit direction
-                let e = data[&outputs[i].id].1;
+                let e = data[&outputs[i].id()].1;
                 // Signs
                 let sx = e[0].signum();
                 let sy = e[1].signum();
@@ -610,10 +614,10 @@ impl View {
 
                 // Check if move has caused an overlap with other rects
                 for other in outputs.iter() {
-                    if other.id == outputs[i].id {
+                    if other.id() == outputs[i].id() {
                         continue;
                     }
-                    if let Some(intersect) = r.intersect(&data[&other.id].0) {
+                    if let Some(intersect) = r.intersect(&data[&other.id()].0) {
                         let mut dx = -sx * f64::from(intersect.width());
                         let mut dy = -sy * f64::from(intersect.height());
 
@@ -640,11 +644,11 @@ impl View {
                     }
                 }
                 // Check if rect has moved
-                let old_r = &data[&outputs[i].id].0;
+                let old_r = &data[&outputs[i].id()].0;
                 if r.x() != old_r.x() || r.y() != old_r.y() {
                     moved.push(true);
                 }
-                data.insert(outputs[i].id, (r, e));
+                data.insert(outputs[i].id(), (r, e));
             }
             if !moved.iter().any(|&b| b) {
                 // No more moves to make
@@ -658,9 +662,8 @@ impl View {
             }
         }
         for output in outputs {
-            let pos = output.pos.as_mut().unwrap();
-            pos.0 = data[&output.id].0.x();
-            pos.1 = data[&output.id].0.y();
+            output.set_pos_x(data[&output.id()].0.x() as i32);
+            output.set_pos_y(data[&output.id()].0.y() as i32);
         }
     }
 
@@ -696,7 +699,7 @@ impl View {
             return false;
         };
 
-        let mut output = self.disabled.remove_output(id);
+        let output = self.disabled.remove_output(id);
         let scale = *self.scale.borrow();
         let [dx, dy] = *self.translate.borrow();
         output.enable_at(
@@ -754,7 +757,7 @@ impl View {
 
     fn get_selected_output(&self) -> Option<OutputId> {
         if let Some(i) = *self.selected_output.borrow() {
-            return Some(self.outputs.borrow()[i].id);
+            return Some(self.outputs.borrow()[i].id());
         }
         None
     }
@@ -787,14 +790,14 @@ impl View {
             .outputs_orig
             .borrow()
             .iter()
-            .filter(|&n| n.enabled)
+            .filter(|&n| n.enabled())
             .map(Output::clone)
             .collect::<Vec<_>>();
         let disabled_outputs = self
             .outputs_orig
             .borrow()
             .iter()
-            .filter(|&n| !n.enabled)
+            .filter(|&n| !n.enabled())
             .map(Output::clone)
             .collect::<Vec<_>>();
         *self.outputs.borrow_mut() = enabled_outputs;
@@ -881,7 +884,7 @@ impl DisabledView {
         let mut outputs = self.outputs.borrow_mut();
         let index = outputs
             .iter()
-            .position(|output| output_id == output.id)
+            .position(|output| output_id == output.id())
             .unwrap_or_else(|| panic!("disabled outputs contains output {output_id}"));
         self.deselect();
         outputs.remove(index)
@@ -899,14 +902,15 @@ impl DisabledView {
         let [width, height] = Self::get_output_dim(width, height, outputs.len());
         let mut j: usize = 0; // separate index for closing the gaps
         for o in outputs.iter() {
-            if i_select.is_none() || i_select.is_some_and(|i| !is_dragging || outputs[i].id != o.id)
+            if i_select.is_none()
+                || i_select.is_some_and(|i| !is_dragging || outputs[i].id() != o.id())
             {
                 let [x, y] = Self::get_output_pos(j, height);
                 let rect = [f64::from(x), f64::from(y), f64::from(width), f64::from(height)];
                 context.draw_output(rect);
-                context.draw_output_label(rect, &o.name, o.product_name.as_deref());
+                context.draw_output_label(rect, &o.name(), o.product_name().as_deref());
                 if let Some(i) = *i_select {
-                    if outputs[i].id == o.id {
+                    if outputs[i].id() == o.id() {
                         context.draw_selected_output(rect);
                     }
                 }
@@ -975,13 +979,13 @@ impl DisabledView {
                 &self.config,
                 width,
                 height,
-                &outputs[i].name,
-                outputs[i].product_name.as_deref(),
+                &outputs[i].name(),
+                outputs[i].product_name().as_deref(),
             ) {
                 let [_, oy] = Self::get_output_pos(i, height);
                 ds.set_icon(Some(&icon), x as i32, (y - f64::from(oy)) as i32);
             }
-            return Some(ContentProvider::for_value(&Value::from(outputs[i].id)));
+            return Some(ContentProvider::for_value(&Value::from(outputs[i].id())));
         }
         None
     }
@@ -1043,7 +1047,7 @@ impl DisabledView {
 
     fn get_selected_output(&self) -> Option<OutputId> {
         if let Some(i) = *self.selected_output.borrow() {
-            return Some(self.outputs.borrow()[i].id);
+            return Some(self.outputs.borrow()[i].id());
         }
         None
     }
@@ -1146,12 +1150,12 @@ impl DetailsView {
 
     fn update(&self, output: Option<&Output>) {
         if let Some(output) = output {
-            self.sw_enabled.set_active(output.enabled);
-            self.cb_primary.set_active(output.primary);
-            if let Some(pos) = output.pos {
-                self.position_entry.set_x(&pos.0.to_string());
-                self.position_entry.set_y(&pos.1.to_string());
-            }
+            self.sw_enabled.set_active(output.enabled());
+            self.cb_primary.set_active(output.primary());
+
+            self.position_entry.set_x(&output.pos_x().to_string());
+            self.position_entry.set_y(&output.pos_y().to_string());
+
             let resolutions = output.get_resolutions_dropdown();
             self.mode_selector.set_resolutions(Some(&into_string_list(&resolutions)));
             if let Some(res_idx) = output.get_current_resolution_dropdown_index() {
@@ -1176,7 +1180,7 @@ impl DetailsView {
                 .output
                 .borrow()
                 .as_ref()
-                .is_some_and(|o| o.enabled || c.widget_name() == "fbc_enabled");
+                .is_some_and(|o| o.enabled() || c.widget_name() == "fbc_enabled");
             c.set_visible(visible);
             child = c.next_sibling();
         }
@@ -1206,16 +1210,18 @@ impl DetailsView {
     fn on_resolution_selected(&self, dd: &gtk::DropDown) {
         let mut updated = None;
         if let Some(output) = self.output.borrow_mut().as_mut() {
-            if !output.enabled {
+            if !output.enabled() {
                 return;
             }
 
             let dd_selected = dd.selected() as usize;
 
             // Update current mode
-            let mode = &output.modes[output.resolution_dropdown_mode_index(dd_selected)];
-            if output.mode.as_ref().is_some_and(|m| m.id != mode.id) || output.mode.is_none() {
-                output.mode = Some(mode.clone());
+            let mode = output.modes()[output.resolution_dropdown_mode_index(dd_selected)]
+                .get::<Mode>()
+                .unwrap();
+            if output.mode().is_some_and(|m| m.id() != mode.id()) || output.mode().is_none() {
+                output.set_mode(Some(mode));
                 updated = Some(output.clone());
             }
 
@@ -1235,17 +1241,19 @@ impl DetailsView {
 
     fn on_refresh_rate_selected(&self, dd: &gtk::DropDown) {
         if let Some(output) = self.output.borrow_mut().as_mut() {
-            if !output.enabled {
+            if !output.enabled() {
                 return;
             }
 
             // Update current mode
-            let mode = &output.modes[output.refresh_rate_dropdown_mode_index(
+            let mode = output.modes()[output.refresh_rate_dropdown_mode_index(
                 self.mode_selector.get_resolution() as usize,
                 dd.selected() as usize,
-            )];
-            if output.mode.as_ref().is_some_and(|m| m.id != mode.id) || output.mode.is_none() {
-                output.mode = Some(mode.clone());
+            )]
+            .get::<Mode>()
+            .unwrap();
+            if output.mode().is_some_and(|m| m.id() != mode.id()) || output.mode().is_none() {
+                output.set_mode(Some(mode));
                 self.notify_updated(output, &Update::Refresh);
             }
         }
@@ -1293,12 +1301,16 @@ impl DetailsView {
 
     fn parse_coord(&self, text: &str, axis: Axis) -> Option<i16> {
         if let Some(output) = self.output.borrow().as_ref() {
-            if let Some(mode) = output.mode.as_ref() {
+            if let Some(mode) = output.mode() {
                 let max = match axis {
-                    Axis::X => i16::try_from(self.size.max_width.saturating_sub(mode.width))
-                        .unwrap_or(i16::MAX),
-                    Axis::Y => i16::try_from(self.size.max_height.saturating_sub(mode.height))
-                        .unwrap_or(i16::MAX),
+                    Axis::X => {
+                        i16::try_from(self.size.max_width.saturating_sub(mode.width() as u16))
+                            .unwrap_or(i16::MAX)
+                    }
+                    Axis::Y => {
+                        i16::try_from(self.size.max_height.saturating_sub(mode.height() as u16))
+                            .unwrap_or(i16::MAX)
+                    }
                 };
                 return match text
                     .chars()
@@ -1319,22 +1331,21 @@ impl DetailsView {
 
     fn update_position(&self, axis: Axis, coord: i16) {
         if let Some(output) = self.output.borrow_mut().as_mut() {
-            if let Some(pos) = output.pos {
-                let new_pos = match axis {
-                    Axis::X => (coord, pos.1),
-                    Axis::Y => (pos.0, coord),
-                };
-                if new_pos != pos {
-                    output.pos = Some(new_pos);
-                    self.notify_updated(output, &Update::Position);
-                }
+            let (new_x, new_y) = match axis {
+                Axis::X => (coord, output.pos_y() as i16),
+                Axis::Y => (output.pos_x() as i16, coord),
+            };
+            if new_x != output.pos_x() as i16 || new_y != output.pos_y() as i16 {
+                output.set_pos_x(new_x as i32);
+                output.set_pos_y(new_y as i32);
+                self.notify_updated(output, &Update::Position);
             }
         }
     }
 
     fn on_primary_checked(&self, cb: &gtk::CheckButton) {
         if let Some(output) = self.output.borrow_mut().as_mut() {
-            output.primary = output.enabled && cb.is_active();
+            output.set_primary(output.enabled() && cb.is_active());
             self.notify_updated(output, &Update::Primary);
         }
     }

@@ -5,13 +5,13 @@
 
 mod color;
 mod config;
+mod data;
 mod dialog;
 mod draw;
 mod math;
 mod view;
 mod widget;
 
-use core::fmt;
 use std::collections::HashMap;
 use std::error::Error;
 use std::rc::Rc;
@@ -20,10 +20,14 @@ use std::time::{Duration, Instant};
 use cairo::ffi::cairo_device_finish;
 use cairo::{XCBDrawable, XCBSurface};
 use config::Config;
+use data::mode::Mode;
+use data::output::Output;
 use dialog::Dialog;
 use draw::DrawContext;
 use gdk::gio::{resources_register_include, spawn_blocking};
-use gdk::glib::{clone, spawn_future_local, timeout_add, ControlFlow, Propagation};
+use gdk::glib::{
+    clone, spawn_future_local, timeout_add, ControlFlow, Propagation, Value, ValueArray,
+};
 use gtk::glib::ExitCode;
 use gtk::prelude::*;
 use gtk::{Application, ApplicationWindow, Button};
@@ -66,158 +70,6 @@ const POPUP_SHOW_SECS: f32 = 2.5;
 
 const CONFIRM_DIALOG_SHOW_SECS: u8 = 15;
 
-#[derive(Clone, Debug)]
-pub struct Output {
-    id: OutputId,
-    name: String,
-    product_name: Option<String>,
-    enabled: bool,
-    primary: bool,
-    pos: Option<(i16, i16)>,
-    mode: Option<Mode>,
-    modes: Vec<Mode>,
-    dim: [u32; 2],
-}
-
-impl Output {
-    fn enable(&mut self) { self.enable_at(-1, -1); }
-
-    fn enable_at(&mut self, x: i16, y: i16) {
-        self.enabled = true;
-        self.mode = Some(self.modes[0].clone());
-        self.pos = Some((x, y));
-    }
-
-    fn disable(&mut self) {
-        self.enabled = false;
-        self.primary = false;
-        self.pos = None;
-        self.mode = None;
-    }
-
-    fn ppi(&self) -> f64 {
-        if let Some(mode) = self.mode.as_ref() {
-            if self.dim[1] > 0 {
-                return (f64::from(MM_PER_INCH) * f64::from(mode.height)) / f64::from(self.dim[1]);
-            }
-        }
-        f64::from(PPI_DEFAULT)
-    }
-
-    fn get_resolutions_dropdown(&self) -> Vec<String> {
-        let resolutions = self.get_resolutions();
-        let format_width =
-            resolutions.iter().map(|r| r[1].to_string().len()).max().unwrap_or_default();
-        resolutions.iter().map(|&r| Self::resolution_str(r, format_width)).collect::<Vec<String>>()
-    }
-
-    fn get_current_resolution_dropdown_index(&self) -> Option<usize> {
-        if let Some(mode) = self.mode.as_ref() {
-            return self
-                .get_resolutions()
-                .iter()
-                .position(|res: &Resolution| res[0] == mode.width && res[1] == mode.height)?
-                .into();
-        }
-        None
-    }
-
-    fn resolution_dropdown_mode_index(&self, index: usize) -> usize {
-        let res = self.get_resolutions()[index];
-        self.modes.iter().position(|m| m.width == res[0] && m.height == res[1]).unwrap()
-    }
-
-    fn refresh_rate_dropdown_mode_index(&self, resolution_index: usize, index: usize) -> usize {
-        let res = self.get_resolutions()[resolution_index];
-        let refresh = self.get_refresh_rates(resolution_index)[index];
-        self.modes
-            .iter()
-            .position(|m| m.width == res[0] && m.height == res[1] && nearly_eq(m.refresh, refresh))
-            .unwrap()
-    }
-
-    fn get_current_refresh_rate_dropdown_index(&self, resolution_index: usize) -> Option<usize> {
-        if let Some(mode) = self.mode.as_ref() {
-            return self
-                .get_refresh_rates(resolution_index)
-                .iter()
-                .position(|&refresh| nearly_eq(refresh, mode.refresh))?
-                .into();
-        }
-        None
-    }
-
-    fn get_refresh_rates_dropdown(&self, resolution_index: usize) -> Vec<String> {
-        self.get_refresh_rates(resolution_index)
-            .iter()
-            .map(|&r| Self::refresh_str(r))
-            .collect::<Vec<String>>()
-    }
-
-    fn get_resolutions(&self) -> Vec<Resolution> {
-        let mut dd_list = Vec::new();
-        for mode in &self.modes {
-            let r = [mode.width, mode.height];
-            if !dd_list.contains(&r) {
-                dd_list.push(r);
-            }
-        }
-        dd_list
-    }
-
-    fn get_refresh_rates(&self, resolution_index: usize) -> Vec<f64> {
-        let res = self.get_resolutions()[resolution_index];
-        self.modes
-            .iter()
-            .filter(|m| m.width == res[0] && m.height == res[1])
-            .map(|m| m.refresh)
-            .collect::<Vec<f64>>()
-    }
-
-    fn resolution_str(res: Resolution, format_width: usize) -> String {
-        let [w, h] = res;
-        format!("{w} x {h:<format_width$}")
-    }
-
-    fn refresh_str(refresh: f64) -> String { format!("{refresh:.2} Hz") }
-
-    fn rect(&self) -> Rect {
-        if let (Some((x, y)), Some(mode)) = (self.pos, self.mode.as_ref()) {
-            return Rect::new(x, y, mode.width, mode.height);
-        };
-        Rect::default()
-    }
-}
-
-impl PartialEq for Output {
-    fn eq(&self, other: &Self) -> bool { self.id == other.id }
-}
-
-#[derive(Clone, Debug)]
-struct Mode {
-    id: ModeId,
-    width: u16,
-    height: u16,
-    refresh: f64,
-}
-
-impl From<ModeInfo> for Mode {
-    fn from(mode_info: ModeInfo) -> Self {
-        Self {
-            id: mode_info.id,
-            width: mode_info.width,
-            height: mode_info.height,
-            refresh: get_refresh_rate(&mode_info),
-        }
-    }
-}
-
-impl fmt::Display for Mode {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}x{}_{:.2}", self.width, self.height, self.refresh)
-    }
-}
-
 fn main() -> ExitCode {
     resources_register_include!("rrandr.gresource").expect("resources registered");
 
@@ -255,23 +107,25 @@ fn main() -> ExitCode {
         }
         let enabled = output_info.crtc > 0;
         let mut mode = None;
-        let mut pos = None;
+        let mut pos = [0, 0];
         if enabled {
             let crtc_info = &rr_crtcs[&output_info.crtc];
             mode = Some(Mode::from(rr_modes[&crtc_info.mode]));
-            pos = Some((crtc_info.x, crtc_info.y));
+            pos = [crtc_info.x, crtc_info.y];
         }
-        outputs.push(Output {
-            id: *id,
-            name: String::from_utf8_lossy(&output_info.name).into_owned(),
-            product_name: get_monitor_name(&conn, *id),
+        outputs.push(Output::new(
+            *id,
+            String::from_utf8_lossy(&output_info.name).into_owned(),
+            get_monitor_name(&conn, *id),
             enabled,
-            primary: *id == primary.output,
-            pos,
+            *id == primary.output,
+            pos[0],
+            pos[1],
             mode,
-            modes: get_modes_for_output(output_info, &rr_modes),
-            dim: [output_info.mm_width, output_info.mm_height],
-        });
+            get_modes_for_output(output_info, &rr_modes),
+            output_info.mm_width,
+            output_info.mm_height,
+        ))
     }
     let app = Application::builder().application_id(APP_ID).build();
     app.connect_activate(move |app| {
@@ -545,20 +399,20 @@ fn apply(
     rr_outputs: &HashMap<OutputId, OutputInfo>,
     outputs: &Vec<Output>,
 ) -> bool {
-    let primary = outputs.iter().find(|&o| o.primary);
+    let primary = outputs.iter().find(|&o| o.primary());
     let screen_size = get_screen_size(screen_size_range, outputs, primary);
     let screen_size_changed = screen.width_in_pixels != screen_size.width
         || screen.height_in_pixels != screen_size.height;
 
     // Disable outputs
     for output in outputs {
-        let crtc_id = rr_outputs[&output.id].crtc;
+        let crtc_id = rr_outputs[&output.id()].crtc;
         if crtc_id == 0 {
             // Output already disabled
             continue;
         }
         let crtc = &rr_crtcs[&crtc_id];
-        if !output.enabled
+        if !output.enabled()
             || (screen_size_changed
                 && (i32::from(crtc.x) + i32::from(crtc.width) > i32::from(screen_size.width)
                     || i32::from(crtc.y) + i32::from(crtc.height) > i32::from(screen_size.height)))
@@ -596,20 +450,20 @@ fn apply(
 
     // Update outputs
     for output in outputs {
-        if !output.enabled {
+        if !output.enabled() {
             continue;
         }
-        let output_info = &rr_outputs[&output.id];
+        let output_info = &rr_outputs[&output.id()];
         let mut crtc_id = output_info.crtc;
         if crtc_id == 0
             || rr_crtcs
                 .get(&crtc_id)
-                .is_some_and(|ci: &CrtcInfo| ci.outputs.len() > 1 && ci.outputs[0] != output.id)
+                .is_some_and(|ci: &CrtcInfo| ci.outputs.len() > 1 && ci.outputs[0] != output.id())
         {
             // If this output was disabled before get it a new empty CRTC.
             // If this output is enabled, shares a CRTC with other outputs and
             // its not the first one listed, move it to a new empty CRTC.
-            if let Some(empty_id) = get_valid_empty_crtc(&rr_crtcs, output.id, output_info) {
+            if let Some(empty_id) = get_valid_empty_crtc(&rr_crtcs, output.id(), output_info) {
                 crtc_id = empty_id;
             } else {
                 return false;
@@ -621,7 +475,7 @@ fn apply(
     }
 
     // Set primary output
-    let primary_id = primary.map(|p| p.id).unwrap_or_default();
+    let primary_id = primary.map(|p| p.id()).unwrap_or_default();
     if handle_no_reply_error(
         set_output_primary(conn, screen.root, primary_id),
         "set primary output",
@@ -639,7 +493,7 @@ fn get_screen_size(
     primary: Option<&Output>,
 ) -> ScreenSize {
     let bounds =
-        Rect::bounds(outputs.iter().filter(|&o| o.enabled).map(Output::rect).collect::<Vec<_>>());
+        Rect::bounds(outputs.iter().filter(|&o| o.enabled()).map(Output::rect).collect::<Vec<_>>());
     let width = screen_size_range.min_width.max(screen_size_range.max_width.min(bounds.width()));
     let height = screen_size_range.min_height.max(screen_size_range.max_width.min(bounds.height()));
 
@@ -658,28 +512,28 @@ fn update_crtc(
     crtc: CrtcId,
     output: &Output,
 ) -> Result<SetConfig, ReplyError> {
-    let Some(pos) = output.pos else {
-        println!("Output {} is missing a position.", output.name);
-        return Ok(SetConfig::FAILED);
-    };
-    let Some(mode) = output.mode.as_ref() else {
-        println!("Output {} is missing a mode.", output.name);
+    let Some(mode) = output.mode() else {
+        println!("Output {} is missing a mode.", output.name());
         return Ok(SetConfig::FAILED);
     };
     println!(
         "Trying to set output {} to CTRC {} at position +{}+{} with mode {}",
-        output.name, crtc, pos.0, pos.1, mode
+        output.name(),
+        crtc,
+        output.pos_x(),
+        output.pos_y(),
+        mode
     );
     Ok(set_crtc_config(
         conn,
         crtc,
         CURRENT_TIME,
         CURRENT_TIME,
-        pos.0,
-        pos.1,
-        mode.id,
+        output.pos_x() as i16,
+        output.pos_y() as i16,
+        mode.id(),
         Rotation::ROTATE0,
-        &[output.id],
+        &[output.id()],
     )?
     .reply()?
     .status)
@@ -827,8 +681,14 @@ fn get_crtcs(
     Ok(crtcs)
 }
 
-fn get_modes_for_output(output_info: &OutputInfo, modes: &HashMap<ModeId, ModeInfo>) -> Vec<Mode> {
-    output_info.modes.iter().map(|mode_id| Mode::from(modes[mode_id])).collect::<Vec<Mode>>()
+fn get_modes_for_output(output_info: &OutputInfo, modes: &HashMap<ModeId, ModeInfo>) -> ValueArray {
+    let modes =
+        output_info.modes.iter().map(|mode_id| Mode::from(modes[mode_id])).collect::<Vec<Mode>>();
+    let mut values = ValueArray::new(u32::try_from(modes.len()).expect("less modes"));
+    for mode in modes {
+        values.append(&Value::from(mode));
+    }
+    values
 }
 
 fn get_refresh_rate(mode_info: &ModeInfo) -> f64 {
