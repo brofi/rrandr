@@ -72,9 +72,9 @@ impl View {
             .build();
 
         let enabled_outputs =
-            outputs.iter().filter(|&n| n.enabled()).map(Output::clone).collect::<Vec<_>>();
+            outputs.iter().filter(|&n| n.enabled()).map(Output::new_from).collect::<Vec<_>>();
         let disabled_outputs =
-            outputs.iter().filter(|&n| !n.enabled()).map(Output::clone).collect::<Vec<_>>();
+            outputs.iter().filter(|&n| !n.enabled()).map(Output::new_from).collect::<Vec<_>>();
 
         let drawing_area = DrawingArea::builder().focusable(true).build();
         let disabled = DisabledOutputArea::new(&disabled_outputs);
@@ -761,7 +761,9 @@ impl View {
         self.details.update(None);
     }
 
-    pub fn apply(&self) { *self.outputs_orig.borrow_mut() = self.get_outputs() }
+    pub fn apply(&self) {
+        *self.outputs_orig.borrow_mut() = self.get_outputs().iter().map(Output::new_from).collect()
+    }
 
     pub fn reset(&self) {
         let enabled_outputs = self
@@ -769,15 +771,15 @@ impl View {
             .borrow()
             .iter()
             .filter(|&n| n.enabled())
-            .map(Output::clone)
-            .collect::<Vec<_>>();
+            .map(Output::new_from)
+            .collect();
         let disabled_outputs = self
             .outputs_orig
             .borrow()
             .iter()
             .filter(|&n| !n.enabled())
-            .map(Output::clone)
-            .collect::<Vec<_>>();
+            .map(Output::new_from)
+            .collect();
         *self.outputs.borrow_mut() = enabled_outputs;
         self.disabled.set_outputs(Outputs::new(&disabled_outputs));
 
