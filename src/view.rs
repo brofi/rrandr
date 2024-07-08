@@ -1,27 +1,24 @@
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
-use std::error::Error;
 use std::rc::Rc;
 
-use gdk::glib::{clone, Bytes, Propagation, Type, Value};
-use gdk::{
-    ContentProvider, Drag, DragAction, Key, MemoryTexture, ModifierType, Paintable, Texture,
-};
+use gdk::glib::{clone, Propagation, Type, Value};
+use gdk::{DragAction, Key, ModifierType, Texture};
 use gtk::prelude::*;
 use gtk::{
-    AboutDialog, Align, Button, DragSource, DrawingArea, DropControllerMotion, DropTarget,
-    EventControllerKey, EventControllerMotion, FlowBox, GestureClick, GestureDrag, License,
-    Orientation, Paned, SelectionMode, Separator,
+    AboutDialog, Align, Button, DrawingArea, DropTarget, EventControllerKey, EventControllerMotion,
+    FlowBox, GestureDrag, License, Orientation, Paned, SelectionMode, Separator,
 };
 use x11rb::protocol::randr::Output as OutputId;
 
 use crate::config::Config;
+use crate::data::outputs::Outputs;
 use crate::draw::{DrawContext, SCREEN_LINE_WIDTH};
 use crate::math::{Point, Rect};
 use crate::widget::details_box::{DetailsBox, Update};
+use crate::widget::disabled_output_area::DisabledOutputArea;
 use crate::{Output, ScreenSizeRange};
 
-type OutputSelectedCallback = dyn Fn(Option<&Output>);
 type ApplyCallback = dyn Fn(Vec<Output>);
 
 pub const PADDING: u16 = 12;
@@ -54,7 +51,7 @@ pub struct View {
     last_handle_pos: Rc<Cell<i32>>,
     drawing_area: DrawingArea,
     details: DetailsBox,
-    disabled: DisabledView,
+    disabled: DisabledOutputArea,
     apply_callback: Rc<RefCell<Option<Rc<ApplyCallback>>>>,
 }
 
@@ -80,18 +77,18 @@ impl View {
             outputs.iter().filter(|&n| !n.enabled()).map(Output::clone).collect::<Vec<_>>();
 
         let drawing_area = DrawingArea::builder().focusable(true).build();
-        let disabled = DisabledView::new(config.clone(), disabled_outputs);
+        let disabled = DisabledOutputArea::new(&disabled_outputs);
 
         let paned = Paned::builder()
             .start_child(&drawing_area)
-            .end_child(&disabled.drawing_area)
+            .end_child(&disabled)
             .resize_start_child(true)
             .resize_end_child(false)
             .vexpand(true)
             .build();
         root.append(&paned);
 
-        let mut this = Self {
+        let this = Self {
             root,
             config,
             size,
@@ -233,12 +230,16 @@ impl View {
         drop_target.connect_motion(Self::on_drop_motion);
         this.drawing_area.add_controller(drop_target);
 
-        this.details.connect_output_changed(clone!
-            (@strong this => move |_details, output, update| this.update(output, update)
+        this.details.connect_output_changed(clone!(
+            @strong this => move |_details, output, update| this.update(output, update)
         ));
 
-        this.disabled.add_output_selected_callback(clone!(
-            @strong this => move |output| this.on_disabled_selected(output)
+        this.disabled.connect_output_selected(clone!(
+            @strong this => move |_, output| this.on_disabled_selected(output)
+        ));
+
+        this.disabled.connect_output_deselected(clone!(
+            @strong this => move |_| this.on_disabled_deselected()
         ));
 
         this
@@ -246,7 +247,7 @@ impl View {
 
     fn get_outputs(&self) -> Vec<Output> {
         let mut outputs = self.outputs.borrow_mut().to_vec();
-        outputs.extend(self.disabled.outputs.borrow().to_vec());
+        outputs.extend(self.disabled.outputs().to_vec());
         outputs
     }
 
@@ -327,7 +328,7 @@ impl View {
             .unwrap_or_else(|| panic!("enabled outputs contains output {output_id}"));
         let disabled_output = outputs.remove(index);
         disabled_output.disable();
-        self.disabled.add_output(disabled_output.clone());
+        self.disabled.add_output(&disabled_output);
         self.deselect();
         disabled_output
     }
@@ -429,7 +430,7 @@ impl View {
             self.disabled.deselect();
         }
         self.drawing_area.queue_draw();
-        self.disabled.drawing_area.queue_draw();
+        self.disabled.update_view();
         self.update_details();
     }
 
@@ -701,7 +702,7 @@ impl View {
                     self.update_view(Update::Disabled);
                     return Propagation::Stop;
                 }
-                if let Some(output_id) = self.disabled.get_selected_output() {
+                if let Some(output_id) = self.disabled.selected_output() {
                     self.details.update(Some(&self.enable_output(output_id)));
                     self.update_view(Update::Enabled);
                     return Propagation::Stop;
@@ -748,10 +749,16 @@ impl View {
         None
     }
 
-    fn on_disabled_selected(&self, output: Option<&Output>) {
+    fn on_disabled_selected(&self, output: &Output) {
         self.deselect();
         self.drawing_area.queue_draw();
-        self.details.update(output);
+        self.details.update(Some(output));
+    }
+
+    fn on_disabled_deselected(&self) {
+        self.deselect();
+        self.drawing_area.queue_draw();
+        self.details.update(None);
     }
 
     pub fn apply(&self) { *self.outputs_orig.borrow_mut() = self.get_outputs() }
@@ -772,7 +779,7 @@ impl View {
             .map(Output::clone)
             .collect::<Vec<_>>();
         *self.outputs.borrow_mut() = enabled_outputs;
-        *self.disabled.outputs.borrow_mut() = disabled_outputs;
+        self.disabled.set_outputs(Outputs::new(&disabled_outputs));
 
         self.deselect();
         self.disabled.deselect();
@@ -782,253 +789,5 @@ impl View {
 
     pub fn set_apply_callback(&self, callback: impl Fn(Vec<Output>) + 'static) {
         *self.apply_callback.borrow_mut() = Some(Rc::new(callback));
-    }
-}
-
-#[derive(Clone)]
-struct DisabledView {
-    config: Config,
-    outputs: Rc<RefCell<Vec<Output>>>,
-    selected_output: Rc<RefCell<Option<usize>>>,
-    output_selected_callbacks: Rc<RefCell<Vec<Rc<OutputSelectedCallback>>>>,
-    is_dragging: Rc<Cell<bool>>,
-    drawing_area: DrawingArea,
-}
-
-impl DisabledView {
-    fn new(config: Config, outputs: Vec<Output>) -> Self {
-        let this = Self {
-            config,
-            outputs: Rc::new(RefCell::new(outputs)),
-            selected_output: Rc::new(RefCell::new(None)),
-            output_selected_callbacks: Rc::new(RefCell::new(Vec::new())),
-            is_dragging: Rc::new(Cell::new(false)),
-            drawing_area: DrawingArea::builder().focusable(true).content_width(150).build(),
-        };
-
-        this.drawing_area.set_draw_func(clone!(
-            @strong this => move |_d, cr, width, height| this.on_draw(cr, width, height)
-        ));
-
-        let drag_source = DragSource::builder().actions(DragAction::MOVE).build();
-        drag_source.connect_prepare(clone!(
-            @strong this => move |ds, x, y| this.on_drag_prepare(ds, x, y)
-        ));
-        drag_source.connect_drag_begin(clone!(
-            @strong this => move |ds, d| this.on_drag_begin(ds, d)
-        ));
-        drag_source.connect_drag_end(clone!(
-            @strong this => move |ds, d, del| this.on_drag_end(ds, d, del)
-        ));
-        this.drawing_area.add_controller(drag_source);
-
-        let gesture_click = GestureClick::new();
-        gesture_click.connect_pressed(clone!(
-            @strong this => move |gc, n_press, x, y| this.on_click(gc, n_press, x, y)
-        ));
-        this.drawing_area.add_controller(gesture_click);
-
-        let event_controller_motion = EventControllerMotion::new();
-        event_controller_motion.connect_motion(clone!(
-            @strong this => move |ecm, x, y| this.on_motion(ecm, x, y)
-        ));
-        this.drawing_area.add_controller(event_controller_motion);
-
-        let drop_controller_motion = DropControllerMotion::new();
-        drop_controller_motion.connect_motion(Self::on_drop_motion);
-        this.drawing_area.add_controller(drop_controller_motion);
-
-        this
-    }
-
-    fn update_view(&self) { self.drawing_area.queue_draw(); }
-
-    fn add_output(&self, output: Output) {
-        let mut outputs = self.outputs.borrow_mut();
-        if !outputs.contains(&output) {
-            outputs.push(output);
-            self.select(outputs.len() - 1);
-        }
-    }
-
-    fn remove_output(&self, output_id: OutputId) -> Output {
-        let mut outputs = self.outputs.borrow_mut();
-        let index = outputs
-            .iter()
-            .position(|output| output_id == output.id())
-            .unwrap_or_else(|| panic!("disabled outputs contains output {output_id}"));
-        self.deselect();
-        outputs.remove(index)
-    }
-
-    fn select(&self, index: usize) { *self.selected_output.borrow_mut() = Some(index); }
-
-    fn deselect(&self) { *self.selected_output.borrow_mut() = None; }
-
-    fn on_draw(&self, cr: &cairo::Context, width: i32, height: i32) {
-        let outputs = self.outputs.borrow();
-        let i_select = self.selected_output.borrow();
-        let context = DrawContext::new(cr.clone(), self.config.clone());
-        let [width, height] = Self::get_output_dim(width, height, outputs.len());
-        let mut j: usize = 0; // separate index for closing the gaps
-        for o in outputs.iter() {
-            if i_select.is_none()
-                || i_select.is_some_and(|i| !self.is_dragging.get() || outputs[i].id() != o.id())
-            {
-                let [x, y] = Self::get_output_pos(j, height);
-                let rect = [f64::from(x), f64::from(y), f64::from(width), f64::from(height)];
-                context.draw_output(rect);
-                context.draw_output_label(rect, &o.name(), o.product_name().as_deref());
-                if let Some(i) = *i_select {
-                    if outputs[i].id() == o.id() {
-                        context.draw_selected_output(rect);
-                    }
-                }
-                j += 1;
-            }
-        }
-    }
-
-    fn get_output_pos(index: usize, output_height: u16) -> [i16; 2] {
-        let index = u32::try_from(index).expect("less disabled outputs");
-        let x = i16::try_from(PADDING).unwrap_or(i16::MAX);
-        let y = i16::try_from((index + 1) * u32::from(PADDING) + index * u32::from(output_height))
-            .unwrap_or(i16::MAX);
-        [x, y]
-    }
-
-    #[allow(clippy::cast_sign_loss)]
-    #[allow(clippy::cast_possible_truncation)]
-    fn get_output_dim(w: i32, h: i32, n_disabled: usize) -> [u16; 2] {
-        if n_disabled == 0 {
-            return [0, 0];
-        }
-        let w = u32::try_from(w).expect("drawing area width is positive");
-        let h = u32::try_from(h).expect("drawing area height is positive");
-        let n_disabled = u32::try_from(n_disabled).expect("less disabled outputs");
-        let max_width = (w.saturating_sub(2 * u32::from(PADDING))) as u16;
-        let max_height =
-            ((h.saturating_sub((n_disabled + 1) * u32::from(PADDING))) / n_disabled) as u16;
-        let width = max_width.min((f64::from(max_height) * 16. / 9.).round() as u16);
-        let height = max_height.min((f64::from(max_width) * 9. / 16.).round() as u16);
-        [width, height]
-    }
-
-    fn on_click(&self, _gc: &GestureClick, _n_press: i32, x: f64, y: f64) {
-        if let Some(i) =
-            self.get_output_index_at(x, y, self.drawing_area.width(), self.drawing_area.height())
-        {
-            self.select(i);
-            self.drawing_area.grab_focus();
-            self.notify_selected(Some(&self.outputs.borrow()[i]));
-        } else {
-            self.deselect();
-            self.notify_selected(None);
-        }
-        self.update_view();
-    }
-
-    fn on_motion(&self, _ecm: &EventControllerMotion, x: f64, y: f64) {
-        match self.get_output_index_at(x, y, self.drawing_area.width(), self.drawing_area.height())
-        {
-            Some(_) => self.drawing_area.set_cursor_from_name(Some("pointer")),
-            None => self.drawing_area.set_cursor_from_name(Some("default")),
-        }
-    }
-
-    fn on_drop_motion(_dcm: &DropControllerMotion, _x: f64, _y: f64) {}
-
-    #[allow(clippy::cast_possible_truncation)]
-    fn on_drag_prepare(&self, ds: &DragSource, x: f64, y: f64) -> Option<ContentProvider> {
-        let outputs = self.outputs.borrow();
-        let width = self.drawing_area.width();
-        let height = self.drawing_area.height();
-        if let Some(i) = self.get_output_index_at(x, y, width, height) {
-            let [width, height] = Self::get_output_dim(width, height, outputs.len());
-            if let Ok(icon) = Self::create_drag_icon(
-                &self.config,
-                width,
-                height,
-                &outputs[i].name(),
-                outputs[i].product_name().as_deref(),
-            ) {
-                let [_, oy] = Self::get_output_pos(i, height);
-                ds.set_icon(Some(&icon), x as i32, (y - f64::from(oy)) as i32);
-            }
-            return Some(ContentProvider::for_value(&Value::from(outputs[i].id())));
-        }
-        None
-    }
-
-    fn on_drag_begin(&self, _ds: &DragSource, _d: &Drag) {
-        self.update_view();
-        self.is_dragging.set(true);
-    }
-
-    fn on_drag_end(&self, _ds: &DragSource, _d: &Drag, _del: bool) {
-        self.update_view();
-        self.is_dragging.set(false);
-    }
-
-    fn create_drag_icon(
-        config: &Config,
-        width: u16,
-        height: u16,
-        name: &str,
-        product_name: Option<&str>,
-    ) -> Result<impl IsA<Paintable>, Box<dyn Error>> {
-        let surface = cairo::ImageSurface::create(
-            cairo::Format::ARgb32,
-            i32::from(width),
-            i32::from(height),
-        )?;
-        let cr = cairo::Context::new(&surface)?;
-        let rect = [0., 0., f64::from(width), f64::from(height)];
-        let context = DrawContext::new(cr, config.clone());
-        context.draw_output(rect);
-        context.draw_output_label(rect, name, product_name);
-        drop(context);
-        surface.flush();
-        let stride = surface.stride().try_into()?;
-        Ok(MemoryTexture::new(
-            i32::from(width),
-            i32::from(height),
-            gdk::MemoryFormat::B8g8r8a8Premultiplied,
-            &Bytes::from_owned(surface.take_data()?),
-            stride,
-        ))
-    }
-
-    fn get_output_index_at(&self, x: f64, y: f64, width: i32, height: i32) -> Option<usize> {
-        let outputs = self.outputs.borrow();
-        let [width, height] = Self::get_output_dim(width, height, outputs.len());
-        for (i, _) in outputs.iter().enumerate() {
-            let [ox, oy] = Self::get_output_pos(i, height);
-            if x >= f64::from(ox)
-                && x <= f64::from(i32::from(ox) + i32::from(width))
-                && y >= f64::from(oy)
-                && y <= f64::from(i32::from(oy) + i32::from(height))
-            {
-                return Some(i);
-            }
-        }
-        None
-    }
-
-    fn get_selected_output(&self) -> Option<OutputId> {
-        if let Some(i) = *self.selected_output.borrow() {
-            return Some(self.outputs.borrow()[i].id());
-        }
-        None
-    }
-
-    fn notify_selected(&self, output: Option<&Output>) {
-        for callback in self.output_selected_callbacks.borrow().iter() {
-            callback(output);
-        }
-    }
-
-    fn add_output_selected_callback(&mut self, callback: impl Fn(Option<&Output>) + 'static) {
-        self.output_selected_callbacks.borrow_mut().push(Rc::new(callback));
     }
 }

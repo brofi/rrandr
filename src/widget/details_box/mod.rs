@@ -26,9 +26,7 @@ impl DetailsBox {
         self.connect_closure(
             "output-changed",
             false,
-            closure_local!(|details, output, update| {
-                callback(details, output, update);
-            }),
+            closure_local!(|details, output, update| callback(details, output, update)),
         );
     }
 }
