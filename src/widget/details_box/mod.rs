@@ -1,6 +1,5 @@
 pub(crate) mod imp;
 
-use gdk::glib::subclass::types::ObjectSubclassIsExt;
 use gdk::glib::{closure_local, wrapper, ValueDelegate};
 use gdk::prelude::ObjectExt;
 use glib::Object;
@@ -16,11 +15,9 @@ impl DetailsBox {
     pub fn new(screen_max_width: u16, screen_max_height: u16) -> Self {
         Object::builder()
             .property("screen-max-width", u32::from(screen_max_width))
-            .property("screen_max_height", u32::from(screen_max_height))
+            .property("screen-max-height", u32::from(screen_max_height))
             .build()
     }
-
-    pub fn update(&self, output: Option<&Output>) { self.imp().update(output); }
 
     pub fn connect_output_changed(&self, callback: impl Fn(&Self, &Output, Update) + 'static) {
         self.connect_closure(
@@ -40,7 +37,6 @@ pub enum Update {
     Refresh,
     Position,
     Primary,
-    Reset,
 }
 
 impl From<u8> for Update {
@@ -52,7 +48,6 @@ impl From<u8> for Update {
             3 => Update::Refresh,
             4 => Update::Position,
             5 => Update::Primary,
-            6 => Update::Reset,
             x => panic!("Not an update value: {x}"),
         }
     }

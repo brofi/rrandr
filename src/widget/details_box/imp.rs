@@ -5,7 +5,7 @@ use std::sync::OnceLock;
 use gdk::glib::subclass::object::{ObjectImpl, ObjectImplExt};
 use gdk::glib::subclass::types::{ObjectSubclass, ObjectSubclassExt};
 use gdk::glib::subclass::Signal;
-use gdk::glib::{clone, derived_properties, object_subclass, Properties};
+use gdk::glib::{clone, derived_properties, object_subclass, Properties, SignalHandlerId};
 use gdk::prelude::{ObjectExt, StaticType};
 use gdk::subclass::prelude::DerivedObjectProperties;
 use gtk::prelude::{CheckButtonExt, WidgetExt};
@@ -25,8 +25,11 @@ use crate::Output;
 #[derive(Properties)]
 #[properties(wrapper_type = super::DetailsBox)]
 pub struct DetailsBox {
-    #[property(get, set, nullable)]
+    #[property(get, set = Self::set_output, nullable)]
     output: RefCell<Option<Output>>,
+    enabled_changed_handler: RefCell<Option<SignalHandlerId>>,
+    pos_x_changed_handler: RefCell<Option<SignalHandlerId>>,
+    pos_y_changed_handler: RefCell<Option<SignalHandlerId>>,
     #[property(set, construct_only, maximum = u16::MAX.into())]
     screen_max_width: Cell<u32>,
     #[property(set, construct_only, maximum = u16::MAX.into())]
@@ -42,6 +45,9 @@ impl Default for DetailsBox {
     fn default() -> Self {
         Self {
             output: Default::default(),
+            enabled_changed_handler: Default::default(),
+            pos_x_changed_handler: Default::default(),
+            pos_y_changed_handler: Default::default(),
             screen_max_width: Default::default(),
             screen_max_height: Default::default(),
             root: FlowBox::builder()
@@ -128,13 +134,40 @@ impl ObjectImpl for DetailsBox {
 impl WidgetImpl for DetailsBox {}
 
 impl DetailsBox {
-    pub(super) fn update(&self, output: Option<&Output>) {
+    fn set_output(&self, output: Option<&Output>) {
+        if let Some(handler_id) = self.enabled_changed_handler.take() {
+            if let Some(output) = self.output.borrow().as_ref() {
+                output.disconnect(handler_id);
+            }
+        }
+        if let (Some(x_handler), Some(y_handler)) =
+            (self.pos_x_changed_handler.take(), self.pos_y_changed_handler.take())
+        {
+            if let Some(output) = self.output.borrow().as_ref() {
+                output.disconnect(x_handler);
+                output.disconnect(y_handler);
+            }
+        }
         if let Some(output) = output {
             self.sw_enabled.set_active(output.enabled());
+            self.enabled_changed_handler.replace(Some(output.connect_enabled_notify(clone!(
+                @weak self as this => move |o| {
+                    if o.enabled() != this.sw_enabled.is_active() {
+                        this.sw_enabled.set_active(o.enabled());
+                    }
+                    this.update_visibility();
+                }
+            ))));
             self.cb_primary.set_active(output.primary());
 
             self.position_entry.set_x(&output.pos_x().to_string());
             self.position_entry.set_y(&output.pos_y().to_string());
+            self.pos_x_changed_handler.replace(Some(output.connect_pos_x_notify(clone!(
+                @weak self.position_entry as pos => move |o| pos.set_x(&o.pos_x().to_string())
+            ))));
+            self.pos_y_changed_handler.replace(Some(output.connect_pos_y_notify(clone!(
+                @weak self.position_entry as pos => move |o| pos.set_y(&o.pos_y().to_string())
+            ))));
 
             let resolutions = output.get_resolutions_dropdown();
             self.mode_selector.set_resolutions(Some(&into_string_list(&resolutions)));
@@ -149,7 +182,7 @@ impl DetailsBox {
                 }
             }
         }
-        self.obj().set_output(output);
+        self.output.replace(output.cloned());
         self.update_visibility();
     }
 
@@ -184,7 +217,6 @@ impl DetailsBox {
         if let (Some(updated), Some(update)) = (updated, update) {
             self.notify_updated(&updated, &update);
         }
-        self.update_visibility();
     }
 
     fn on_resolution_selected(&self, dd: &gtk::DropDown) {

@@ -1,9 +1,10 @@
 mod imp;
 
+use gdk::glib::object::ObjectExt;
 use gdk::glib::subclass::types::ObjectSubclassIsExt;
 use gdk::glib::{self, closure_local, wrapper, Object};
-use gdk::prelude::{ListModelExt, ObjectExt};
 use gtk::prelude::WidgetExt;
+use gtk::subclass::drawing_area::DrawingAreaImpl;
 use gtk::{Accessible, Buildable, ConstraintTarget, DrawingArea, Widget};
 
 use super::details_box::Update;
@@ -11,14 +12,18 @@ use crate::data::output::Output;
 use crate::data::outputs::Outputs;
 
 wrapper! {
-    pub struct DisabledOutputArea(ObjectSubclass<imp::DisabledOutputArea>)
+    pub struct OutputArea(ObjectSubclass<imp::OutputArea>)
         @extends DrawingArea, Widget,
         @implements Accessible, Buildable, ConstraintTarget;
 }
 
-impl DisabledOutputArea {
-    pub fn new(outputs: &Vec<Output>) -> Self {
-        Object::builder().property("outputs", Outputs::new(outputs)).build()
+impl OutputArea {
+    pub fn new(outputs: &Vec<Output>, screen_max_width: u16, screen_max_height: u16) -> Self {
+        Object::builder()
+            .property("outputs", Outputs::new(outputs))
+            .property("screen-max-width", u32::from(screen_max_width))
+            .property("screen-max-height", u32::from(screen_max_height))
+            .build()
     }
 
     pub fn connect_output_selected(&self, callback: impl Fn(&Self, &Output) + 'static) {
@@ -40,20 +45,28 @@ impl DisabledOutputArea {
     pub fn update(&self, output: &Output, update: Update) {
         // Add/Remove
         match update {
-            Update::Enabled => {
-                self.imp().deselect();
-                self.outputs().remove(output.id());
+            Update::Enabled => self.imp().add_output(output),
+            Update::Disabled => self.imp().remove_output(output),
+            _ => (),
+        }
+        // Mind the gap
+        match update {
+            Update::Enabled | Update::Disabled | Update::Resolution => {
+                imp::OutputArea::mind_the_gap_and_overlap(&self.outputs());
             }
-            Update::Disabled => {
-                self.outputs().append(&output);
-                self.imp().select((self.outputs().n_items() - 1) as usize);
+            _ => (),
+        }
+        // Resize
+        match update {
+            Update::Enabled | Update::Disabled | Update::Resolution | Update::Position => {
+                self.imp().resize(self.width(), self.height())
             }
             _ => (),
         }
         // Redraw
         match update {
-            Update::Enabled | Update::Disabled => self.queue_draw(),
-            _ => (),
+            Update::Refresh => (),
+            _ => self.queue_draw(),
         }
     }
 

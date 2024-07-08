@@ -6,8 +6,11 @@ use gdk::glib::object::IsA;
 use gdk::glib::subclass::object::{ObjectImpl, ObjectImplExt};
 use gdk::glib::subclass::types::{ObjectSubclass, ObjectSubclassExt};
 use gdk::glib::subclass::Signal;
-use gdk::glib::{clone, derived_properties, object_subclass, Bytes, Properties, Value};
-use gdk::prelude::{ListModelExt, ListModelExtManual, ObjectExt, StaticType};
+use gdk::glib::value::ToValue;
+use gdk::glib::{clone, derived_properties, object_subclass, Bytes, Properties};
+use gdk::prelude::{
+    ContentProviderExtManual, DragExt, ListModelExt, ListModelExtManual, ObjectExt, StaticType,
+};
 use gdk::subclass::prelude::DerivedObjectProperties;
 use gdk::{ContentProvider, Drag, DragAction, MemoryTexture, Paintable};
 use gtk::prelude::{DrawingAreaExt, DrawingAreaExtManual, WidgetExt};
@@ -16,21 +19,21 @@ use gtk::subclass::widget::WidgetImpl;
 use gtk::{
     glib, DragSource, DrawingArea, DropControllerMotion, EventControllerMotion, GestureClick,
 };
-use x11rb::protocol::randr::Output as OutputId;
 
 use crate::config::Config;
 use crate::data::output::Output;
 use crate::data::outputs::Outputs;
 use crate::draw::DrawContext;
 use crate::view::PADDING;
+use crate::widget::details_box::Update;
 
 #[derive(Default, Properties)]
 #[properties(wrapper_type = super::DisabledOutputArea)]
 pub struct DisabledOutputArea {
-    #[property(get, set)]
+    #[property(get, set = Self::set_outputs)]
     outputs: RefCell<Outputs>,
     config: Config,
-    selected_output: Cell<Option<usize>>,
+    pub(super) selected_output: Cell<Option<usize>>,
     is_dragging: Cell<bool>,
 }
 
@@ -100,6 +103,12 @@ impl WidgetImpl for DisabledOutputArea {}
 impl DrawingAreaImpl for DisabledOutputArea {}
 
 impl DisabledOutputArea {
+    fn set_outputs(&self, outputs: &Outputs) {
+        self.outputs.replace(outputs.clone());
+        self.deselect();
+        self.obj().queue_draw();
+    }
+
     pub(super) fn select(&self, index: usize) { self.selected_output.set(Some(index)); }
 
     pub(super) fn deselect(&self) { self.selected_output.set(None); }
@@ -163,7 +172,7 @@ impl DisabledOutputArea {
             self.deselect();
             self.obj().emit_by_name::<()>("output-deselected", &[]);
         }
-        self.obj().update_view();
+        self.obj().queue_draw();
     }
 
     fn on_motion(&self, _ecm: &EventControllerMotion, x: f64, y: f64) {
@@ -192,18 +201,24 @@ impl DisabledOutputArea {
                 let [_, oy] = Self::get_output_pos(i, height);
                 ds.set_icon(Some(&icon), x as i32, (y - f64::from(oy)) as i32);
             }
-            return Some(ContentProvider::for_value(&Value::from(outputs.index(i).id())));
+            return Some(ContentProvider::for_value(&outputs.index(i).to_value()));
         }
         None
     }
 
     fn on_drag_begin(&self, _ds: &DragSource, _d: &Drag) {
-        self.obj().update_view();
+        self.obj().queue_draw();
         self.is_dragging.set(true);
     }
 
-    fn on_drag_end(&self, _ds: &DragSource, _d: &Drag, _del: bool) {
-        self.obj().update_view();
+    fn on_drag_end(&self, _ds: &DragSource, d: &Drag, del: bool) {
+        if del {
+            if let Ok(value) = d.content().value(Output::static_type()) {
+                if let Ok(output) = value.get::<Output>() {
+                    self.obj().update(&output, Update::Enabled);
+                }
+            }
+        }
         self.is_dragging.set(false);
     }
 
@@ -248,13 +263,6 @@ impl DisabledOutputArea {
             {
                 return Some(i);
             }
-        }
-        None
-    }
-
-    pub(super) fn selected_output(&self) -> Option<OutputId> {
-        if let Some(i) = self.selected_output.get() {
-            return Some(self.outputs.borrow().index(i).id());
         }
         None
     }

@@ -145,7 +145,7 @@ fn build_ui(app: &Application, config: Config, outputs: Vec<Output>, size: Scree
             .build(),
     );
 
-    let view = View::new(config.clone(), size, outputs, move |btn| {
+    let view = View::new(size, outputs, move |btn| {
         if let Err(e) = on_identify_clicked(&config, btn) {
             println!("Failed to identify outputs: {e:?}");
         }

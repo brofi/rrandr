@@ -41,6 +41,8 @@ impl Outputs {
         removed
     }
 
+    pub fn push_back(&self, output: &Output) { self.append(&self.remove(output.id())); }
+
     pub fn index(&self, index: usize) -> Output { self.imp().0.borrow()[index].clone() }
 
     pub fn to_vec(&self) -> Vec<Output> { self.imp().0.borrow().to_vec() }

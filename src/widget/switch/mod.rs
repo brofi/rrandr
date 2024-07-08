@@ -28,4 +28,6 @@ impl Switch {
             imp.widget.unblock_signal(handler_id);
         }
     }
+
+    pub fn is_active(&self) -> bool { self.imp().widget.is_active() }
 }
