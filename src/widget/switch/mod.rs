@@ -1,9 +1,8 @@
 mod imp;
 
-use gdk::glib::subclass::types::ObjectSubclassIsExt;
-use gdk::glib::wrapper;
-use gdk::prelude::ObjectExt;
-use glib::Object;
+use glib::subclass::types::ObjectSubclassIsExt;
+use glib::{wrapper, Object};
+use gtk::prelude::ObjectExt;
 use gtk::{glib, Widget};
 
 wrapper! {

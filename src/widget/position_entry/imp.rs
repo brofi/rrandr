@@ -1,8 +1,8 @@
 use std::cell::RefCell;
 
-use gdk::glib::subclass::object::{ObjectImpl, ObjectImplExt};
-use gdk::glib::subclass::types::{ObjectSubclass, ObjectSubclassExt};
-use gdk::glib::{object_subclass, SignalHandlerId};
+use glib::subclass::object::{ObjectImpl, ObjectImplExt};
+use glib::subclass::types::{ObjectSubclass, ObjectSubclassExt};
+use glib::{object_subclass, SignalHandlerId};
 use gtk::prelude::{BoxExt, EditableExt, EntryExt, WidgetExt};
 use gtk::subclass::widget::{WidgetClassExt, WidgetImpl};
 use gtk::{glib, BinLayout, Box, Entry, InputPurpose, Orientation, Widget};

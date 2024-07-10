@@ -1,12 +1,11 @@
 use std::cell::RefCell;
 
-use gdk::glib::subclass::object::{ObjectImpl, ObjectImplExt};
-use gdk::glib::subclass::types::{ObjectSubclass, ObjectSubclassExt};
-use gdk::glib::{derived_properties, object_subclass, GString, Properties, Value};
-use gdk::prelude::ObjectExt;
-use gdk::subclass::prelude::DerivedObjectProperties;
-use gtk::prelude::{BoxExt, FlowBoxChildExt, WidgetExt};
+use glib::subclass::object::{ObjectImpl, ObjectImplExt};
+use glib::subclass::types::{ObjectSubclass, ObjectSubclassExt};
+use glib::{derived_properties, object_subclass, GString, Properties, Value};
+use gtk::prelude::{BoxExt, FlowBoxChildExt, ObjectExt, WidgetExt};
 use gtk::subclass::flow_box_child::FlowBoxChildImpl;
+use gtk::subclass::prelude::DerivedObjectProperties;
 use gtk::subclass::widget::WidgetImpl;
 use gtk::{glib, Align, Box, FlowBoxChild, GestureClick, Label, Orientation, Widget};
 

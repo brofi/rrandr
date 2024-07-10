@@ -1,8 +1,7 @@
 pub(crate) mod imp;
 
-use gdk::glib::{closure_local, wrapper, ValueDelegate};
-use gdk::prelude::ObjectExt;
-use glib::Object;
+use glib::{closure_local, wrapper, Object, ValueDelegate};
+use gtk::prelude::ObjectExt;
 use gtk::{glib, Widget};
 
 use crate::Output;

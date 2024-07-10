@@ -1,9 +1,8 @@
 mod imp;
 
-use gdk::glib::object::ObjectExt;
-use gdk::glib::subclass::types::ObjectSubclassIsExt;
-use gdk::glib::{wrapper, GString, SignalHandlerId};
-use glib::Object;
+use glib::object::ObjectExt;
+use glib::subclass::types::ObjectSubclassIsExt;
+use glib::{wrapper, GString, Object, SignalHandlerId};
 use gtk::prelude::{EditableExt, EditableExtManual};
 use gtk::{glib, Editable, Widget};
 

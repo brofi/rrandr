@@ -1,9 +1,10 @@
 mod imp;
 
-use gdk::gio::ListModel;
-use gdk::glib::subclass::types::ObjectSubclassIsExt;
-use gdk::glib::{wrapper, Object};
-use gdk::prelude::ListModelExt;
+use gio::ListModel;
+use glib::subclass::types::ObjectSubclassIsExt;
+use glib::{wrapper, Object};
+use gtk::prelude::{ListModelExt, ListModelExtManual};
+use gtk::{gio, glib};
 use x11rb::protocol::randr::Output as OutputId;
 
 use crate::data::output::Output;

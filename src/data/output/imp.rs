@@ -1,11 +1,11 @@
 use std::cell::{Cell, RefCell};
 
-use gdk::glib::subclass::object::ObjectImpl;
-use gdk::glib::subclass::types::ObjectSubclass;
-use gdk::glib::{derived_properties, object_subclass, Properties, ValueArray};
-use gdk::prelude::ObjectExt;
-use gdk::subclass::prelude::DerivedObjectProperties;
+use glib::subclass::object::ObjectImpl;
+use glib::subclass::types::ObjectSubclass;
+use glib::{derived_properties, object_subclass, Properties, ValueArray};
 use gtk::glib;
+use gtk::prelude::ObjectExt;
+use gtk::subclass::prelude::DerivedObjectProperties;
 use x11rb::protocol::randr::Output as OutputId;
 
 use crate::data::mode::Mode;

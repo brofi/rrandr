@@ -1,8 +1,7 @@
 mod imp;
 
-use gdk::glib::object::IsA;
-use gdk::glib::wrapper;
-use glib::Object;
+use glib::object::IsA;
+use glib::{wrapper, Object};
 use gtk::{glib, Accessible, Buildable, ConstraintTarget, FlowBoxChild, Widget};
 
 wrapper! {

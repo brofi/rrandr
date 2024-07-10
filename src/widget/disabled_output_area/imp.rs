@@ -2,19 +2,19 @@ use std::cell::{Cell, RefCell};
 use std::error::Error;
 use std::sync::OnceLock;
 
-use gdk::glib::object::IsA;
-use gdk::glib::subclass::object::{ObjectImpl, ObjectImplExt};
-use gdk::glib::subclass::types::{ObjectSubclass, ObjectSubclassExt};
-use gdk::glib::subclass::Signal;
-use gdk::glib::value::ToValue;
-use gdk::glib::{clone, derived_properties, object_subclass, Bytes, Properties};
-use gdk::prelude::{
-    ContentProviderExtManual, DragExt, ListModelExt, ListModelExtManual, ObjectExt, StaticType,
+use gdk::{ContentProvider, Drag, DragAction, MemoryFormat, MemoryTexture, Paintable};
+use glib::object::IsA;
+use glib::subclass::object::{ObjectImpl, ObjectImplExt};
+use glib::subclass::types::{ObjectSubclass, ObjectSubclassExt};
+use glib::subclass::Signal;
+use glib::value::ToValue;
+use glib::{clone, derived_properties, object_subclass, Bytes, Properties};
+use gtk::prelude::{
+    ContentProviderExtManual, DragExt, DrawingAreaExt, DrawingAreaExtManual, ListModelExt,
+    ListModelExtManual, ObjectExt, StaticType, WidgetExt,
 };
-use gdk::subclass::prelude::DerivedObjectProperties;
-use gdk::{ContentProvider, Drag, DragAction, MemoryTexture, Paintable};
-use gtk::prelude::{DrawingAreaExt, DrawingAreaExtManual, WidgetExt};
 use gtk::subclass::drawing_area::DrawingAreaImpl;
+use gtk::subclass::prelude::DerivedObjectProperties;
 use gtk::subclass::widget::WidgetImpl;
 use gtk::{
     glib, DragSource, DrawingArea, DropControllerMotion, EventControllerMotion, GestureClick,

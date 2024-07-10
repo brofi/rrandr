@@ -1,12 +1,12 @@
 use std::cell::RefCell;
 
-use gdk::gio::ListModel;
-use gdk::glib::subclass::object::ObjectImpl;
-use gdk::glib::subclass::types::ObjectSubclass;
-use gdk::glib::{object_subclass, Object, Type};
-use gdk::prelude::{Cast, StaticType};
-use gdk::subclass::prelude::ListModelImpl;
-use gtk::glib;
+use gio::ListModel;
+use glib::subclass::object::ObjectImpl;
+use glib::subclass::types::ObjectSubclass;
+use glib::{object_subclass, Object, Type};
+use gtk::prelude::{Cast, StaticType};
+use gtk::subclass::prelude::ListModelImpl;
+use gtk::{gio, glib};
 
 use crate::data::output::Output;
 

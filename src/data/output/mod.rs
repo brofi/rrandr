@@ -1,6 +1,7 @@
 mod imp;
 
-use gdk::glib::{wrapper, Object, ValueArray};
+use glib::{wrapper, Object, ValueArray};
+use gtk::glib;
 use x11rb::protocol::randr::Output as OutputId;
 
 use super::mode::Mode;

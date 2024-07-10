@@ -2,7 +2,8 @@ mod imp;
 
 use core::fmt;
 
-use gdk::glib::{wrapper, Object};
+use glib::{wrapper, Object};
+use gtk::glib;
 use x11rb::protocol::randr::{Mode as ModeId, ModeInfo};
 
 use crate::get_refresh_rate;

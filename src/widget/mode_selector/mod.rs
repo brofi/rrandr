@@ -1,11 +1,10 @@
 mod imp;
 
-use gdk::gio::ListModel;
-use gdk::glib::object::{IsA, ObjectExt};
-use gdk::glib::subclass::types::ObjectSubclassIsExt;
-use gdk::glib::{wrapper, SignalHandlerId};
-use glib::Object;
-use gtk::{glib, DropDown, Widget};
+use gio::ListModel;
+use glib::object::{IsA, ObjectExt};
+use glib::subclass::types::ObjectSubclassIsExt;
+use glib::{wrapper, Object, SignalHandlerId};
+use gtk::{gio, glib, DropDown, Widget};
 
 wrapper! {
     pub struct ModeSelector(ObjectSubclass<imp::ModeSelector>) @extends Widget;

@@ -2,13 +2,12 @@ use std::cell::{Cell, RefCell};
 use std::num::IntErrorKind;
 use std::sync::OnceLock;
 
-use gdk::glib::subclass::object::{ObjectImpl, ObjectImplExt};
-use gdk::glib::subclass::types::{ObjectSubclass, ObjectSubclassExt};
-use gdk::glib::subclass::Signal;
-use gdk::glib::{clone, derived_properties, object_subclass, Properties, SignalHandlerId};
-use gdk::prelude::{ObjectExt, StaticType};
-use gdk::subclass::prelude::DerivedObjectProperties;
-use gtk::prelude::{CheckButtonExt, WidgetExt};
+use glib::subclass::object::{ObjectImpl, ObjectImplExt};
+use glib::subclass::types::{ObjectSubclass, ObjectSubclassExt};
+use glib::subclass::Signal;
+use glib::{clone, derived_properties, object_subclass, Properties, SignalHandlerId};
+use gtk::prelude::{CheckButtonExt, ObjectExt, StaticType, WidgetExt};
+use gtk::subclass::prelude::DerivedObjectProperties;
 use gtk::subclass::widget::{WidgetClassExt, WidgetImpl};
 use gtk::{glib, Align, BinLayout, FlowBox, Orientation, SelectionMode, StringList, Widget};
 

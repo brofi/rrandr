@@ -1,11 +1,11 @@
 use std::cell::RefCell;
 use std::sync::OnceLock;
 
-use gdk::glib::object::Cast;
-use gdk::glib::subclass::object::{ObjectImpl, ObjectImplExt};
-use gdk::glib::subclass::types::{ObjectSubclass, ObjectSubclassExt, ObjectSubclassIsExt};
-use gdk::glib::subclass::{Signal, SignalClassHandlerToken};
-use gdk::glib::{object_subclass, SignalHandlerId, Value};
+use glib::object::Cast;
+use glib::subclass::object::{ObjectImpl, ObjectImplExt};
+use glib::subclass::types::{ObjectSubclass, ObjectSubclassExt, ObjectSubclassIsExt};
+use glib::subclass::{Signal, SignalClassHandlerToken};
+use glib::{object_subclass, SignalHandlerId, Value};
 use gtk::prelude::{BoxExt, ListItemExt, WidgetExt};
 use gtk::subclass::widget::{WidgetClassExt, WidgetImpl};
 use gtk::{

@@ -2,15 +2,16 @@ use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::sync::OnceLock;
 
-use gdk::glib::subclass::object::{ObjectImpl, ObjectImplExt};
-use gdk::glib::subclass::types::ObjectSubclass;
-use gdk::glib::subclass::Signal;
-use gdk::glib::{clone, derived_properties, object_subclass, Properties, Value};
-use gdk::prelude::{ListModelExt, ListModelExtManual, ObjectExt, StaticType};
-use gdk::subclass::prelude::{DerivedObjectProperties, ObjectSubclassExt};
 use gdk::DragAction;
-use gtk::prelude::{DrawingAreaExtManual, GestureDragExt, WidgetExt};
+use glib::subclass::object::{ObjectImpl, ObjectImplExt};
+use glib::subclass::Signal;
+use glib::{clone, derived_properties, object_subclass, Properties, Value};
+use gtk::prelude::{
+    DrawingAreaExtManual, GestureDragExt, ListModelExt, ListModelExtManual, ObjectExt, StaticType,
+    WidgetExt,
+};
 use gtk::subclass::drawing_area::{DrawingAreaImpl, DrawingAreaImplExt};
+use gtk::subclass::prelude::{DerivedObjectProperties, ObjectSubclass, ObjectSubclassExt};
 use gtk::subclass::widget::WidgetImpl;
 use gtk::{glib, DrawingArea, DropTarget, EventControllerMotion, GestureDrag};
 

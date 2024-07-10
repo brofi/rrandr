@@ -1,11 +1,11 @@
 mod imp;
 
-use gdk::glib::object::ObjectExt;
-use gdk::glib::subclass::types::ObjectSubclassIsExt;
-use gdk::glib::{self, closure_local, wrapper, Object};
+use glib::object::ObjectExt;
+use glib::subclass::types::ObjectSubclassIsExt;
+use glib::{closure_local, wrapper, Object};
 use gtk::prelude::WidgetExt;
 use gtk::subclass::drawing_area::DrawingAreaImpl;
-use gtk::{Accessible, Buildable, ConstraintTarget, DrawingArea, Widget};
+use gtk::{glib, Accessible, Buildable, ConstraintTarget, DrawingArea, Widget};
 
 use super::details_box::Update;
 use crate::data::output::Output;
