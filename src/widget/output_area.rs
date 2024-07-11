@@ -45,7 +45,7 @@ mod imp {
         screen_max_width: Cell<u32>,
         #[property(get, set = Self::set_screen_max_height, construct, default = i16::MAX.try_into().unwrap(), maximum = u16::MAX.into())]
         screen_max_height: Cell<u32>,
-        pub(super) selected_output: Cell<Option<usize>>,
+        pub(super) selected_output: RefCell<Option<Output>>,
         grab_offset: Cell<[f64; 2]>,
         scale: Cell<f64>,
         translate: Cell<[i16; 2]>,
@@ -174,7 +174,7 @@ mod imp {
         pub(super) fn add_output(&self, output: &Output) {
             let outputs = self.outputs.borrow();
             outputs.append(output);
-            self.select((outputs.n_items() - 1) as usize);
+            self.select(output);
         }
 
         pub(super) fn remove_output(&self, output: &Output) {
@@ -182,12 +182,12 @@ mod imp {
             self.outputs.borrow().remove(output.id());
         }
 
-        pub(super) fn select(&self, index: usize) {
+        fn select(&self, output: &Output) {
             self.obj().grab_focus();
-            self.selected_output.set(Some(index));
+            self.selected_output.replace(Some(output.clone()));
         }
 
-        pub(super) fn deselect(&self) { self.selected_output.set(None); }
+        pub(super) fn deselect(&self) { self.selected_output.replace(None); }
 
         fn get_bounds(outputs: &Outputs) -> Rect {
             Rect::bounds(outputs.iter::<Output>().map(Result::unwrap).map(|o| o.rect()).collect())
@@ -202,11 +202,11 @@ mod imp {
             let screen_rect = bounds.transform(scale, translate);
             context.draw_screen(screen_rect);
 
-            for (i, o) in self.outputs.borrow().iter::<Output>().map(Result::unwrap).enumerate() {
+            for o in self.outputs.borrow().iter::<Output>().map(Result::unwrap) {
                 let output_rect = o.rect().transform(scale, translate);
                 context.draw_output(output_rect);
-                if let Some(j) = self.selected_output.get() {
-                    if i == j {
+                if let Some(selected) = self.selected_output.borrow().as_ref() {
+                    if o == *selected {
                         context.draw_selected_output(output_rect);
                     }
                 }
@@ -221,21 +221,21 @@ mod imp {
         }
 
         fn on_drag_begin(&self, _g: &GestureDrag, start_x: f64, start_y: f64) {
-            if let Some(i) = self.get_output_index_at(start_x, start_y) {
+            if let Some(output) = self.get_output_at(start_x, start_y) {
                 let scale = self.scale.get();
                 let [dx, dy] = self.translate.get().map(f64::from);
                 let outputs = self.outputs.borrow();
 
                 // Grab offset to output origin in global coordinates
                 self.grab_offset.set([
-                    f64::from(outputs.index(i).pos_x()) - (start_x - dx) / scale,
-                    f64::from(outputs.index(i).pos_y()) - (start_y - dy) / scale,
+                    f64::from(output.pos_x()) - (start_x - dx) / scale,
+                    f64::from(output.pos_y()) - (start_y - dy) / scale,
                 ]);
 
-                self.obj().emit_by_name::<()>("output-selected", &[&outputs.index(i)]);
+                self.obj().emit_by_name::<()>("output-selected", &[&output]);
                 // Push output to back, so it gets drawn last
-                outputs.push_back(&outputs.index(i));
-                self.select((outputs.n_items() - 1) as usize);
+                outputs.push_back(&output);
+                self.select(&output);
 
                 // Update cursor
                 self.obj().set_cursor_from_name(Some("grabbing"));
@@ -248,9 +248,8 @@ mod imp {
 
         #[allow(clippy::cast_possible_truncation)]
         fn on_drag_update(&self, g: &GestureDrag, offset_x: f64, offset_y: f64) {
-            if let Some(i) = self.selected_output.get() {
+            if let Some(output) = self.selected_output.borrow().as_ref() {
                 let outputs = self.outputs.borrow();
-                let output = &outputs.index(i);
                 let scale = self.scale.get();
                 let [dx, dy] = self.translate.get().map(f64::from);
                 let [grab_dx, grab_dy] = self.grab_offset.get();
@@ -266,7 +265,7 @@ mod imp {
                 let snap_strength = (min_side / 4.) - (min_side / 12.);
 
                 // Calculate snap
-                let snap = Self::calculate_snap(&outputs, i);
+                let snap = Self::calculate_snap(&outputs, output);
 
                 // Calculate new position
                 let start = g.start_point().unwrap();
@@ -291,21 +290,21 @@ mod imp {
 
                 // Update new position
                 if new_x != output.pos_x() as i16 || new_y != output.pos_y() as i16 {
-                    outputs.index(i).set_pos_x(new_x as i32);
-                    outputs.index(i).set_pos_y(new_y as i32);
+                    output.set_pos_x(new_x as i32);
+                    output.set_pos_y(new_y as i32);
                     self.resize(self.obj().width(), self.obj().height());
                     self.obj().queue_draw();
                 }
             }
         }
 
-        fn calculate_snap(outputs: &Outputs, output_index: usize) -> Point {
-            let output_r = &outputs.index(output_index).rect();
+        fn calculate_snap(outputs: &Outputs, selected_output: &Output) -> Point {
+            let output_r = &selected_output.rect();
             let output_center = output_r.center();
             let mut dist = Point::max();
             let mut snap = Point::default();
-            for (j, other) in outputs.iter::<Output>().map(Result::unwrap).enumerate() {
-                if output_index != j {
+            for other in outputs.iter::<Output>().map(Result::unwrap) {
+                if *selected_output != other {
                     let other_r = other.rect();
                     let other_center = other_r.center();
 
@@ -457,7 +456,7 @@ mod imp {
             self.grab_offset.set([0., 0.]);
             // Update cursor
             if let Some((x, y)) = g.start_point() {
-                match self.get_output_index_at(x + offset_x, y + offset_y) {
+                match self.get_output_at(x + offset_x, y + offset_y) {
                     Some(_) => self.obj().set_cursor_from_name(Some("pointer")),
                     None => self.obj().set_cursor_from_name(Some("default")),
                 }
@@ -469,7 +468,7 @@ mod imp {
             let [grab_dx, grab_dy] = self.grab_offset.get();
             if grab_dx == 0. || grab_dy == 0. {
                 // Update cursor
-                match self.get_output_index_at(x, y) {
+                match self.get_output_at(x, y) {
                     Some(_) => self.obj().set_cursor_from_name(Some("pointer")),
                     None => self.obj().set_cursor_from_name(Some("default")),
                 }
@@ -499,18 +498,16 @@ mod imp {
 
         fn on_drop_motion(_dt: &DropTarget, _x: f64, _y: f64) -> DragAction { DragAction::MOVE }
 
-        fn get_output_index_at(&self, x: f64, y: f64) -> Option<usize> {
+        fn get_output_at(&self, x: f64, y: f64) -> Option<Output> {
             let scale = self.scale.get();
             let [dx, dy] = self.translate.get();
 
-            for (i, output) in
-                self.outputs.borrow().iter::<Output>().map(Result::unwrap).enumerate()
-            {
+            for output in self.outputs.borrow().iter::<Output>().map(Result::unwrap) {
                 let mut scaled_rect = output.rect();
                 scaled_rect.scale(scale);
                 scaled_rect.translate(dx, dy);
                 if scaled_rect.contains(x, y) {
-                    return Some(i);
+                    return Some(output);
                 }
             }
             None
@@ -577,12 +574,7 @@ impl OutputArea {
         }
     }
 
-    pub fn selected_output(&self) -> Option<Output> {
-        if let Some(i) = self.imp().selected_output.get() {
-            return Some(self.outputs().index(i));
-        }
-        None
-    }
+    pub fn selected_output(&self) -> Option<Output> { self.imp().selected_output.borrow().clone() }
 
     pub fn deselect(&self) { self.imp().deselect(); }
 }

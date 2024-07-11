@@ -43,7 +43,7 @@ mod imp {
         #[property(get, set = Self::set_outputs)]
         outputs: RefCell<Outputs>,
         config: Config,
-        pub(super) selected_output: Cell<Option<usize>>,
+        pub(super) selected_output: RefCell<Option<Output>>,
         is_dragging: Cell<bool>,
     }
 
@@ -119,27 +119,30 @@ mod imp {
             self.obj().queue_draw();
         }
 
-        pub(super) fn select(&self, index: usize) { self.selected_output.set(Some(index)); }
+        pub(super) fn select(&self, output: &Output) {
+            self.selected_output.replace(Some(output.clone()));
+        }
 
-        pub(super) fn deselect(&self) { self.selected_output.set(None); }
+        pub(super) fn deselect(&self) { self.selected_output.replace(None); }
 
         fn on_draw(&self, cr: &cairo::Context, width: i32, height: i32) {
             let outputs = self.outputs.borrow();
-            let i_select = self.selected_output.get();
+            let selected = self.selected_output.borrow();
             let context = DrawContext::new(cr.clone(), self.config.clone());
             let [width, height] = Self::get_output_dim(width, height, outputs.n_items() as usize);
             let mut j: usize = 0; // separate index for closing the gaps
             for o in outputs.iter::<Output>().map(Result::unwrap) {
-                if i_select.is_none()
-                    || i_select
-                        .is_some_and(|i| !self.is_dragging.get() || outputs.index(i).id() != o.id())
+                if selected.is_none()
+                    || selected
+                        .as_ref()
+                        .is_some_and(|s| !self.is_dragging.get() || s.id() != o.id())
                 {
                     let [x, y] = Self::get_output_pos(j, height);
                     let rect = [f64::from(x), f64::from(y), f64::from(width), f64::from(height)];
                     context.draw_output(rect);
                     context.draw_output_label(rect, &o.name(), o.product_name().as_deref());
-                    if let Some(i) = i_select {
-                        if outputs.index(i).id() == o.id() {
+                    if let Some(s) = selected.as_ref() {
+                        if s.id() == o.id() {
                             context.draw_selected_output(rect);
                         }
                     }
@@ -175,12 +178,10 @@ mod imp {
         }
 
         fn on_click(&self, _gc: &GestureClick, _n_press: i32, x: f64, y: f64) {
-            if let Some(i) = self.get_output_index_at(x, y, self.obj().width(), self.obj().height())
-            {
-                self.select(i);
+            if let Some(o) = self.get_output_at(x, y, self.obj().width(), self.obj().height()) {
+                self.select(&o);
                 self.obj().grab_focus();
-                self.obj()
-                    .emit_by_name::<()>("output-selected", &[&self.outputs.borrow().index(i)]);
+                self.obj().emit_by_name::<()>("output-selected", &[&o]);
             } else {
                 self.deselect();
                 self.obj().emit_by_name::<()>("output-deselected", &[]);
@@ -189,7 +190,7 @@ mod imp {
         }
 
         fn on_motion(&self, _ecm: &EventControllerMotion, x: f64, y: f64) {
-            match self.get_output_index_at(x, y, self.obj().width(), self.obj().height()) {
+            match self.get_output_at(x, y, self.obj().width(), self.obj().height()) {
                 Some(_) => self.obj().set_cursor_from_name(Some("pointer")),
                 None => self.obj().set_cursor_from_name(Some("default")),
             }
@@ -202,20 +203,20 @@ mod imp {
             let outputs = self.outputs.borrow();
             let width = self.obj().width();
             let height = self.obj().height();
-            if let Some(i) = self.get_output_index_at(x, y, width, height) {
+            if let Some(o) = self.get_output_at(x, y, width, height) {
                 let [width, height] =
                     Self::get_output_dim(width, height, outputs.n_items() as usize);
                 if let Ok(icon) = Self::create_drag_icon(
                     &self.config,
                     width,
                     height,
-                    &outputs.index(i).name(),
-                    outputs.index(i).product_name().as_deref(),
+                    &o.name(),
+                    o.product_name().as_deref(),
                 ) {
-                    let [_, oy] = Self::get_output_pos(i, height);
+                    let [_, oy] = Self::get_output_pos(outputs.find(&o).unwrap() as usize, height);
                     ds.set_icon(Some(&icon), x as i32, (y - f64::from(oy)) as i32);
                 }
-                return Some(ContentProvider::for_value(&outputs.index(i).to_value()));
+                return Some(ContentProvider::for_value(&o.to_value()));
             }
             None
         }
@@ -233,6 +234,7 @@ mod imp {
                     }
                 }
             }
+            self.obj().queue_draw();
             self.is_dragging.set(false);
         }
 
@@ -265,17 +267,17 @@ mod imp {
             ))
         }
 
-        fn get_output_index_at(&self, x: f64, y: f64, width: i32, height: i32) -> Option<usize> {
+        fn get_output_at(&self, x: f64, y: f64, width: i32, height: i32) -> Option<Output> {
             let outputs = self.outputs.borrow();
             let [width, height] = Self::get_output_dim(width, height, outputs.n_items() as usize);
-            for (i, _) in outputs.iter::<Output>().map(Result::unwrap).enumerate() {
+            for (i, o) in outputs.iter::<Output>().map(Result::unwrap).enumerate() {
                 let [ox, oy] = Self::get_output_pos(i, height);
                 if x >= f64::from(ox)
                     && x <= f64::from(i32::from(ox) + i32::from(width))
                     && y >= f64::from(oy)
                     && y <= f64::from(i32::from(oy) + i32::from(height))
                 {
-                    return Some(i);
+                    return Some(o);
                 }
             }
             None
@@ -318,8 +320,8 @@ impl DisabledOutputArea {
                 self.outputs().remove(output.id());
             }
             Update::Disabled => {
-                self.outputs().append(&output);
-                self.imp().select((self.outputs().n_items() - 1) as usize);
+                self.outputs().append(output);
+                self.imp().select(output);
             }
             _ => (),
         }
@@ -330,12 +332,7 @@ impl DisabledOutputArea {
         }
     }
 
-    pub fn selected_output(&self) -> Option<Output> {
-        if let Some(i) = self.imp().selected_output.get() {
-            return Some(self.outputs().index(i));
-        }
-        None
-    }
+    pub fn selected_output(&self) -> Option<Output> { self.imp().selected_output.borrow().clone() }
 
     pub fn deselect(&self) { self.imp().deselect(); }
 }

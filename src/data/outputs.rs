@@ -1,3 +1,4 @@
+use gdk::glib::object::CastNone;
 use gio::ListModel;
 use glib::subclass::types::ObjectSubclassIsExt;
 use glib::{wrapper, Object};
@@ -90,6 +91,15 @@ impl Outputs {
     pub fn push_back(&self, output: &Output) { self.append(&self.remove(output.id())); }
 
     pub fn index(&self, index: usize) -> Output { self.imp().0.borrow()[index].clone() }
+
+    pub fn find(&self, output: &Output) -> Option<u32> {
+        for i in 0..self.n_items() {
+            if *output == self.item(i).and_downcast::<Output>().unwrap() {
+                return Some(i);
+            }
+        }
+        None
+    }
 
     pub fn to_vec(&self) -> Vec<Output> { self.imp().0.borrow().to_vec() }
 }
