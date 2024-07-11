@@ -2,15 +2,16 @@ use std::cell::{Cell, RefCell};
 
 use glib::subclass::object::ObjectImpl;
 use glib::subclass::types::ObjectSubclass;
-use glib::{derived_properties, object_subclass, Properties, ValueArray};
+use glib::{derived_properties, object_subclass, Properties};
 use gtk::glib;
 use gtk::prelude::ObjectExt;
 use gtk::subclass::prelude::DerivedObjectProperties;
 use x11rb::protocol::randr::Output as OutputId;
 
 use crate::data::mode::Mode;
+use crate::data::modes::Modes;
 
-#[derive(Properties)]
+#[derive(Properties, Default)]
 #[properties(wrapper_type = super::Output)]
 pub struct Output {
     #[property(get, set)]
@@ -30,29 +31,11 @@ pub struct Output {
     #[property(get, set, nullable)]
     mode: RefCell<Option<Mode>>,
     #[property(get, set)]
-    modes: RefCell<ValueArray>,
+    modes: RefCell<Modes>,
     #[property(get, set)]
     width: Cell<u32>,
     #[property(get, set)]
     height: Cell<u32>,
-}
-
-impl Default for Output {
-    fn default() -> Self {
-        Self {
-            id: Default::default(),
-            name: Default::default(),
-            product_name: Default::default(),
-            enabled: Default::default(),
-            primary: Default::default(),
-            pos_y: Default::default(),
-            pos_x: Default::default(),
-            mode: Default::default(),
-            modes: RefCell::new(ValueArray::new(0)),
-            width: Default::default(),
-            height: Default::default(),
-        }
-    }
 }
 
 #[object_subclass]

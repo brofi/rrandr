@@ -1,10 +1,12 @@
 mod imp;
 
-use glib::{wrapper, Object, ValueArray};
+use glib::{wrapper, Object};
 use gtk::glib;
+use gtk::prelude::{CastNone, ListModelExt};
 use x11rb::protocol::randr::Output as OutputId;
 
 use super::mode::Mode;
+use crate::data::modes::Modes;
 use crate::math::{Rect, MM_PER_INCH};
 use crate::nearly_eq;
 
@@ -26,7 +28,7 @@ impl Output {
         pos_x: i16,
         pos_y: i16,
         mode: Option<Mode>,
-        modes: ValueArray,
+        modes: Modes,
         width: u32,
         height: u32,
     ) -> Output {
@@ -62,14 +64,18 @@ impl Output {
     }
 
     pub fn modes_vec(&self) -> Vec<Mode> {
-        self.modes().iter().map(|v| v.get::<Mode>().unwrap()).collect::<Vec<_>>()
+        let mut modes = Vec::new();
+        for i in 0..self.modes().n_items() {
+            modes.push(self.modes().item(i).and_downcast::<Mode>().unwrap())
+        }
+        modes
     }
 
     pub fn enable(&self) { self.enable_at(-1, -1); }
 
     pub fn enable_at(&self, x: i16, y: i16) {
         self.set_enabled(true);
-        self.set_mode(Some(self.modes()[0].get::<Mode>().expect("has mode")));
+        self.set_mode(Some(self.modes().item(0).and_downcast::<Mode>().expect("has mode")));
         self.set_pos_x(i32::from(x));
         self.set_pos_y(i32::from(y));
     }

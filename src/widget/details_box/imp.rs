@@ -2,11 +2,12 @@ use std::cell::{Cell, RefCell};
 use std::num::IntErrorKind;
 use std::sync::OnceLock;
 
+use glib::object::CastNone;
 use glib::subclass::object::{ObjectImpl, ObjectImplExt};
 use glib::subclass::types::{ObjectSubclass, ObjectSubclassExt};
 use glib::subclass::Signal;
 use glib::{clone, derived_properties, object_subclass, Properties, SignalHandlerId};
-use gtk::prelude::{CheckButtonExt, ObjectExt, StaticType, WidgetExt};
+use gtk::prelude::{CheckButtonExt, ListModelExt, ObjectExt, StaticType, WidgetExt};
 use gtk::subclass::prelude::DerivedObjectProperties;
 use gtk::subclass::widget::{WidgetClassExt, WidgetImpl};
 use gtk::{glib, Align, BinLayout, FlowBox, Orientation, SelectionMode, StringList, Widget};
@@ -228,8 +229,10 @@ impl DetailsBox {
             let dd_selected = dd.selected() as usize;
 
             // Update current mode
-            let mode = &output.modes()[output.resolution_dropdown_mode_index(dd_selected)]
-                .get::<Mode>()
+            let mode = output
+                .modes()
+                .item(output.resolution_dropdown_mode_index(dd_selected) as u32)
+                .and_downcast::<Mode>()
                 .unwrap();
             if output.mode().is_some_and(|m| m.id() != mode.id()) || output.mode().is_none() {
                 output.set_mode(Some(mode));
@@ -257,11 +260,13 @@ impl DetailsBox {
             }
 
             // Update current mode
-            let mode = &output.modes()[output.refresh_rate_dropdown_mode_index(
+            let mode = &output
+                .modes()
+                .item(output.refresh_rate_dropdown_mode_index(
                 self.mode_selector.get_resolution() as usize,
                 dd.selected() as usize,
-            )]
-            .get::<Mode>()
+                ) as u32)
+                .and_downcast::<Mode>()
             .unwrap();
             if output.mode().is_some_and(|m| m.id() != mode.id()) || output.mode().is_none() {
                 output.set_mode(Some(mode));

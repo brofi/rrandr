@@ -2,8 +2,6 @@ use std::borrow::Borrow;
 use std::collections::HashMap;
 use std::error::Error;
 
-use glib::{Value, ValueArray};
-use gtk::glib;
 use gtk::prelude::ListModelExtManual;
 use x11rb::connection::{Connection as XConnection, RequestConnection};
 use x11rb::cookie::{Cookie, VoidCookie};
@@ -21,13 +19,14 @@ use x11rb::CURRENT_TIME;
 
 use super::x_error_to_string;
 use crate::data::mode::Mode;
+use crate::data::modes::Modes;
 use crate::data::output::{Output, PPI_DEFAULT};
 use crate::data::outputs::Outputs;
 use crate::math::{Rect, MM_PER_INCH};
 
 pub type ScreenSizeRange = GetScreenSizeRangeReply;
 type ScreenResources = GetScreenResourcesCurrentReply;
-type OutputInfo = GetOutputInfoReply;
+pub type OutputInfo = GetOutputInfoReply;
 type CrtcInfo = GetCrtcInfoReply;
 type Primary = GetOutputPrimaryReply;
 
@@ -117,7 +116,7 @@ impl Randr {
                 pos[0],
                 pos[1],
                 mode,
-                get_modes_for_output(output_info, &self.modes.borrow()),
+                Modes::new(output_info, &self.modes.borrow()),
                 output_info.mm_width,
                 output_info.mm_height,
             ))
@@ -434,16 +433,6 @@ fn get_crtcs(
         crtcs.insert(crtc, c.reply()?);
     }
     Ok(crtcs)
-}
-
-fn get_modes_for_output(output_info: &OutputInfo, modes: &HashMap<ModeId, ModeInfo>) -> ValueArray {
-    let modes =
-        output_info.modes.iter().map(|mode_id| Mode::from(modes[mode_id])).collect::<Vec<Mode>>();
-    let mut values = ValueArray::new(u32::try_from(modes.len()).expect("less modes"));
-    for mode in modes {
-        values.append(&Value::from(mode));
-    }
-    values
 }
 
 #[cfg(debug_assertions)]
