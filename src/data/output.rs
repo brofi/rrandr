@@ -6,7 +6,7 @@ use x11rb::protocol::randr::Output as OutputId;
 use super::mode::Mode;
 use crate::data::modes::Modes;
 use crate::math::{Rect, MM_PER_INCH};
-use crate::nearly_eq;
+use crate::utils::nearly_eq;
 
 type Resolution = [u16; 2];
 
