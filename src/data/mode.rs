@@ -52,10 +52,6 @@ impl Mode {
             .property("refresh", refresh)
             .build()
     }
-
-    pub fn new_from(mode: &Mode) -> Mode {
-        Self::new(mode.id(), mode.width() as u16, mode.height() as u16, mode.refresh())
-    }
 }
 
 impl From<ModeInfo> for Mode {

@@ -97,22 +97,6 @@ impl Output {
             .build()
     }
 
-    pub fn new_from(o: &Output) -> Output {
-        Self::new(
-            o.id(),
-            o.name(),
-            o.product_name(),
-            o.enabled(),
-            o.primary(),
-            o.pos_x() as i16,
-            o.pos_y() as i16,
-            o.mode().map(|mode| Mode::new_from(&mode)),
-            o.modes(),
-            o.width(),
-            o.height(),
-        )
-    }
-
     pub fn modes_vec(&self) -> Vec<Mode> {
         let mut modes = Vec::new();
         for i in 0..self.modes().n_items() {

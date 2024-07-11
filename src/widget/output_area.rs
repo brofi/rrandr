@@ -522,9 +522,9 @@ wrapper! {
 }
 
 impl OutputArea {
-    pub fn new(outputs: &Vec<Output>, screen_max_width: u16, screen_max_height: u16) -> Self {
+    pub fn new(outputs: &Outputs, screen_max_width: u16, screen_max_height: u16) -> Self {
         Object::builder()
-            .property("outputs", Outputs::new(outputs))
+            .property("outputs", outputs)
             .property("screen-max-width", u32::from(screen_max_width))
             .property("screen-max-height", u32::from(screen_max_height))
             .build()

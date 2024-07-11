@@ -1,6 +1,6 @@
 use glib::subclass::types::ObjectSubclassIsExt;
 use glib::{closure_local, wrapper, Object};
-use gtk::prelude::{ListModelExt, ObjectExt, WidgetExt};
+use gtk::prelude::{ObjectExt, WidgetExt};
 use gtk::{glib, Accessible, Buildable, ConstraintTarget, DrawingArea, Widget};
 
 use super::details_box::Update;
@@ -292,9 +292,7 @@ wrapper! {
 }
 
 impl DisabledOutputArea {
-    pub fn new(outputs: &Vec<Output>) -> Self {
-        Object::builder().property("outputs", Outputs::new(outputs)).build()
-    }
+    pub fn new(outputs: &Outputs) -> Self { Object::builder().property("outputs", outputs).build() }
 
     pub fn connect_output_selected(&self, callback: impl Fn(&Self, &Output) + 'static) {
         self.connect_closure(

@@ -2,7 +2,7 @@ use gdk::glib::object::CastNone;
 use gio::ListModel;
 use glib::subclass::types::ObjectSubclassIsExt;
 use glib::{wrapper, Object};
-use gtk::prelude::{ListModelExt, ListModelExtManual};
+use gtk::prelude::ListModelExt;
 use gtk::{gio, glib};
 use x11rb::protocol::randr::Output as OutputId;
 
@@ -50,23 +50,7 @@ wrapper! {
 }
 
 impl Outputs {
-    pub fn new(outputs: &Vec<Output>) -> Outputs {
-        let obj: Outputs = Object::new();
-        for output in outputs {
-            obj.append(output);
-        }
-        obj
-    }
-
-    pub fn new_from(outputs: &Outputs, enabled: bool) -> Outputs {
-        let new: Outputs = Object::new();
-        for output in outputs.iter::<Output>().map(Result::unwrap) {
-            if (enabled && output.enabled()) || (!enabled && !output.enabled()) {
-                new.append(&Output::new_from(&output));
-            }
-        }
-        new
-    }
+    pub fn new() -> Outputs { Object::new() }
 
     pub fn append(&self, output: &Output) {
         let index = {

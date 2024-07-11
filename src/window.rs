@@ -1,13 +1,14 @@
 use gio::{ActionGroup, ActionMap};
 use glib::object::IsA;
 use glib::{closure_local, wrapper, Object, ValueDelegate};
-use gtk::prelude::ObjectExt;
+use gtk::prelude::{ListModelExtManual, ObjectExt};
 use gtk::subclass::prelude::ObjectSubclassIsExt;
 use gtk::{
     gio, glib, Accessible, Application, ApplicationWindow, Buildable, Button, ConstraintTarget,
     Native, Root, ShortcutManager, Widget,
 };
 
+use crate::data::output::Output;
 use crate::data::outputs::Outputs;
 
 pub const PADDING: u16 = 12;
@@ -345,8 +346,13 @@ impl Window {
     }
 
     pub fn set_outputs(&self, outputs: &Outputs) {
-        self.imp().enabled_area.set_outputs(Outputs::new_from(outputs, true));
-        self.imp().disabled_area.set_outputs(Outputs::new_from(outputs, false));
+        let enabled = Outputs::new();
+        let disabled = Outputs::new();
+        for output in outputs.iter::<Output>().map(Result::unwrap) {
+            if output.enabled() { enabled.append(&output) } else { disabled.append(&output) }
+        }
+        self.imp().enabled_area.set_outputs(enabled);
+        self.imp().disabled_area.set_outputs(disabled);
     }
 
     pub fn connect_apply(&self, callback: impl Fn(&Self, &Button, &Outputs) -> bool + 'static) {
