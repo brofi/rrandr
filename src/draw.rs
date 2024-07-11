@@ -8,7 +8,7 @@ use pangocairo::functions::{create_layout, show_layout};
 
 use crate::config::Config;
 use crate::math::Rect;
-use crate::widget::window::PADDING;
+use crate::window::PADDING;
 use crate::x11::popup::POPUP_WINDOW_PAD;
 
 pub const SCREEN_LINE_WIDTH: f64 = 2.;

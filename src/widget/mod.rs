@@ -7,4 +7,3 @@ pub mod mode_selector;
 pub mod output_area;
 pub mod position_entry;
 pub mod switch;
-pub mod window;

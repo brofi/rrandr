@@ -10,6 +10,7 @@ mod data;
 mod draw;
 mod math;
 mod widget;
+mod window;
 mod x11;
 
 use app::Application;

@@ -17,7 +17,7 @@ mod imp {
     use gtk::subclass::application::GtkApplicationImpl;
     use gtk::subclass::prelude::ApplicationImpl;
 
-    use crate::widget::window::{Action, Window};
+    use crate::window::{Action, Window};
     use crate::x11::popup::show_popup_windows;
     use crate::x11::randr::Randr;
 
