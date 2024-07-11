@@ -22,6 +22,16 @@ impl Outputs {
         obj
     }
 
+    pub fn new_from(outputs: &Outputs, enabled: bool) -> Outputs {
+        let new: Outputs = Object::new();
+        for output in outputs.iter::<Output>().map(Result::unwrap) {
+            if (enabled && output.enabled()) || (!enabled && !output.enabled()) {
+                new.append(&Output::new_from(&output));
+            }
+        }
+        new
+    }
+
     pub fn append(&self, output: &Output) {
         let index = {
             let mut outputs = self.imp().0.borrow_mut();

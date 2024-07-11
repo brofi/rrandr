@@ -24,8 +24,8 @@ use crate::config::Config;
 use crate::data::output::Output;
 use crate::data::outputs::Outputs;
 use crate::draw::DrawContext;
-use crate::view::PADDING;
 use crate::widget::details_box::Update;
+use crate::widget::window::PADDING;
 
 #[derive(Default, Properties)]
 #[properties(wrapper_type = super::DisabledOutputArea)]
@@ -245,7 +245,7 @@ impl DisabledOutputArea {
         Ok(MemoryTexture::new(
             i32::from(width),
             i32::from(height),
-            gdk::MemoryFormat::B8g8r8a8Premultiplied,
+            MemoryFormat::B8g8r8a8Premultiplied,
             &Bytes::from_owned(surface.take_data()?),
             stride,
         ))

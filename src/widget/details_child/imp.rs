@@ -9,7 +9,7 @@ use gtk::subclass::prelude::DerivedObjectProperties;
 use gtk::subclass::widget::WidgetImpl;
 use gtk::{glib, Align, Box, FlowBoxChild, GestureClick, Label, Orientation, Widget};
 
-use crate::view::SPACING;
+use crate::widget::window::SPACING;
 
 #[derive(Properties)]
 #[properties(wrapper_type = super::DetailsChild)]

@@ -13,12 +13,12 @@ use gtk::{glib, Align, BinLayout, FlowBox, Orientation, SelectionMode, StringLis
 
 use super::Update;
 use crate::data::mode::Mode;
-use crate::view::{Axis, SPACING};
 use crate::widget::checkbutton::CheckButton;
 use crate::widget::details_child::DetailsChild;
 use crate::widget::mode_selector::ModeSelector;
 use crate::widget::position_entry::PositionEntry;
 use crate::widget::switch::Switch;
+use crate::widget::window::{Axis, SPACING};
 use crate::Output;
 
 #[derive(Properties)]
@@ -29,9 +29,9 @@ pub struct DetailsBox {
     enabled_changed_handler: RefCell<Option<SignalHandlerId>>,
     pos_x_changed_handler: RefCell<Option<SignalHandlerId>>,
     pos_y_changed_handler: RefCell<Option<SignalHandlerId>>,
-    #[property(set, construct_only, maximum = u16::MAX.into())]
+    #[property(get, set, construct, default = i16::MAX.try_into().unwrap(), maximum = u16::MAX.into())]
     screen_max_width: Cell<u32>,
-    #[property(set, construct_only, maximum = u16::MAX.into())]
+    #[property(get, set, construct, default = i16::MAX.try_into().unwrap(), maximum = u16::MAX.into())]
     screen_max_height: Cell<u32>,
     root: FlowBox,
     sw_enabled: Switch,

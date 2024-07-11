@@ -5,8 +5,12 @@ use gtk::glib;
 use x11rb::protocol::randr::Output as OutputId;
 
 use super::mode::Mode;
-use crate::math::Rect;
-use crate::{nearly_eq, Resolution, MM_PER_INCH, PPI_DEFAULT};
+use crate::math::{Rect, MM_PER_INCH};
+use crate::nearly_eq;
+
+type Resolution = [u16; 2];
+
+pub const PPI_DEFAULT: u8 = 96;
 
 wrapper! {
     pub struct Output(ObjectSubclass<imp::Output>);
@@ -50,7 +54,7 @@ impl Output {
             o.primary(),
             o.pos_x() as i16,
             o.pos_y() as i16,
-            o.mode(),
+            o.mode().map(|mode| Mode::new_from(&mode)),
             o.modes(),
             o.width(),
             o.height(),

@@ -20,8 +20,8 @@ use crate::data::output::Output;
 use crate::data::outputs::Outputs;
 use crate::draw::{DrawContext, SCREEN_LINE_WIDTH};
 use crate::math::{Point, Rect};
-use crate::view::PADDING;
 use crate::widget::details_box::Update;
+use crate::widget::window::PADDING;
 
 #[derive(Default, Properties)]
 #[properties(wrapper_type = super::OutputArea)]
@@ -29,9 +29,9 @@ pub struct OutputArea {
     #[property(get, set = Self::set_outputs)]
     outputs: RefCell<Outputs>,
     config: Config,
-    #[property(set, construct_only, maximum = u16::MAX.into())]
+    #[property(get, set = Self::set_screen_max_width, construct, default = i16::MAX.try_into().unwrap(), maximum = u16::MAX.into())]
     screen_max_width: Cell<u32>,
-    #[property(set, construct_only, maximum = u16::MAX.into())]
+    #[property(get, set = Self::set_screen_max_height, construct, default = i16::MAX.try_into().unwrap(), maximum = u16::MAX.into())]
     screen_max_height: Cell<u32>,
     pub(super) selected_output: Cell<Option<usize>>,
     grab_offset: Cell<[f64; 2]>,
@@ -139,6 +139,18 @@ impl DrawingAreaImpl for OutputArea {
 }
 
 impl OutputArea {
+    fn set_screen_max_width(&self, screen_max_width: u32) {
+        self.screen_max_width.set(screen_max_width);
+        self.resize(self.obj().width(), self.obj().height());
+        self.obj().queue_draw();
+    }
+
+    fn set_screen_max_height(&self, screen_max_height: u32) {
+        self.screen_max_height.set(screen_max_height);
+        self.resize(self.obj().width(), self.obj().height());
+        self.obj().queue_draw();
+    }
+
     fn set_outputs(&self, outputs: &Outputs) {
         self.outputs.replace(outputs.clone());
         self.deselect();

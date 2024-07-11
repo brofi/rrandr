@@ -6,7 +6,7 @@ use glib::{wrapper, GString, Object, SignalHandlerId};
 use gtk::prelude::{EditableExt, EditableExtManual};
 use gtk::{glib, Editable, Widget};
 
-use crate::view::Axis;
+use crate::widget::window::Axis;
 
 wrapper! {
     pub struct PositionEntry(ObjectSubclass<imp::PositionEntry>) @extends Widget;

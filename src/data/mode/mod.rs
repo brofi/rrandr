@@ -4,9 +4,7 @@ use core::fmt;
 
 use glib::{wrapper, Object};
 use gtk::glib;
-use x11rb::protocol::randr::{Mode as ModeId, ModeInfo};
-
-use crate::get_refresh_rate;
+use x11rb::protocol::randr::{Mode as ModeId, ModeFlag, ModeInfo};
 
 wrapper! {
     pub struct Mode(ObjectSubclass<imp::Mode>);
@@ -21,6 +19,10 @@ impl Mode {
             .property("refresh", refresh)
             .build()
     }
+
+    pub fn new_from(mode: &Mode) -> Mode {
+        Self::new(mode.id(), mode.width() as u16, mode.height() as u16, mode.refresh())
+    }
 }
 
 impl From<ModeInfo> for Mode {
@@ -32,5 +34,22 @@ impl From<ModeInfo> for Mode {
 impl fmt::Display for Mode {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}x{}_{:.2}", self.width(), self.height(), self.refresh())
+    }
+}
+
+fn get_refresh_rate(mode_info: &ModeInfo) -> f64 {
+    let mut vtotal = mode_info.vtotal;
+
+    if mode_info.mode_flags.contains(ModeFlag::DOUBLE_SCAN) {
+        vtotal *= 2;
+    }
+    if mode_info.mode_flags.contains(ModeFlag::INTERLACE) {
+        vtotal /= 2;
+    }
+
+    if mode_info.htotal > 0 && vtotal > 0 {
+        f64::from(mode_info.dot_clock) / (f64::from(mode_info.htotal) * f64::from(vtotal))
+    } else {
+        0.0
     }
 }

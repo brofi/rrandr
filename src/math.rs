@@ -1,3 +1,5 @@
+pub const MM_PER_INCH: f32 = 25.4;
+
 #[derive(Default, PartialEq)]
 pub struct Point {
     pub x: i32,
