@@ -52,7 +52,7 @@
                 <property name="valign">end</property>
                 <child>
                   <object class="GtkButton">
-                    <signal name="clicked" handler="on_about_clicked" />
+                    <signal name="clicked" handler="on_about_clicked" swapped="true" />
                     <property name="margin-end">12</property>
                     <property name="icon-name">help-about-symbolic</property>
                     <property name="tooltip-text" translatable="yes">About</property>

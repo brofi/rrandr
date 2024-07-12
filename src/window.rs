@@ -304,8 +304,9 @@ mod imp {
         }
 
         #[template_callback]
-        fn on_about_clicked(_btn: &Button) {
+        fn on_about_clicked(&self, _btn: &Button) {
             let about = AboutDialog::builder()
+                .transient_for(&*self.obj())
                 .program_name(env!("CARGO_PKG_NAME"))
                 .version(env!("CARGO_PKG_VERSION"))
                 .comments(env!("CARGO_PKG_DESCRIPTION"))
