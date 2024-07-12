@@ -207,27 +207,19 @@ mod imp {
         }
 
         fn on_enabled_switched(&self, sw: &gtk::Switch) {
-            let mut updated = None;
-            let mut update = None;
             if let Some(output) = self.output.borrow().as_ref() {
-                let active = sw.is_active();
                 // Update output
-                if active {
+                if sw.is_active() {
                     output.enable();
-                    update = Some(Update::Enabled);
+                    self.notify_updated(output, &Update::Enabled);
                 } else {
                     output.disable();
-                    update = Some(Update::Disabled);
+                    self.notify_updated(output, &Update::Disabled);
                 }
-                updated = Some(output.clone());
-            }
-            if let (Some(updated), Some(update)) = (updated, update) {
-                self.notify_updated(&updated, &update);
             }
         }
 
         fn on_resolution_selected(&self, dd: &gtk::DropDown) {
-            let mut updated = None;
             if let Some(output) = self.output.borrow().as_ref() {
                 if !output.enabled() {
                     return;
@@ -243,7 +235,7 @@ mod imp {
                     .unwrap();
                 if output.mode().is_some_and(|m| m.id() != mode.id()) || output.mode().is_none() {
                     output.set_mode(Some(mode));
-                    updated = Some(output.clone());
+                    self.notify_updated(&output, &Update::Resolution);
                 }
 
                 // Update refresh rate dropdown
@@ -254,9 +246,6 @@ mod imp {
                     self.mode_selector
                         .set_refresh_rate(u32::try_from(idx).expect("less refresh rates"));
                 }
-            }
-            if let Some(updated) = updated {
-                self.notify_updated(&updated, &Update::Resolution);
             }
         }
 
