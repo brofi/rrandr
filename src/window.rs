@@ -59,7 +59,7 @@ mod imp {
     use glib::{
         clone, object_subclass, spawn_future_local, timeout_add, ControlFlow, Propagation, Type,
     };
-    use gtk::prelude::{GtkWindowExt, ListModelExt, ObjectExt, WidgetExt};
+    use gtk::prelude::{GtkWindowExt, ListModelExt, ObjectExt, StaticTypeExt, WidgetExt};
     use gtk::subclass::application_window::ApplicationWindowImpl;
     use gtk::subclass::widget::{
         CompositeTemplateCallbacksClass, CompositeTemplateClass, CompositeTemplateInitializingExt,
@@ -76,6 +76,7 @@ mod imp {
     use crate::widget::details_box::{DetailsBox, Update};
     use crate::widget::dialog::Dialog;
     use crate::widget::disabled_output_area::DisabledOutputArea;
+    use crate::widget::icon_text::IconText;
     use crate::widget::output_area::OutputArea;
 
     const CONFIRM_DIALOG_SHOW_SECS: u8 = 15;
@@ -102,6 +103,7 @@ mod imp {
         const NAME: &'static str = "MainWindow";
 
         fn class_init(klass: &mut Self::Class) {
+            IconText::ensure_type();
             klass.bind_template();
             klass.bind_template_callbacks();
         }

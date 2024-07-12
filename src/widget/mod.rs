@@ -3,6 +3,7 @@ pub mod details_box;
 pub mod details_child;
 pub mod dialog;
 pub mod disabled_output_area;
+pub mod icon_text;
 pub mod mode_selector;
 pub mod output_area;
 pub mod position_entry;
