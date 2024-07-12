@@ -1,3 +1,4 @@
+use gdk::prelude::ListModelExtManual;
 use glib::object::ObjectExt;
 use glib::subclass::types::ObjectSubclassIsExt;
 use glib::{closure_local, wrapper, Object};
@@ -552,6 +553,15 @@ impl OutputArea {
         match update {
             Update::Enabled => self.imp().add_output(output),
             Update::Disabled => self.imp().remove_output(output),
+            _ => (),
+        }
+        // Set/unset primary
+        match update {
+            Update::Primary => {
+                for o in self.outputs().iter::<Output>().map(Result::unwrap) {
+                    o.set_primary(o == *output && output.primary());
+                }
+            }
             _ => (),
         }
         // Mind the gap
