@@ -3,7 +3,7 @@ use gtk::glib;
 use gtk::prelude::{CastNone, ListModelExt};
 use x11rb::protocol::randr::Output as OutputId;
 
-use super::mode::Mode;
+use crate::data::mode::Mode;
 use crate::data::modes::Modes;
 use crate::math::{Rect, MM_PER_INCH};
 use crate::utils::nearly_eq;

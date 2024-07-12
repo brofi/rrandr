@@ -15,7 +15,6 @@ mod window;
 mod x11;
 
 use app::Application;
-use data::output::Output;
 use gio::resources_register_include;
 use gtk::{gio, glib};
 

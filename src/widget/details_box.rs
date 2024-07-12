@@ -2,7 +2,7 @@ use glib::{closure_local, wrapper, Object, ValueDelegate};
 use gtk::prelude::ObjectExt;
 use gtk::{glib, Widget};
 
-use crate::Output;
+use crate::data::output::Output;
 
 mod imp {
     use std::cell::{Cell, RefCell};
@@ -21,13 +21,13 @@ mod imp {
 
     use super::Update;
     use crate::data::mode::Mode;
+    use crate::data::output::Output;
     use crate::widget::checkbutton::CheckButton;
     use crate::widget::details_child::DetailsChild;
     use crate::widget::mode_selector::ModeSelector;
     use crate::widget::position_entry::PositionEntry;
     use crate::widget::switch::Switch;
     use crate::window::{Axis, SPACING};
-    use crate::Output;
 
     #[derive(Properties)]
     #[properties(wrapper_type = super::DetailsBox)]
