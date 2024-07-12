@@ -119,8 +119,7 @@ impl Output {
         self.set_primary(false);
         self.set_pos_x(0);
         self.set_pos_y(0);
-        let mode: Option<Mode> = None;
-        self.set_mode(mode);
+        self.set_mode(None::<Mode>);
     }
 
     pub fn ppi(&self) -> f64 {

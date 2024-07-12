@@ -146,9 +146,16 @@ mod imp {
 
             let event_controller_key = EventControllerKey::new();
             event_controller_key.connect_key_pressed(clone!(
-            @weak self as this => @default-panic, move |eck, keyval, keycode, state| this.on_key_pressed(eck, keyval, keycode, state)
-        ));
+                @weak self as this => @default-panic, move |eck, keyval, keycode, state| this.on_key_pressed(eck, keyval, keycode, state)
+            ));
             obj.add_controller(event_controller_key);
+
+            self.details.connect_output_changed(clone!(
+                @weak self as this => move |_, output, update| {
+                    this.enabled_area.update(output, update);
+                    this.disabled_area.update(output, update);
+                }
+            ));
         }
     }
 
