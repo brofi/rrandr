@@ -166,7 +166,8 @@ mod imp {
 
         fn set_outputs(&self, outputs: &Outputs) {
             self.outputs.replace(outputs.clone());
-            self.deselect();
+            let selected = self.selected_output.take();
+            self.selected_output.replace(selected.and_then(|s| outputs.find_by_id(s.id())));
             self.resize(self.obj().width(), self.obj().height());
             self.obj().queue_draw();
         }
@@ -182,7 +183,7 @@ mod imp {
             self.outputs.borrow().remove(output.id());
         }
 
-        fn select(&self, output: &Output) {
+        pub(super) fn select(&self, output: &Output) {
             self.obj().grab_focus();
             self.selected_output.replace(Some(output.clone()));
         }
@@ -575,6 +576,8 @@ impl OutputArea {
     }
 
     pub fn selected_output(&self) -> Option<Output> { self.imp().selected_output.borrow().clone() }
+
+    pub fn select(&self, output: &Output) { self.imp().select(output); }
 
     pub fn deselect(&self) { self.imp().deselect(); }
 }

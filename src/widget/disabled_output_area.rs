@@ -115,7 +115,8 @@ mod imp {
     impl DisabledOutputArea {
         fn set_outputs(&self, outputs: &Outputs) {
             self.outputs.replace(outputs.clone());
-            self.deselect();
+            let selected = self.selected_output.take();
+            self.selected_output.replace(selected.and_then(|s| outputs.find_by_id(s.id())));
             self.obj().queue_draw();
         }
 
@@ -213,7 +214,8 @@ mod imp {
                     &o.name(),
                     o.product_name().as_deref(),
                 ) {
-                    let [_, oy] = Self::get_output_pos(outputs.find(&o).unwrap() as usize, height);
+                    let [_, oy] =
+                        Self::get_output_pos(outputs.position(&o).unwrap() as usize, height);
                     ds.set_icon(Some(&icon), x as i32, (y - f64::from(oy)) as i32);
                 }
                 return Some(ContentProvider::for_value(&o.to_value()));
@@ -331,6 +333,8 @@ impl DisabledOutputArea {
     }
 
     pub fn selected_output(&self) -> Option<Output> { self.imp().selected_output.borrow().clone() }
+
+    pub fn select(&self, output: &Output) { self.imp().select(output); }
 
     pub fn deselect(&self) { self.imp().deselect(); }
 }

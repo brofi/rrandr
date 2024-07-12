@@ -76,13 +76,17 @@ impl Outputs {
 
     pub fn index(&self, index: usize) -> Output { self.imp().0.borrow()[index].clone() }
 
-    pub fn find(&self, output: &Output) -> Option<u32> {
+    pub fn position(&self, output: &Output) -> Option<u32> {
         for i in 0..self.n_items() {
             if *output == self.item(i).and_downcast::<Output>().unwrap() {
                 return Some(i);
             }
         }
         None
+    }
+
+    pub fn find_by_id(&self, output: OutputId) -> Option<Output> {
+        self.imp().0.borrow().iter().find(|&o| o.id() == output).cloned()
     }
 
     pub fn to_vec(&self) -> Vec<Output> { self.imp().0.borrow().to_vec() }

@@ -346,13 +346,27 @@ impl Window {
     }
 
     pub fn set_outputs(&self, outputs: &Outputs) {
+        let imp = self.imp();
         let enabled = Outputs::new();
         let disabled = Outputs::new();
         for output in outputs.iter::<Output>().map(Result::unwrap) {
             if output.enabled() { enabled.append(&output) } else { disabled.append(&output) }
         }
-        self.imp().enabled_area.set_outputs(enabled);
-        self.imp().disabled_area.set_outputs(disabled);
+        // Keep selection when outputs move from enabled to disabled and vice versa
+        if let Some(selected) =
+            imp.enabled_area.selected_output().or(imp.disabled_area.selected_output())
+        {
+            if let Some(o) = outputs.find_by_id(selected.id()) {
+                if selected.enabled() && !o.enabled() {
+                    imp.disabled_area.select(&o);
+                } else if !selected.enabled() && o.enabled() {
+                    imp.enabled_area.select(&o);
+                }
+                imp.details.set_output(Some(o));
+            }
+        }
+        imp.enabled_area.set_outputs(&enabled);
+        imp.disabled_area.set_outputs(&disabled);
     }
 
     pub fn connect_apply(&self, callback: impl Fn(&Self, &Button, &Outputs) -> bool + 'static) {
