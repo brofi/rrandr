@@ -68,7 +68,7 @@ mod imp {
     use gtk::subclass::window::WindowImpl;
     use gtk::{
         glib, template_callbacks, AboutDialog, ApplicationWindow, Button, CompositeTemplate,
-        EventControllerKey, License, Paned, TemplateChild,
+        EventControllerKey, FlowBox, License, Paned, TemplateChild,
     };
 
     use crate::data::output::Output;
@@ -92,6 +92,8 @@ mod imp {
         pub(super) disabled_area: TemplateChild<DisabledOutputArea>,
         #[template_child]
         pub(super) details: TemplateChild<DetailsBox>,
+        #[template_child]
+        actions: TemplateChild<FlowBox>,
         last_handle_pos: Cell<i32>,
     }
 
@@ -145,6 +147,13 @@ mod imp {
                 .bind_property("screen-max-height", &self.details.get(), "screen-max-height")
                 .bidirectional()
                 .build();
+
+            // Remove focusable from automatically added FlowBoxChild
+            let mut child = self.actions.first_child();
+            while let Some(c) = child {
+                c.set_focusable(false);
+                child = c.next_sibling();
+            }
 
             let event_controller_key = EventControllerKey::new();
             event_controller_key.connect_key_pressed(clone!(

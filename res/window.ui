@@ -44,7 +44,7 @@
               <object class="DetailsBox" id="details" />
             </child>
             <child>
-              <object class="GtkFlowBox">
+              <object class="GtkFlowBox" id="actions">
                 <property name="orientation">horizontal</property>
                 <property name="selection-mode">none</property>
                 <property name="min-children-per-line">3</property>
