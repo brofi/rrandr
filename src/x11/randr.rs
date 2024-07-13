@@ -99,12 +99,13 @@ impl Randr {
             if output_info.connection != Connection::CONNECTED {
                 continue;
             }
+            let modes = Modes::new(output_info, &self.modes.borrow());
             let enabled = output_info.crtc > 0;
             let mut mode = None;
             let mut pos = [0, 0];
             if enabled {
                 let crtc_info = &self.crtcs.borrow()[&output_info.crtc];
-                mode = Some(Mode::from(self.modes.borrow()[&crtc_info.mode]));
+                mode = modes.find_by_id(crtc_info.mode);
                 pos = [crtc_info.x, crtc_info.y];
             }
             outputs.append(&Output::new(
@@ -116,7 +117,7 @@ impl Randr {
                 pos[0],
                 pos[1],
                 mode,
-                Modes::new(output_info, &self.modes.borrow()),
+                modes,
                 output_info.mm_width,
                 output_info.mm_height,
             ))

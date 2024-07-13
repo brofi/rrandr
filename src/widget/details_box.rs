@@ -9,7 +9,6 @@ mod imp {
     use std::sync::OnceLock;
     use std::time::Duration;
 
-    use glib::object::CastNone;
     use glib::subclass::object::{ObjectImpl, ObjectImplExt};
     use glib::subclass::types::{ObjectSubclass, ObjectSubclassExt};
     use glib::subclass::Signal;
@@ -17,13 +16,12 @@ mod imp {
         clone, derived_properties, object_subclass, timeout_add_local_once, Properties,
         SignalHandlerId, SourceId,
     };
-    use gtk::prelude::{CheckButtonExt, ListModelExt, ObjectExt, StaticType, WidgetExt};
+    use gtk::prelude::{CheckButtonExt, ObjectExt, StaticType, WidgetExt};
     use gtk::subclass::prelude::DerivedObjectProperties;
     use gtk::subclass::widget::{WidgetClassExt, WidgetImpl};
-    use gtk::{glib, Align, BinLayout, FlowBox, Orientation, SelectionMode, StringList, Widget};
+    use gtk::{glib, Align, BinLayout, FlowBox, Orientation, SelectionMode, Widget};
 
     use super::Update;
-    use crate::data::mode::Mode;
     use crate::data::output::Output;
     use crate::widget::checkbutton::CheckButton;
     use crate::widget::details_child::DetailsChild;
@@ -115,11 +113,8 @@ mod imp {
             self.sw_enabled.connect_active_notify(clone!(
                 @weak self as this => move |sw| this.on_enabled_switched(sw)
             ));
-            self.mode_selector.connect_resolution_selected(clone!(
-                @weak self as this => move |dd| this.on_resolution_selected(dd)
-            ));
-            self.mode_selector.connect_refresh_rate_selected(clone!(
-                @weak self as this => move |dd| this.on_refresh_rate_selected(dd)
+            self.mode_selector.connect_selected_mode_notify(clone!(
+                @weak self as this => move |mode_selector| this.on_mode_selected(mode_selector)
             ));
             self.position_entry.connect_coordinate_changed(clone!(
                 @weak self as this => move |_, axis, coord| this.update_position(axis, coord);
@@ -207,18 +202,8 @@ mod imp {
                     )))
                 ]);
 
-                let resolutions = output.get_resolutions_dropdown();
-                self.mode_selector.set_resolutions(Some(&into_string_list(&resolutions)));
-                if let Some(res_idx) = output.get_current_resolution_dropdown_index() {
-                    self.mode_selector
-                        .set_resolution(u32::try_from(res_idx).expect("less resolutions"));
-                    let refresh_rates = output.get_refresh_rates_dropdown(res_idx);
-                    self.mode_selector.set_refresh_rates(Some(&into_string_list(&refresh_rates)));
-                    if let Some(ref_idx) = output.get_current_refresh_rate_dropdown_index(res_idx) {
-                        self.mode_selector
-                            .set_refresh_rate(u32::try_from(ref_idx).expect("less refresh rates"));
-                    }
-                }
+                self.mode_selector.set_selected_mode(output.mode());
+                self.mode_selector.set_modes(output.modes());
             }
             self.output.replace(output.cloned());
             self.update_visibility();
@@ -250,54 +235,19 @@ mod imp {
             }
         }
 
-        fn on_resolution_selected(&self, dd: &gtk::DropDown) {
+        fn on_mode_selected(&self, mode_selector: &ModeSelector) {
             if let Some(output) = self.output.borrow().as_ref() {
-                if !output.enabled() {
-                    return;
-                }
-
-                let dd_selected = dd.selected() as usize;
-
-                // Update current mode
-                let mode = output
-                    .modes()
-                    .item(output.resolution_dropdown_mode_index(dd_selected) as u32)
-                    .and_downcast::<Mode>()
-                    .unwrap();
-                if output.mode().is_some_and(|m| m.id() != mode.id()) || output.mode().is_none() {
-                    output.set_mode(Some(mode));
-                    self.notify_updated(&output, &Update::Resolution);
-                }
-
-                // Update refresh rate dropdown
-                self.mode_selector.set_refresh_rates(Some(&into_string_list(
-                    &output.get_refresh_rates_dropdown(dd_selected),
-                )));
-                if let Some(idx) = output.get_current_refresh_rate_dropdown_index(dd_selected) {
-                    self.mode_selector
-                        .set_refresh_rate(u32::try_from(idx).expect("less refresh rates"));
-                }
-            }
-        }
-
-        fn on_refresh_rate_selected(&self, dd: &gtk::DropDown) {
-            if let Some(output) = self.output.borrow().as_ref() {
-                if !output.enabled() {
-                    return;
-                }
-
-                // Update current mode
-                let mode = &output
-                    .modes()
-                    .item(output.refresh_rate_dropdown_mode_index(
-                        self.mode_selector.get_resolution() as usize,
-                        dd.selected() as usize,
-                    ) as u32)
-                    .and_downcast::<Mode>()
-                    .unwrap();
-                if output.mode().is_some_and(|m| m.id() != mode.id()) || output.mode().is_none() {
-                    output.set_mode(Some(mode));
-                    self.notify_updated(output, &Update::Refresh);
+                let new_mode = mode_selector.selected_mode();
+                let old_mode = output.mode();
+                output.set_mode(new_mode.clone());
+                if let (Some(old_mode), Some(new_mode)) = (old_mode, new_mode) {
+                    if old_mode.width() != new_mode.width()
+                        || old_mode.height() != new_mode.height()
+                    {
+                        self.notify_updated(output, &Update::Resolution);
+                    } else if old_mode.refresh() != new_mode.refresh() {
+                        self.notify_updated(output, &Update::Refresh);
+                    }
                 }
             }
         }
@@ -350,11 +300,6 @@ mod imp {
         fn notify_updated(&self, output: &Output, update: &Update) {
             self.obj().emit_by_name::<()>("output-changed", &[output, update]);
         }
-    }
-
-    fn into_string_list(list: &[String]) -> StringList {
-        let list = list.iter().map(String::as_str).collect::<Vec<&str>>();
-        StringList::new(list.as_slice())
     }
 }
 

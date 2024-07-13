@@ -68,6 +68,10 @@ impl Modes {
         };
         self.items_changed(index, 0, 1);
     }
+
+    pub fn find_by_id(&self, mode: ModeId) -> Option<Mode> {
+        self.imp().0.borrow().iter().find(|&m| m.id() == mode).cloned()
+    }
 }
 
 impl Default for Modes {
