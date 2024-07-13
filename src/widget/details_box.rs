@@ -6,14 +6,17 @@ use crate::data::output::Output;
 
 mod imp {
     use std::cell::{Cell, RefCell};
-    use std::num::IntErrorKind;
     use std::sync::OnceLock;
+    use std::time::Duration;
 
     use glib::object::CastNone;
     use glib::subclass::object::{ObjectImpl, ObjectImplExt};
     use glib::subclass::types::{ObjectSubclass, ObjectSubclassExt};
     use glib::subclass::Signal;
-    use glib::{clone, derived_properties, object_subclass, Properties, SignalHandlerId};
+    use glib::{
+        clone, derived_properties, object_subclass, timeout_add_local_once, Properties,
+        SignalHandlerId, SourceId,
+    };
     use gtk::prelude::{CheckButtonExt, ListModelExt, ObjectExt, StaticType, WidgetExt};
     use gtk::subclass::prelude::DerivedObjectProperties;
     use gtk::subclass::widget::{WidgetClassExt, WidgetImpl};
@@ -25,9 +28,11 @@ mod imp {
     use crate::widget::checkbutton::CheckButton;
     use crate::widget::details_child::DetailsChild;
     use crate::widget::mode_selector::ModeSelector;
-    use crate::widget::position_entry::PositionEntry;
+    use crate::widget::position_entry::{Axis, PositionEntry};
     use crate::widget::switch::Switch;
-    use crate::window::{Axis, SPACING};
+    use crate::window::SPACING;
+
+    const POS_UPDATE_DELAY: u64 = 500;
 
     #[derive(Properties)]
     #[properties(wrapper_type = super::DetailsBox)]
@@ -35,8 +40,8 @@ mod imp {
         #[property(get, set = Self::set_output, nullable)]
         output: RefCell<Option<Output>>,
         enabled_changed_handler: RefCell<Option<SignalHandlerId>>,
-        pos_x_changed_handler: RefCell<Option<SignalHandlerId>>,
-        pos_y_changed_handler: RefCell<Option<SignalHandlerId>>,
+        pos_changed_handlers: RefCell<[Option<SignalHandlerId>; 2]>,
+        pos_modify_sids: RefCell<[Option<SourceId>; 2]>,
         #[property(get, set, construct, default = i16::MAX.try_into().unwrap(), maximum = u16::MAX.into())]
         screen_max_width: Cell<u32>,
         #[property(get, set, construct, default = i16::MAX.try_into().unwrap(), maximum = u16::MAX.into())]
@@ -53,8 +58,8 @@ mod imp {
             Self {
                 output: Default::default(),
                 enabled_changed_handler: Default::default(),
-                pos_x_changed_handler: Default::default(),
-                pos_y_changed_handler: Default::default(),
+                pos_changed_handlers: Default::default(),
+                pos_modify_sids: Default::default(),
                 screen_max_width: Default::default(),
                 screen_max_height: Default::default(),
                 root: FlowBox::builder()
@@ -116,18 +121,9 @@ mod imp {
             self.mode_selector.connect_refresh_rate_selected(clone!(
                 @weak self as this => move |dd| this.on_refresh_rate_selected(dd)
             ));
-            self.position_entry.connect_insert_x(clone!(
-            @weak self as this => move |entry, text, position| this.on_position_insert(entry, text, position, Axis::X)
-        ));
-            self.position_entry.connect_delete_x(clone!(
-            @weak self as this => move |entry, start, end| this.on_position_delete(entry, start, end, Axis::X)
-        ));
-            self.position_entry.connect_insert_y(clone!(
-            @weak self as this => move |entry, text, position| this.on_position_insert(entry, text, position, Axis::Y)
-        ));
-            self.position_entry.connect_delete_y(clone!(
-            @weak self as this => move |entry, start, end| this.on_position_delete(entry, start, end, Axis::Y)
-        ));
+            self.position_entry.connect_coordinate_changed(clone!(
+                @weak self as this => move |_, axis, coord| this.update_position(axis, coord);
+            ));
             self.cb_primary.connect_active_notify(clone!(
                 @weak self as this => move |cb| this.on_primary_checked(cb)
             ));
@@ -147,12 +143,16 @@ mod imp {
                     output.disconnect(handler_id);
                 }
             }
-            if let (Some(x_handler), Some(y_handler)) =
-                (self.pos_x_changed_handler.take(), self.pos_y_changed_handler.take())
-            {
-                if let Some(output) = self.output.borrow().as_ref() {
-                    output.disconnect(x_handler);
-                    output.disconnect(y_handler);
+            for handler in self.pos_changed_handlers.take() {
+                if let Some(handler_id) = handler {
+                    if let Some(output) = self.output.borrow().as_ref() {
+                        output.disconnect(handler_id);
+                    }
+                }
+            }
+            for sid in self.pos_modify_sids.take() {
+                if let Some(sid) = sid {
+                    sid.remove();
                 }
             }
             if let Some(output) = output {
@@ -169,12 +169,43 @@ mod imp {
 
                 self.position_entry.set_x(&output.pos_x().to_string());
                 self.position_entry.set_y(&output.pos_y().to_string());
-                self.pos_x_changed_handler.replace(Some(output.connect_pos_x_notify(clone!(
-                    @weak self.position_entry as pos => move |o| pos.set_x(&o.pos_x().to_string())
-                ))));
-                self.pos_y_changed_handler.replace(Some(output.connect_pos_y_notify(clone!(
-                    @weak self.position_entry as pos => move |o| pos.set_y(&o.pos_y().to_string())
-                ))));
+                if let Some(mode) = output.mode() {
+                    self.position_entry.set_max_x(i32::from(
+                        self.screen_max_width
+                            .get()
+                            .saturating_sub(mode.width())
+                            .try_into()
+                            .unwrap_or(i16::MAX),
+                    ));
+                    self.position_entry.set_max_y(i32::from(
+                        self.screen_max_height
+                            .get()
+                            .saturating_sub(mode.height())
+                            .try_into()
+                            .unwrap_or(i16::MAX),
+                    ));
+                } else {
+                    self.position_entry.set_max_x(0);
+                    self.position_entry.set_max_y(0);
+                }
+                self.pos_changed_handlers.replace([
+                    Some(output.connect_pos_x_notify(clone!(
+                        @weak self as this => move |o| {
+                            if let Some(sid) = this.pos_modify_sids.borrow_mut()[usize::from(Axis::X)].take() {
+                                sid.remove();
+                            }
+                            this.position_entry.set_x(&o.pos_x().to_string());
+                        }
+                    ))),
+                    Some(output.connect_pos_y_notify(clone!(
+                        @weak self as this => move |o| {
+                            if let Some(sid) = this.pos_modify_sids.borrow_mut()[usize::from(Axis::Y)].take() {
+                                sid.remove();
+                            }
+                            this.position_entry.set_y(&o.pos_y().to_string());
+                        }
+                    )))
+                ]);
 
                 let resolutions = output.get_resolutions_dropdown();
                 self.mode_selector.set_resolutions(Some(&into_string_list(&resolutions)));
@@ -271,93 +302,41 @@ mod imp {
             }
         }
 
-        fn on_position_insert(
-            &self,
-            entry: &PositionEntry,
-            text: &str,
-            position: &mut i32,
-            axis: Axis,
-        ) {
-            let idx = usize::try_from(*position).expect("smaller position");
-            let mut new_text = entry.text(axis).to_string();
-            new_text.insert_str(idx, text);
-            if let Some(coord) = self.parse_coord(&new_text, axis) {
-                if coord.to_string() == new_text {
-                    entry.insert_text(text, position, axis);
-                } else if coord.to_string() != entry.text(axis) {
-                    entry.set_text(&coord.to_string(), axis);
-                }
-                self.update_position(axis, coord);
-            } else if entry.text(axis).is_empty() {
-                entry.insert_text("0", &mut 0, axis);
-            }
-        }
-
-        fn on_position_delete(
-            &self,
-            entry: &PositionEntry,
-            start_pos: i32,
-            end_pos: i32,
-            axis: Axis,
-        ) {
-            let start_idx = usize::try_from(start_pos).expect("smaller start position");
-            let end_idx = usize::try_from(end_pos).expect("smaller end position");
-            let mut new_text = entry.text(axis).to_string();
-            new_text.replace_range(start_idx..end_idx, "");
-            if let Some(coord) = self.parse_coord(&new_text, axis) {
-                if coord.to_string() == new_text {
-                    entry.delete_text(start_pos, end_pos, axis);
-                } else {
-                    entry.set_text(&coord.to_string(), axis);
-                }
-                self.update_position(axis, coord);
-            } else {
-                entry.delete_text(start_pos, end_pos, axis);
-                self.update_position(axis, 0);
-            }
-        }
-
-        fn parse_coord(&self, text: &str, axis: Axis) -> Option<i16> {
+        fn update_position(&self, axis: Axis, coord: i32) {
             if let Some(output) = self.output.borrow().as_ref() {
-                if let Some(mode) = output.mode() {
-                    let max = match axis {
-                        Axis::X => {
-                            i16::try_from(self.screen_max_width.get().saturating_sub(mode.width()))
-                                .unwrap_or(i16::MAX)
+                if let Some(sid) = self.pos_modify_sids.borrow_mut()[usize::from(axis)].take() {
+                    sid.remove();
+                }
+
+                let sid = timeout_add_local_once(
+                    Duration::from_millis(POS_UPDATE_DELAY),
+                    clone!(
+                        @weak self as this, @weak output => move || {
+                            this.pos_modify_sids.borrow_mut()[usize::from(axis)].take();
+                            let cur_pos = match axis {
+                                Axis::X => output.pos_x(),
+                                Axis::Y => output.pos_y(),
+                            };
+                            if cur_pos != coord {
+                                let set_coord = || {
+                                    match axis {
+                                        Axis::X => output.set_pos_x(coord),
+                                        Axis::Y => output.set_pos_y(coord),
+                                    };
+                                };
+                                if let Some(handler_id) = &this.pos_changed_handlers.borrow()[usize::from(axis)] {
+                                    output.block_signal(handler_id);
+                                    set_coord();
+                                    output.unblock_signal(handler_id);
+                                } else {
+                                    set_coord();
+                                }
+                                this.notify_updated(&output, &Update::Position);
+                            }
                         }
-                        Axis::Y => i16::try_from(
-                            self.screen_max_height.get().saturating_sub(mode.height()),
-                        )
-                        .unwrap_or(i16::MAX),
-                    };
-                    return match text
-                        .chars()
-                        .filter(char::is_ascii_digit)
-                        .collect::<String>()
-                        .parse::<i16>()
-                    {
-                        Ok(c) => Some(c.min(max)),
-                        Err(e) => match e.kind() {
-                            IntErrorKind::PosOverflow => Some(max),
-                            _ => None,
-                        },
-                    };
-                }
-            }
-            None
-        }
-
-        fn update_position(&self, axis: Axis, coord: i16) {
-            if let Some(output) = self.output.borrow().as_ref() {
-                let (new_x, new_y) = match axis {
-                    Axis::X => (coord, output.pos_y() as i16),
-                    Axis::Y => (output.pos_x() as i16, coord),
-                };
-                if new_x != output.pos_x() as i16 || new_y != output.pos_y() as i16 {
-                    output.set_pos_x(new_x as i32);
-                    output.set_pos_y(new_y as i32);
-                    self.notify_updated(output, &Update::Position);
-                }
+                    ),
+                );
+                self.pos_modify_sids.borrow_mut()[usize::from(axis)].replace(sid);
             }
         }
 

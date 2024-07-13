@@ -127,15 +127,19 @@ mod imp {
                     let max_x =
                         i16::try_from(self.screen_max_width.get().saturating_sub(mode.width()))
                             .unwrap_or(i16::MAX);
+                    let x =
+                        output.pos_x().saturating_sub(i32::from(bounds.x())).min(i32::from(max_x));
+                    if x != output.pos_x() {
+                        output.set_pos_x(x);
+                    }
                     let max_y =
-                        i16::try_from(self.screen_max_height.get().saturating_sub(mode.height()))
-                            .unwrap_or(i16::MAX);
-                    output.set_pos_x(
-                        output.pos_x().saturating_sub(i32::from(bounds.x())).min(i32::from(max_x)),
-                    );
-                    output.set_pos_y(
-                        output.pos_y().saturating_sub(i32::from(bounds.y())).min(i32::from(max_y)),
-                    );
+                    i16::try_from(self.screen_max_height.get().saturating_sub(mode.height()))
+                        .unwrap_or(i16::MAX);
+                    let y =
+                        output.pos_y().saturating_sub(i32::from(bounds.y())).min(i32::from(max_y));
+                    if y != output.pos_y() {
+                        output.set_pos_y(y);
+                    }
                 }
             }
             *bounds = Self::get_bounds(&outputs);
@@ -449,8 +453,14 @@ mod imp {
                 }
             }
             for output in outputs.iter::<Output>().map(Result::unwrap) {
-                output.set_pos_x(data[&output.id()].0.x() as i32);
-                output.set_pos_y(data[&output.id()].0.y() as i32);
+                let x = data[&output.id()].0.x() as i32;
+                if x != output.pos_x() {
+                    output.set_pos_x(x);
+                }
+                let y = data[&output.id()].0.y() as i32;
+                if y != output.pos_y() {
+                    output.set_pos_y(y);
+                }
             }
         }
 

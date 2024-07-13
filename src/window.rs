@@ -14,12 +14,6 @@ use crate::data::outputs::Outputs;
 pub const PADDING: u16 = 12;
 pub const SPACING: u16 = 6;
 
-#[derive(Clone, Copy)]
-pub enum Axis {
-    X,
-    Y,
-}
-
 #[derive(ValueDelegate, Clone, Copy)]
 #[value_delegate(from = u8)]
 pub enum Action {
