@@ -99,9 +99,13 @@ impl Randr {
             if output_info.connection != Connection::CONNECTED {
                 continue;
             }
-            let modes = Modes::new(output_info, &self.modes.borrow());
+            
             let enabled = output_info.crtc > 0;
+            let modes: Modes = Modes::new();
             let mut mode = None;
+            for mode_id in &output_info.modes {
+                modes.append(&Mode::from(self.modes.borrow()[mode_id]));
+            }
             let mut pos = [0, 0];
             if enabled {
                 let crtc_info = &self.crtcs.borrow()[&output_info.crtc];

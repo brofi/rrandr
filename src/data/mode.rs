@@ -52,6 +52,13 @@ impl Mode {
             .property("refresh", refresh)
             .build()
     }
+
+    pub fn as_resolution_str(&self, format_width: Option<usize>) -> String {
+        let fw = format_width.unwrap_or_default();
+        format!("{}\u{202F}x\u{202F}{:<fw$}", self.width(), self.height())
+    }
+
+    pub fn as_refresh_rate_str(self) -> String { format!("{:.2}\u{202F}Hz", self.refresh()) }
 }
 
 impl From<ModeInfo> for Mode {

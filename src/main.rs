@@ -9,7 +9,6 @@ mod config;
 mod data;
 mod draw;
 mod math;
-mod utils;
 mod widget;
 mod window;
 mod x11;

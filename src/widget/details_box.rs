@@ -202,8 +202,8 @@ mod imp {
                     )))
                 ]);
 
-                self.mode_selector.set_selected_mode(output.mode());
                 self.mode_selector.set_modes(output.modes());
+                self.mode_selector.set_selected_mode(output.mode());
             }
             self.output.replace(output.cloned());
             self.update_visibility();

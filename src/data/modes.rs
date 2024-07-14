@@ -1,14 +1,12 @@
-use std::collections::HashMap;
-
 use gio::ListModel;
+use glib::object::CastNone;
 use glib::subclass::types::ObjectSubclassIsExt;
 use glib::{wrapper, Object};
 use gtk::prelude::ListModelExt;
 use gtk::{gio, glib};
-use x11rb::protocol::randr::{Mode as ModeId, ModeInfo};
+use x11rb::protocol::randr::Mode as ModeId;
 
 use crate::data::mode::Mode;
-use crate::x11::randr::OutputInfo;
 
 mod imp {
     use std::cell::RefCell;
@@ -52,15 +50,9 @@ wrapper! {
 }
 
 impl Modes {
-    pub fn new(output_info: &OutputInfo, modes: &HashMap<ModeId, ModeInfo>) -> Modes {
-        let modes_model: Modes = Object::new();
-        for mode_id in &output_info.modes {
-            modes_model.append(&Mode::from(modes[mode_id]));
-        }
-        modes_model
-    }
+    pub fn new() -> Modes { Object::new() }
 
-    fn append(&self, mode: &Mode) {
+    pub fn append(&self, mode: &Mode) {
         let index = {
             let mut modes = self.imp().0.borrow_mut();
             modes.push(mode.clone());
@@ -71,6 +63,15 @@ impl Modes {
 
     pub fn find_by_id(&self, mode: ModeId) -> Option<Mode> {
         self.imp().0.borrow().iter().find(|&m| m.id() == mode).cloned()
+    }
+
+    pub fn position(&self, mode: &Mode) -> Option<u32> {
+        for i in 0..self.n_items() {
+            if *mode == self.item(i).and_downcast::<Mode>().unwrap() {
+                return Some(i);
+            }
+        }
+        None
     }
 }
 
