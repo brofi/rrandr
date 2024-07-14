@@ -22,6 +22,8 @@ mod imp {
     use gtk::{glib, Align, BinLayout, FlowBox, Orientation, SelectionMode, Widget};
 
     use super::Update;
+    use crate::data::mode::Mode;
+    use crate::data::modes::Modes;
     use crate::data::output::Output;
     use crate::widget::checkbutton::CheckButton;
     use crate::widget::details_child::DetailsChild;
@@ -38,8 +40,10 @@ mod imp {
         #[property(get, set = Self::set_output, nullable)]
         output: RefCell<Option<Output>>,
         enabled_changed_handler: RefCell<Option<SignalHandlerId>>,
+        mode_changed_handler: RefCell<Option<SignalHandlerId>>,
         pos_changed_handlers: RefCell<[Option<SignalHandlerId>; 2]>,
         pos_modify_sids: RefCell<[Option<SourceId>; 2]>,
+        primary_changed_handler: RefCell<Option<SignalHandlerId>>,
         #[property(get, set, construct, default = i16::MAX.try_into().unwrap(), maximum = u16::MAX.into())]
         screen_max_width: Cell<u32>,
         #[property(get, set, construct, default = i16::MAX.try_into().unwrap(), maximum = u16::MAX.into())]
@@ -56,8 +60,10 @@ mod imp {
             Self {
                 output: Default::default(),
                 enabled_changed_handler: Default::default(),
+                mode_changed_handler: Default::default(),
                 pos_changed_handlers: Default::default(),
                 pos_modify_sids: Default::default(),
+                primary_changed_handler: Default::default(),
                 screen_max_width: Default::default(),
                 screen_max_height: Default::default(),
                 root: FlowBox::builder()
@@ -133,33 +139,17 @@ mod imp {
 
     impl DetailsBox {
         fn set_output(&self, output: Option<&Output>) {
-            if let Some(handler_id) = self.enabled_changed_handler.take() {
-                if let Some(output) = self.output.borrow().as_ref() {
-                    output.disconnect(handler_id);
-                }
-            }
-            for handler in self.pos_changed_handlers.take() {
-                if let Some(handler_id) = handler {
-                    if let Some(output) = self.output.borrow().as_ref() {
-                        output.disconnect(handler_id);
-                    }
-                }
-            }
+            self.disconnect_output_property_handlers();
+
             for sid in self.pos_modify_sids.take() {
                 if let Some(sid) = sid {
                     sid.remove();
                 }
             }
             if let Some(output) = output {
+                self.connect_output_property_handlers(output);
+
                 self.sw_enabled.set_active(output.enabled());
-                self.enabled_changed_handler.replace(Some(output.connect_enabled_notify(clone!(
-                    @weak self as this => move |o| {
-                        if o.enabled() != this.sw_enabled.is_active() {
-                            this.sw_enabled.set_active(o.enabled());
-                        }
-                        this.update_visibility();
-                    }
-                ))));
                 self.cb_primary.set_active(output.primary());
 
                 self.position_entry.set_x(&output.pos_x().to_string());
@@ -183,30 +173,65 @@ mod imp {
                     self.position_entry.set_max_x(0);
                     self.position_entry.set_max_y(0);
                 }
-                self.pos_changed_handlers.replace([
-                    Some(output.connect_pos_x_notify(clone!(
-                        @weak self as this => move |o| {
-                            if let Some(sid) = this.pos_modify_sids.borrow_mut()[usize::from(Axis::X)].take() {
-                                sid.remove();
-                            }
-                            this.position_entry.set_x(&o.pos_x().to_string());
-                        }
-                    ))),
-                    Some(output.connect_pos_y_notify(clone!(
-                        @weak self as this => move |o| {
-                            if let Some(sid) = this.pos_modify_sids.borrow_mut()[usize::from(Axis::Y)].take() {
-                                sid.remove();
-                            }
-                            this.position_entry.set_y(&o.pos_y().to_string());
-                        }
-                    )))
-                ]);
 
-                self.mode_selector.set_modes(output.modes());
+                self.mode_selector.set_modes(Some(output.modes()));
                 self.mode_selector.set_selected_mode(output.mode());
+            } else {
+                self.mode_selector.set_selected_mode(None::<Mode>);
+                self.mode_selector.set_modes(None::<Modes>);
             }
             self.output.replace(output.cloned());
             self.update_visibility();
+        }
+
+        fn connect_output_property_handlers(&self, output: &Output) {
+            self.enabled_changed_handler.replace(Some(output.connect_enabled_notify(clone!(
+                @weak self as this => move |o| {
+                    this.sw_enabled.set_active(o.enabled());
+                    this.update_visibility();
+                }
+            ))));
+            self.mode_changed_handler.replace(Some(output.connect_mode_notify(clone!(
+                @weak self as this => move |o| this.mode_selector.set_selected_mode(o.mode())
+            ))));
+            self.primary_changed_handler.replace(Some(output.connect_primary_notify(clone!(
+                @weak self as this => move |o| this.cb_primary.set_active(o.primary())
+            ))));
+            self.pos_changed_handlers.replace([
+                Some(output.connect_pos_x_notify(clone!(
+                    @weak self as this => move |o| {
+                        if let Some(sid) = this.pos_modify_sids.borrow_mut()[usize::from(Axis::X)].take() {
+                            sid.remove();
+                        }
+                        this.position_entry.set_x(&o.pos_x().to_string());
+                    }
+                ))),
+                Some(output.connect_pos_y_notify(clone!(
+                    @weak self as this => move |o| {
+                        if let Some(sid) = this.pos_modify_sids.borrow_mut()[usize::from(Axis::Y)].take() {
+                            sid.remove();
+                        }
+                        this.position_entry.set_y(&o.pos_y().to_string());
+                    }
+                )))
+            ]);
+        }
+
+        fn disconnect_output_property_handlers(&self) {
+            for handler in [
+                self.enabled_changed_handler.take(),
+                self.mode_changed_handler.take(),
+                self.primary_changed_handler.take(),
+            ] {
+                if let (Some(output), Some(handler_id)) = (self.output.borrow().as_ref(), handler) {
+                    output.disconnect(handler_id);
+                }
+            }
+            for handler in self.pos_changed_handlers.take() {
+                if let (Some(output), Some(handler_id)) = (self.output.borrow().as_ref(), handler) {
+                    output.disconnect(handler_id);
+                }
+            }
         }
 
         fn update_visibility(&self) {
