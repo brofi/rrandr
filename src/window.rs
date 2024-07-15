@@ -319,7 +319,7 @@ mod imp {
                 .license_type(License::Gpl30)
                 .authors(env!("CARGO_PKG_AUTHORS").split(':').collect::<Vec<_>>())
                 .build();
-            if let Ok(logo) = Texture::from_filename("res/logo.svg") {
+            if let Ok(logo) = Texture::from_filename("src/res/logo.svg") {
                 about.set_logo(Some(&logo));
             }
             about.show();

@@ -1,5 +1,9 @@
 fn main() {
-    glib_build_tools::compile_resources(&["res"], "res/rrandr.gresource.xml", "rrandr.gresource");
+    glib_build_tools::compile_resources(
+        &["src/res"],
+        "src/res/rrandr.gresource.xml",
+        "rrandr.gresource",
+    );
     println!("cargo::rustc-env=RRANDR_COPYRIGHT_NOTICE={}", copyright_notice());
 }
 
