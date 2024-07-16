@@ -45,6 +45,7 @@ mod imp {
     use std::time::Duration;
 
     use gdk::{Key, ModifierType, Texture};
+    use gettextrs::{gettext, ngettext};
     use glib::object::CastNone;
     use glib::subclass::object::{ObjectImpl, ObjectImplExt};
     use glib::subclass::types::{ObjectSubclass, ObjectSubclassExt};
@@ -245,12 +246,19 @@ mod imp {
             if obj.emit_by_name::<bool>("apply", &[&btn, &self.get_outputs()]) {
                 let mut secs = CONFIRM_DIALOG_SHOW_SECS.saturating_sub(1);
 
+                // Translators: '{}' gets replaced with the number of seconds left.
+                let msg = ngettext!(
+                    "Reverting in {} second",
+                    "Reverting in {} seconds",
+                    secs.into(),
+                    secs
+                );
                 let dialog = Dialog::builder(&*obj)
-                    .title("Confirm changes")
-                    .heading("Keep changes?")
-                    .message(&format!("Reverting in {}...", secs))
-                    .actions(&["_Keep", "_Revert"])
-                    .tooltips(&["Keep changes", "Revert changes"])
+                    .title(&gettext("Confirm changes"))
+                    .heading(&gettext("Keep changes?"))
+                    .message(&msg)
+                    .actions(&[&gettext("_Keep"), &gettext("_Revert")])
+                    .tooltips(&[&gettext("Keep changes"), &gettext("Revert changes")])
                     .build();
 
                 let (sender, receiver) = async_channel::bounded(1);
@@ -265,7 +273,7 @@ mod imp {
                 spawn_future_local(clone!(
                     @strong receiver, @strong dialog, @weak self as window => async move {
                         while let Ok(secs) = receiver.recv().await {
-                            dialog.set_message(format!("Reverting in {}...", secs));
+                            dialog.set_message(msg.to_owned());
                             if secs == 0 {
                                 dialog.close();
                                 window.obj().emit_by_name::<()>("confirm-action", &[&super::Action::Revert]);
@@ -288,9 +296,9 @@ mod imp {
                 dialog.show();
             } else {
                 Dialog::builder(&*obj)
-                    .title("Failure")
-                    .heading("Failure")
-                    .message("Changes have been reverted.")
+                    .title(&gettext("Failure"))
+                    .heading(&gettext("Failure"))
+                    .message(&gettext("Changes have been reverted."))
                     .build()
                     .show();
             }
@@ -313,7 +321,7 @@ mod imp {
                 .program_name(env!("CARGO_PKG_NAME"))
                 .version(env!("CARGO_PKG_VERSION"))
                 .comments(env!("CARGO_PKG_DESCRIPTION"))
-                .website_label("Repository")
+                .website_label(&gettext("Repository"))
                 .website(env!("CARGO_PKG_REPOSITORY"))
                 .copyright(env!("RRANDR_COPYRIGHT_NOTICE"))
                 .license_type(License::Gpl30)

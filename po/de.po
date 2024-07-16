@@ -1,0 +1,162 @@
+# German translation for RRandR.
+# Copyright (C) 2024 Andreas Becker
+# This file is distributed under the same license as the rrandr package.
+# Andreas Becker <brofi.archlinux@gmail.com>, 2024.
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: rrandr 0.2.0\n"
+"Report-Msgid-Bugs-To: https://github.com/brofi/rrandr/issues\n"
+"POT-Creation-Date: 2024-07-15 23:39+0200\n"
+"PO-Revision-Date: 2024-07-16 00:03+0200\n"
+"Last-Translator: Andreas Becker <brofi.archlinux@gmail.com>\n"
+"Language-Team: German\n"
+"Language: de\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+"X-Generator: Poedit 3.4.2\n"
+
+#: src/data/mode.rs:63
+msgid "Hz"
+msgstr "Hz"
+
+#: src/res/shortcuts.ui:11
+msgid "General"
+msgstr "Allgemein"
+
+#: src/res/shortcuts.ui:14
+msgid "Show shortcuts"
+msgstr "Tastenkombination anzeigen"
+
+#: src/res/shortcuts.ui:20
+msgid "Expand/collapse disabled output view"
+msgstr "Ansicht deaktivierter Bildschirme ein-/ausblenden"
+
+#: src/res/shortcuts.ui:26
+msgid "Enable/disable selected output"
+msgstr "Ausgewählten Bildschirm aktivieren/deaktivieren"
+
+#: src/res/shortcuts.ui:32
+msgid "Close window"
+msgstr "Fenster schließen"
+
+#: src/res/shortcuts.ui:38
+msgid "Close application"
+msgstr "Andwendung schließen"
+
+#: src/res/window.ui:58
+msgid "About"
+msgstr "Über"
+
+#: src/res/window.ui:66
+msgid "Identify outputs"
+msgstr "Bildschirme identifizieren"
+
+#: src/res/window.ui:78
+msgid "Apply changes"
+msgstr "Änderungen übernehmen"
+
+#: src/res/window.ui:82
+msgid "_Apply"
+msgstr "Ü_bernehmen"
+
+#: src/res/window.ui:90
+msgid "Reset changes"
+msgstr "Änderungen verwerfen"
+
+#: src/res/window.ui:94
+msgid "_Reset"
+msgstr "_Verwerfen"
+
+#: src/widget/details_box.rs:77
+msgid "Enable/disable"
+msgstr "Aktivieren/deaktivieren"
+
+#: src/widget/details_box.rs:80
+msgid "Set as primary"
+msgstr "Als primären Bildschirm festlegen"
+
+#. Output status
+#: src/widget/details_box.rs:117
+msgid "Enabled"
+msgstr "Aktiv"
+
+#. Output mode consisting of resolution and refresh rate
+#: src/widget/details_box.rs:122
+msgid "Mode"
+msgstr "Modus"
+
+#. Output position consisting of X and Y coordinate
+#: src/widget/details_box.rs:127
+msgid "Position"
+msgstr "Position"
+
+#. Primary output status
+#: src/widget/details_box.rs:132
+msgid "Primary"
+msgstr "Primär"
+
+#: src/widget/dialog.rs:144
+msgid "_Close"
+msgstr "_Schließen"
+
+#: src/widget/mode_selector.rs:53
+msgid "Resolution"
+msgstr "Auflösung"
+
+#: src/widget/mode_selector.rs:58
+msgid "Refresh rate"
+msgstr "Bildwiederholfrequenz"
+
+#: src/widget/position_entry.rs:81
+msgid "Horizontal position"
+msgstr "Horizontale Position"
+
+#: src/widget/position_entry.rs:82
+msgid "Vertical position"
+msgstr "Vertikale Position"
+
+#. Translators: '{}' gets replaced with the number of seconds left.
+#: src/window.rs:251
+msgid "Reverting in {} second"
+msgid_plural "Reverting in {} seconds"
+msgstr[0] "Zurücksetzen in {} Sekunde"
+msgstr[1] "Zurücksetzen in {} Sekunden"
+
+#: src/window.rs:257
+msgid "Confirm changes"
+msgstr "Änderungen bestätigen"
+
+#: src/window.rs:258
+msgid "Keep changes?"
+msgstr "Änderungen behalten?"
+
+#: src/window.rs:260
+msgid "_Keep"
+msgstr "_Behalten"
+
+#: src/window.rs:260
+msgid "_Revert"
+msgstr "_Zurücksetzen"
+
+#: src/window.rs:261
+msgid "Keep changes"
+msgstr "Änderungen behalten"
+
+#: src/window.rs:261
+msgid "Revert changes"
+msgstr "Änderungen zurücksetzen"
+
+#: src/window.rs:299 src/window.rs:300
+msgid "Failure"
+msgstr "Fehler"
+
+#: src/window.rs:301
+msgid "Changes have been reverted."
+msgstr "Änderungen wurden zurückgesetzt."
+
+#: src/window.rs:324
+msgid "Repository"
+msgstr "Projektarchiv"

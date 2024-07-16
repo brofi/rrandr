@@ -5,6 +5,7 @@ mod imp {
     use std::cell::RefCell;
     use std::sync::OnceLock;
 
+    use gettextrs::gettext;
     use gio::ListModel;
     use glib::object::{CastNone, IsA};
     use glib::subclass::object::{ObjectImpl, ObjectImplExt};
@@ -49,12 +50,12 @@ mod imp {
                 modes: Default::default(),
                 selected_mode: Default::default(),
                 resolution: DropDown::builder()
-                    .tooltip_text("Resolution")
+                    .tooltip_text(&gettext("Resolution"))
                     .factory(&factory(ModeDropDown::Resolution))
                     .build(),
                 resolution_selected_handler_id: RefCell::default(),
                 refresh_rate: DropDown::builder()
-                    .tooltip_text("Refresh rate")
+                    .tooltip_text(&gettext("Refresh rate"))
                     .factory(&factory(ModeDropDown::RefreshRate))
                     .list_factory(&list_factory(ModeDropDown::RefreshRate, None))
                     .build(),

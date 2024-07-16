@@ -47,6 +47,7 @@ mod imp {
     use std::num::IntErrorKind;
     use std::sync::OnceLock;
 
+    use gettextrs::gettext;
     use glib::subclass::object::{ObjectImpl, ObjectImplExt};
     use glib::subclass::types::{ObjectSubclass, ObjectSubclassExt};
     use glib::subclass::Signal;
@@ -77,8 +78,8 @@ mod imp {
                 max_x: Default::default(),
                 max_y: Default::default(),
                 entries: [
-                    create_entry("Horizontal position", "x"),
-                    create_entry("Vertical position", "y"),
+                    create_entry(&gettext("Horizontal position"), "x"),
+                    create_entry(&gettext("Vertical position"), "y"),
                 ],
                 insert_handler_ids: Default::default(),
                 delete_handler_ids: Default::default(),

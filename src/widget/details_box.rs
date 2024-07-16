@@ -9,6 +9,7 @@ mod imp {
     use std::sync::OnceLock;
     use std::time::Duration;
 
+    use gettextrs::gettext;
     use glib::subclass::object::{ObjectImpl, ObjectImplExt};
     use glib::subclass::types::{ObjectSubclass, ObjectSubclassExt};
     use glib::subclass::Signal;
@@ -73,10 +74,10 @@ mod imp {
                     .selection_mode(SelectionMode::None)
                     .max_children_per_line(u32::MAX)
                     .build(),
-                sw_enabled: Switch::new("Enable/Disable"),
+                sw_enabled: Switch::new(&gettext("Enable/disable")),
                 mode_selector: ModeSelector::new(),
                 position_entry: PositionEntry::new(),
-                cb_primary: CheckButton::new("Set as primary"),
+                cb_primary: CheckButton::new(&gettext("Set as primary")),
             }
         }
     }
@@ -111,10 +112,26 @@ mod imp {
             obj.set_halign(Align::Fill);
             obj.set_hexpand(true);
 
-            self.root.append(&DetailsChild::new("Enabled", &self.sw_enabled));
-            self.root.append(&DetailsChild::new("Mode", &self.mode_selector));
-            self.root.append(&DetailsChild::new("Position", &self.position_entry));
-            self.root.append(&DetailsChild::new("Primary", &self.cb_primary));
+            self.root.append(&DetailsChild::new(
+                // Output status
+                &gettext("Enabled"),
+                &self.sw_enabled,
+            ));
+            self.root.append(&DetailsChild::new(
+                // Output mode consisting of resolution and refresh rate
+                &gettext("Mode"),
+                &self.mode_selector,
+            ));
+            self.root.append(&DetailsChild::new(
+                // Output position consisting of X and Y coordinate
+                &gettext("Position"),
+                &self.position_entry,
+            ));
+            self.root.append(&DetailsChild::new(
+                // Primary output status
+                &gettext("Primary"),
+                &self.cb_primary,
+            ));
 
             self.sw_enabled.connect_active_notify(clone!(
                 @weak self as this => move |sw| this.on_enabled_switched(sw)

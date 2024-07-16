@@ -1,5 +1,6 @@
 use core::fmt;
 
+use gettextrs::gettext;
 use glib::{wrapper, Object};
 use gtk::glib;
 use x11rb::protocol::randr::{Mode as ModeId, ModeFlag, ModeInfo};
@@ -58,7 +59,9 @@ impl Mode {
         format!("{}\u{202F}x\u{202F}{:<fw$}", self.width(), self.height())
     }
 
-    pub fn as_refresh_rate_str(self) -> String { format!("{:.2}\u{202F}Hz", self.refresh()) }
+    pub fn as_refresh_rate_str(self) -> String {
+        format!("{:.2}\u{202F}{}", self.refresh(), gettext("Hz"))
+    }
 }
 
 impl From<ModeInfo> for Mode {

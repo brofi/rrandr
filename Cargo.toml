@@ -24,7 +24,9 @@ pangocairo = "0.19.2"
 async-channel = "2.3.1"
 toml = "0.8.14"
 serde = { version = "1.0.203", features = ["derive"] }
+gettext-rs = { version = "0.7", features = ["gettext-system"] }
 
 [build-dependencies]
 glib-build-tools = "0.19.0"
 time = "0.3.36"
+home = "0.5.9"

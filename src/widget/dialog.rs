@@ -11,6 +11,7 @@ mod imp {
     use std::sync::OnceLock;
 
     use gdk::{Key, ModifierType};
+    use gettextrs::gettext;
     use glib::object::{Cast, CastNone};
     use glib::subclass::types::ObjectSubclassExt;
     use glib::subclass::{InitializingObject, Signal};
@@ -128,7 +129,7 @@ mod imp {
                     }));
                 }
             } else {
-                let btn = Self::create_action_button("_Close", "");
+                let btn = Self::create_action_button(&gettext("_Close"), "");
                 self.buttons.append(&btn);
                 btn.connect_clicked(clone!(@weak self as dialog => move |_| dialog.obj().close()));
             }
