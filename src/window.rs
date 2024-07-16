@@ -246,17 +246,15 @@ mod imp {
             if obj.emit_by_name::<bool>("apply", &[&btn, &self.get_outputs()]) {
                 let mut secs = CONFIRM_DIALOG_SHOW_SECS.saturating_sub(1);
 
-                // Translators: '{}' gets replaced with the number of seconds left.
-                let msg = ngettext!(
-                    "Reverting in {} second",
-                    "Reverting in {} seconds",
-                    secs.into(),
-                    secs
-                );
                 let dialog = Dialog::builder(&*obj)
                     .title(&gettext("Confirm changes"))
                     .heading(&gettext("Keep changes?"))
-                    .message(&msg)
+                    .message(&ngettext!(
+                        "Reverting in {} second",
+                        "Reverting in {} seconds",
+                        secs.into(),
+                        secs
+                    ))
                     .actions(&[&gettext("_Keep"), &gettext("_Revert")])
                     .tooltips(&[&gettext("Keep changes"), &gettext("Revert changes")])
                     .build();
@@ -273,7 +271,14 @@ mod imp {
                 spawn_future_local(clone!(
                     @strong receiver, @strong dialog, @weak self as window => async move {
                         while let Ok(secs) = receiver.recv().await {
-                            dialog.set_message(msg.to_owned());
+                            // Translators: '{}' gets replaced with the number of seconds left.
+                            let msg = ngettext!(
+                                "Reverting in {} second",
+                                "Reverting in {} seconds",
+                                secs.into(),
+                                secs
+                            );
+                            dialog.set_message(msg);
                             if secs == 0 {
                                 dialog.close();
                                 window.obj().emit_by_name::<()>("confirm-action", &[&super::Action::Revert]);
