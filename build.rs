@@ -12,6 +12,14 @@ fn main() {
         "rrandr.gresource",
     );
     println!("cargo::rustc-env=RRANDR_COPYRIGHT_NOTICE={}", copyright_notice());
+    println!(
+        "cargo::rustc-env=RRANDR_LOCALE_DIR={}",
+        if cfg!(debug_assertions) {
+            Path::new(&var("OUT_DIR").unwrap()).join("po").to_str().unwrap().to_owned()
+        } else {
+            var("LOCALEDIR").unwrap_or("/usr/share/locale".to_owned())
+        }
+    );
     gen_translations();
 }
 

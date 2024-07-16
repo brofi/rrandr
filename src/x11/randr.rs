@@ -83,10 +83,10 @@ impl Randr {
         let modes: HashMap<ModeId, ModeInfo> =
             res.modes.iter().map(|m| (m.id, *m)).collect::<HashMap<_, _>>();
 
-        if cfg!(debug_assertions) {
-            print_crtcs(&crtcs, &modes);
-            print_outputs(&outputs, &modes);
-        }
+        #[cfg(debug_assertions)]
+        print_crtcs(&crtcs, &modes);
+        #[cfg(debug_assertions)]
+        print_outputs(&outputs, &modes);
 
         Self { conn, root, screen_size, screen_size_range, primary, crtcs, outputs, modes }
     }
@@ -99,7 +99,7 @@ impl Randr {
             if output_info.connection != Connection::CONNECTED {
                 continue;
             }
-            
+
             let enabled = output_info.crtc > 0;
             let modes: Modes = Modes::new();
             let mut mode = None;
