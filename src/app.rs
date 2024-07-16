@@ -76,7 +76,7 @@ mod imp {
             window.connect_reset(clone!(
                 @weak self as app => move |window, _| {
                     let randr = app.randr.borrow();
-                    window.set_outputs(&randr.output_model())
+                    window.set_outputs(&randr.output_model());
                 }
             ));
             window.connect_identify(|_, btn| {

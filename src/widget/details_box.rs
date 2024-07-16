@@ -26,6 +26,7 @@ mod imp {
     use crate::data::mode::Mode;
     use crate::data::modes::Modes;
     use crate::data::output::Output;
+    use crate::utils::nearly_eq;
     use crate::widget::checkbutton::CheckButton;
     use crate::widget::details_child::DetailsChild;
     use crate::widget::mode_selector::ModeSelector;
@@ -59,14 +60,14 @@ mod imp {
     impl Default for DetailsBox {
         fn default() -> Self {
             Self {
-                output: Default::default(),
-                enabled_changed_handler: Default::default(),
-                mode_changed_handler: Default::default(),
-                pos_changed_handlers: Default::default(),
-                pos_modify_sids: Default::default(),
-                primary_changed_handler: Default::default(),
-                screen_max_width: Default::default(),
-                screen_max_height: Default::default(),
+                output: RefCell::default(),
+                enabled_changed_handler: RefCell::default(),
+                mode_changed_handler: RefCell::default(),
+                pos_changed_handlers: RefCell::default(),
+                pos_modify_sids: RefCell::default(),
+                primary_changed_handler: RefCell::default(),
+                screen_max_width: Cell::default(),
+                screen_max_height: Cell::default(),
                 root: FlowBox::builder()
                     .row_spacing(SPACING.into())
                     .column_spacing(SPACING.into())
@@ -158,10 +159,8 @@ mod imp {
         fn set_output(&self, output: Option<&Output>) {
             self.disconnect_output_property_handlers();
 
-            for sid in self.pos_modify_sids.take() {
-                if let Some(sid) = sid {
-                    sid.remove();
-                }
+            for sid in self.pos_modify_sids.take().into_iter().flatten() {
+                sid.remove();
             }
             if let Some(output) = output {
                 self.connect_output_property_handlers(output);
@@ -269,10 +268,10 @@ mod imp {
                 // Update output
                 if sw.is_active() {
                     output.enable();
-                    self.notify_updated(output, &Update::Enabled);
+                    self.notify_updated(output, Update::Enabled);
                 } else {
                     output.disable();
-                    self.notify_updated(output, &Update::Disabled);
+                    self.notify_updated(output, Update::Disabled);
                 }
             }
         }
@@ -286,9 +285,9 @@ mod imp {
                     if old_mode.width() != new_mode.width()
                         || old_mode.height() != new_mode.height()
                     {
-                        self.notify_updated(output, &Update::Resolution);
-                    } else if old_mode.refresh() != new_mode.refresh() {
-                        self.notify_updated(output, &Update::Refresh);
+                        self.notify_updated(output, Update::Resolution);
+                    } else if nearly_eq(old_mode.refresh(), new_mode.refresh()) {
+                        self.notify_updated(output, Update::Refresh);
                     }
                 }
             }
@@ -323,7 +322,7 @@ mod imp {
                                 } else {
                                     set_coord();
                                 }
-                                this.notify_updated(&output, &Update::Position);
+                                this.notify_updated(&output, Update::Position);
                             }
                         }
                     ),
@@ -335,12 +334,12 @@ mod imp {
         fn on_primary_checked(&self, cb: &gtk::CheckButton) {
             if let Some(output) = self.output.borrow().as_ref() {
                 output.set_primary(output.enabled() && cb.is_active());
-                self.notify_updated(output, &Update::Primary);
+                self.notify_updated(output, Update::Primary);
             }
         }
 
-        fn notify_updated(&self, output: &Output, update: &Update) {
-            self.obj().emit_by_name::<()>("output-changed", &[output, update]);
+        fn notify_updated(&self, output: &Output, update: Update) {
+            self.obj().emit_by_name::<()>("output-changed", &[output, &update]);
         }
     }
 }

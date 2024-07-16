@@ -95,7 +95,7 @@ impl Randr {
 
     pub fn output_model(&self) -> Outputs {
         let outputs = Outputs::default();
-        for (id, output_info) in self.outputs.borrow().iter() {
+        for (id, output_info) in self.outputs.borrow() {
             if output_info.connection != Connection::CONNECTED {
                 continue;
             }
@@ -124,7 +124,7 @@ impl Randr {
                 modes,
                 output_info.mm_width,
                 output_info.mm_height,
-            ))
+            ));
         }
         outputs
     }
@@ -177,7 +177,7 @@ impl Randr {
 
     pub fn apply(&self, outputs: &Outputs) -> bool {
         println!("Applying changes");
-        let primary = outputs.iter::<Output>().map(Result::unwrap).find(|o| o.primary());
+        let primary = outputs.iter::<Output>().map(Result::unwrap).find(Output::primary);
         let screen_size = self.get_screen_size(outputs, primary.as_ref());
         let screen_size_changed = self.screen_size.width != screen_size.width
             || self.screen_size.height != screen_size.height;
@@ -271,7 +271,7 @@ impl Randr {
             outputs
                 .iter::<Output>()
                 .map(Result::unwrap)
-                .filter(|o| o.enabled())
+                .filter(Output::enabled)
                 .map(|o| o.rect())
                 .collect(),
         );
@@ -312,7 +312,7 @@ impl Randr {
 
     fn get_valid_empty_crtc(&self, output_id: OutputId) -> Option<CrtcId> {
         let output_info = &self.outputs.borrow()[&output_id];
-        for (crtc_id, crtc) in self.crtcs.borrow().iter() {
+        for (crtc_id, crtc) in self.crtcs.borrow() {
             if crtc.outputs.is_empty()
                 && output_info.crtcs.contains(crtc_id)
                 && crtc.possible.contains(&output_id)
@@ -378,7 +378,7 @@ impl Randr {
         .expect("revert screen size request")
         .check()
         .expect("revert screen size");
-        for (crtc_id, crtc_info) in self.crtcs.borrow().iter() {
+        for (crtc_id, crtc_info) in self.crtcs.borrow() {
             set_crtc_config(
                 &self.conn,
                 *crtc_id,

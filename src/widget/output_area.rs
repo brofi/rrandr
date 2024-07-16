@@ -133,8 +133,8 @@ mod imp {
                         output.set_pos_x(x);
                     }
                     let max_y =
-                    i16::try_from(self.screen_max_height.get().saturating_sub(mode.height()))
-                        .unwrap_or(i16::MAX);
+                        i16::try_from(self.screen_max_height.get().saturating_sub(mode.height()))
+                            .unwrap_or(i16::MAX);
                     let y =
                         output.pos_y().saturating_sub(i32::from(bounds.y())).min(i32::from(max_y));
                     if y != output.pos_y() {
@@ -256,9 +256,6 @@ mod imp {
         fn on_drag_update(&self, g: &GestureDrag, offset_x: f64, offset_y: f64) {
             if let Some(output) = self.selected_output.borrow().as_ref() {
                 let outputs = self.outputs.borrow();
-                let scale = self.scale.get();
-                let [dx, dy] = self.translate.get().map(f64::from);
-                let [grab_dx, grab_dy] = self.grab_offset.get();
 
                 let mut min_side = f64::MAX;
                 for output in outputs.iter::<Output>().map(Result::unwrap) {
@@ -274,9 +271,12 @@ mod imp {
                 let snap = Self::calculate_snap(&outputs, output);
 
                 // Calculate new position
+                let scale = self.scale.get();
                 let start = g.start_point().unwrap();
-                let mut new_x = (((start.0 + offset_x - dx) / scale) + grab_dx).round() as i16;
-                let mut new_y = (((start.1 + offset_y - dy) / scale) + grab_dy).round() as i16;
+                let grab = self.grab_offset.get();
+                let [dx, dy] = self.translate.get().map(f64::from);
+                let mut new_x = (((start.0 + offset_x - dx) / scale) + grab[0]).round() as i16;
+                let mut new_y = (((start.1 + offset_y - dy) / scale) + grab[1]).round() as i16;
 
                 // Apply snap
                 if snap.x == 0 {
@@ -296,8 +296,8 @@ mod imp {
 
                 // Update new position
                 if new_x != output.pos_x() as i16 || new_y != output.pos_y() as i16 {
-                    output.set_pos_x(new_x as i32);
-                    output.set_pos_y(new_y as i32);
+                    output.set_pos_x(i32::from(new_x));
+                    output.set_pos_y(i32::from(new_y));
                     self.resize(self.obj().width(), self.obj().height());
                     self.obj().queue_draw();
                 }
@@ -453,11 +453,11 @@ mod imp {
                 }
             }
             for output in outputs.iter::<Output>().map(Result::unwrap) {
-                let x = data[&output.id()].0.x() as i32;
+                let x = i32::from(data[&output.id()].0.x());
                 if x != output.pos_x() {
                     output.set_pos_x(x);
                 }
-                let y = data[&output.id()].0.y() as i32;
+                let y = i32::from(data[&output.id()].0.y());
                 if y != output.pos_y() {
                     output.set_pos_y(y);
                 }
@@ -477,8 +477,8 @@ mod imp {
 
         fn on_motion(&self, _ecm: &EventControllerMotion, x: f64, y: f64) {
             // TODO if not is_dragging instead
-            let [grab_dx, grab_dy] = self.grab_offset.get();
-            if grab_dx == 0. || grab_dy == 0. {
+            let [dx, dy] = self.grab_offset.get();
+            if dx == 0. || dy == 0. {
                 // Update cursor
                 match self.get_output_at(x, y) {
                     Some(_) => self.obj().set_cursor_from_name(Some("pointer")),
@@ -566,13 +566,10 @@ impl OutputArea {
             _ => (),
         }
         // Set/unset primary
-        match update {
-            Update::Primary => {
-                for o in self.outputs().iter::<Output>().map(Result::unwrap) {
-                    o.set_primary(o == *output && output.primary());
-                }
+        if let Update::Primary = update {
+            for o in self.outputs().iter::<Output>().map(Result::unwrap) {
+                o.set_primary(o == *output && output.primary());
             }
-            _ => (),
         }
         // Mind the gap
         match update {
@@ -584,7 +581,7 @@ impl OutputArea {
         // Resize
         match update {
             Update::Enabled | Update::Disabled | Update::Resolution | Update::Position => {
-                self.imp().resize(self.width(), self.height())
+                self.imp().resize(self.width(), self.height());
             }
             _ => (),
         }

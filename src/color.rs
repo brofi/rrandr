@@ -21,19 +21,21 @@ impl Color {
     }
 }
 
-impl Into<gdk::RGBA> for Color {
-    fn into(self) -> gdk::RGBA {
+impl From<Color> for gdk::RGBA {
+    fn from(color: Color) -> Self {
         gdk::RGBA::new(
-            f32::from(self.r) / f32::from(u8::MAX),
-            f32::from(self.g) / f32::from(u8::MAX),
-            f32::from(self.b) / f32::from(u8::MAX),
+            f32::from(color.r) / f32::from(u8::MAX),
+            f32::from(color.g) / f32::from(u8::MAX),
+            f32::from(color.b) / f32::from(u8::MAX),
             1.,
         )
     }
 }
 
-impl ToString for Color {
-    fn to_string(&self) -> String { format!("#{:02x}{:02x}{:02x}", self.r, self.g, self.b) }
+impl fmt::Display for Color {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "#{:02x}{:02x}{:02x}", self.r, self.g, self.b)
+    }
 }
 
 pub struct ParseRgbError;
@@ -54,10 +56,10 @@ impl FromStr for Color {
         let (g, b) = gb.split_at(idx);
         let [r, g, b] = [r, g, b].map(|s| if idx == 1 { s.repeat(2) } else { s.to_owned() });
 
+        #[allow(clippy::items_after_statements)] // item only and immediately used after
         fn from_hex(s: &str) -> Result<u8, ParseRgbError> {
             u8::from_str_radix(s, 16).map_err(|_| ParseRgbError)
         }
-
         Ok(Color::new(from_hex(&r)?, from_hex(&g)?, from_hex(&b)?))
     }
 }

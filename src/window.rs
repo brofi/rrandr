@@ -326,7 +326,7 @@ mod imp {
                 .program_name(env!("CARGO_PKG_NAME"))
                 .version(env!("CARGO_PKG_VERSION"))
                 .comments(env!("CARGO_PKG_DESCRIPTION"))
-                .website_label(&gettext("Repository"))
+                .website_label(gettext("Repository"))
                 .website(env!("CARGO_PKG_REPOSITORY"))
                 .copyright(env!("RRANDR_COPYRIGHT_NOTICE"))
                 .license_type(License::Gpl30)

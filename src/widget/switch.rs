@@ -66,7 +66,7 @@ mod imp {
     }
 
     fn activate(_: &SignalClassHandlerToken, values: &[Value]) -> Option<Value> {
-        if let Some(value) = values.get(0) {
+        if let Some(value) = values.first() {
             if let Ok(this) = value.get::<super::Switch>() {
                 this.imp().widget.activate();
             }

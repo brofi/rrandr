@@ -1,5 +1,4 @@
 use gio::ListModel;
-use glib::object::CastNone;
 use glib::subclass::types::ObjectSubclassIsExt;
 use glib::{wrapper, Object};
 use gtk::prelude::ListModelExt;
@@ -66,12 +65,12 @@ impl Modes {
     }
 
     pub fn position(&self, mode: &Mode) -> Option<u32> {
-        for i in 0..self.n_items() {
-            if *mode == self.item(i).and_downcast::<Mode>().unwrap() {
-                return Some(i);
-            }
-        }
-        None
+        self.imp()
+            .0
+            .borrow()
+            .iter()
+            .position(|m| m == mode)
+            .map(|i| i.try_into().expect("smaller position"))
     }
 }
 

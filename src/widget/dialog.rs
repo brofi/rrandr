@@ -110,10 +110,10 @@ mod imp {
             }
             if let Some(actions) = actions {
                 for i in 0..actions.n_items() {
-                    let tooltip = self.tooltips.borrow().as_ref().map_or("".to_owned(), |t| {
+                    let tooltip = self.tooltips.borrow().as_ref().map_or(String::new(), |t| {
                         t.item(i)
                             .and_downcast::<StringObject>()
-                            .map_or("".to_owned(), |s| s.string().to_string())
+                            .map_or(String::new(), |s| s.string().to_string())
                     });
                     let action = actions
                         .item(i)
@@ -155,9 +155,7 @@ wrapper! {
 }
 
 impl Dialog {
-    pub fn builder(window: &impl IsA<ApplicationWindow>) -> DialogBuilder {
-        DialogBuilder::new(window)
-    }
+    pub fn builder(window: &impl IsA<ApplicationWindow>) -> Builder { Builder::new(window) }
 
     pub fn show(&self) { self.present(); }
 
@@ -166,11 +164,11 @@ impl Dialog {
     }
 }
 
-pub struct DialogBuilder {
+pub struct Builder {
     builder: ObjectBuilder<'static, Dialog>,
 }
 
-impl DialogBuilder {
+impl Builder {
     fn new(window: &impl IsA<ApplicationWindow>) -> Self {
         Self { builder: Object::builder().property("transient-for", window) }
     }

@@ -128,7 +128,7 @@ fn create_popup_windows(
 
 pub fn show_popup_windows(btn: &Button) -> Result<(), Box<dyn Error>> {
     let (conn, screen_num) = XCBConnection::connect(None)?;
-    let popups = create_popup_windows(&Default::default(), &conn, screen_num)?;
+    let popups = create_popup_windows(&Config::default(), &conn, screen_num)?;
     conn.flush()?;
 
     spawn_future_local({

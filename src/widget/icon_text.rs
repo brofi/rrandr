@@ -92,3 +92,7 @@ wrapper! {
 impl IconText {
     pub fn new() -> Self { Object::new() }
 }
+
+impl Default for IconText {
+    fn default() -> Self { Self::new() }
+}

@@ -47,15 +47,15 @@ mod imp {
     impl Default for ModeSelector {
         fn default() -> Self {
             Self {
-                modes: Default::default(),
-                selected_mode: Default::default(),
+                modes: RefCell::default(),
+                selected_mode: RefCell::default(),
                 resolution: DropDown::builder()
-                    .tooltip_text(&gettext("Resolution"))
+                    .tooltip_text(gettext("Resolution"))
                     .factory(&factory(ModeDropDown::Resolution))
                     .build(),
                 resolution_selected_handler_id: RefCell::default(),
                 refresh_rate: DropDown::builder()
-                    .tooltip_text(&gettext("Refresh rate"))
+                    .tooltip_text(gettext("Refresh rate"))
                     .factory(&factory(ModeDropDown::RefreshRate))
                     .list_factory(&list_factory(ModeDropDown::RefreshRate, None))
                     .build(),
@@ -158,21 +158,21 @@ mod imp {
         }
 
         fn set_modes(&self, modes: Option<&Modes>) {
-            let r_hid = self.resolution_selected_handler_id.borrow();
+            let res_hid = self.resolution_selected_handler_id.borrow();
             let rr_hid = self.refresh_rate_selected_handler_id.borrow();
             Self::select_pos(&self.refresh_rate, rr_hid.as_ref(), gtk::INVALID_LIST_POSITION);
-            Self::select_pos(&self.resolution, r_hid.as_ref(), gtk::INVALID_LIST_POSITION);
+            Self::select_pos(&self.resolution, res_hid.as_ref(), gtk::INVALID_LIST_POSITION);
             self.modes.replace(modes.cloned());
 
-            let r_model = self.resolutions_model();
+            let res_model = self.resolutions_model();
             let mut rr_model = None;
-            if let Some(r_model) = &r_model {
-                if r_model.n_items() > 0 {
-                    rr_model =
-                        self.refresh_rates_model(&r_model.item(0).and_downcast::<Mode>().unwrap());
+            if let Some(res_model) = &res_model {
+                if res_model.n_items() > 0 {
+                    rr_model = self
+                        .refresh_rates_model(&res_model.item(0).and_downcast::<Mode>().unwrap());
                 }
 
-                let format_width = r_model
+                let format_width = res_model
                     .iter::<Mode>()
                     .map(Result::unwrap)
                     .map(|r| r.height().to_string().len())
@@ -183,20 +183,20 @@ mod imp {
                     Some(format_width),
                 )));
             }
-            Self::set_model(&self.resolution, r_hid.as_ref(), r_model.as_ref());
+            Self::set_model(&self.resolution, res_hid.as_ref(), res_model.as_ref());
             Self::set_model(&self.refresh_rate, rr_hid.as_ref(), rr_model.as_ref());
         }
 
         fn set_selected_mode(&self, selected_mode: Option<&Mode>) {
             self.selected_mode.replace(selected_mode.cloned());
-            let r_hid = self.resolution_selected_handler_id.borrow();
+            let res_hid = self.resolution_selected_handler_id.borrow();
             let rr_hid = self.refresh_rate_selected_handler_id.borrow();
             if let Some(mode) = selected_mode {
-                Self::select_mode(&self.resolution, r_hid.as_ref(), mode);
+                Self::select_mode(&self.resolution, res_hid.as_ref(), mode);
                 Self::select_mode(&self.refresh_rate, rr_hid.as_ref(), mode);
             } else {
                 Self::select_pos(&self.refresh_rate, rr_hid.as_ref(), gtk::INVALID_LIST_POSITION);
-                Self::select_pos(&self.resolution, r_hid.as_ref(), gtk::INVALID_LIST_POSITION);
+                Self::select_pos(&self.resolution, res_hid.as_ref(), gtk::INVALID_LIST_POSITION);
             }
         }
 
@@ -229,23 +229,31 @@ mod imp {
             hid: Option<&SignalHandlerId>,
             model: Option<&impl IsA<ListModel>>,
         ) {
-            hid.map(|hid| dd.block_signal(&hid));
+            if let Some(hid) = hid {
+                dd.block_signal(hid);
+            }
             dd.set_model(model);
-            hid.map(|hid| dd.unblock_signal(&hid));
+            if let Some(hid) = hid {
+                dd.unblock_signal(hid);
+            }
         }
 
         fn select_mode(dd: &DropDown, hid: Option<&SignalHandlerId>, selected_mode: &Mode) {
             if let Some(pos) =
-                dd.model().and_downcast::<Modes>().and_then(|modes| modes.position(&selected_mode))
+                dd.model().and_downcast::<Modes>().and_then(|modes| modes.position(selected_mode))
             {
                 Self::select_pos(dd, hid, pos);
             }
         }
 
         fn select_pos(dd: &DropDown, hid: Option<&SignalHandlerId>, pos: u32) {
-            hid.map(|hid| dd.block_signal(&hid));
+            if let Some(hid) = hid {
+                dd.block_signal(hid);
+            }
             dd.set_selected(pos);
-            hid.map(|hid| dd.unblock_signal(&hid));
+            if let Some(hid) = hid {
+                dd.unblock_signal(hid);
+            }
         }
     }
 
@@ -289,7 +297,7 @@ mod imp {
     }
 
     fn activate(_: &SignalClassHandlerToken, values: &[Value]) -> Option<Value> {
-        if let Some(value) = values.get(0) {
+        if let Some(value) = values.first() {
             if let Ok(this) = value.get::<super::ModeSelector>() {
                 this.imp().resolution.activate();
             }
@@ -304,4 +312,8 @@ wrapper! {
 
 impl ModeSelector {
     pub fn new() -> Self { Object::new() }
+}
+
+impl Default for ModeSelector {
+    fn default() -> Self { Self::new() }
 }

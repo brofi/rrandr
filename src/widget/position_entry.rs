@@ -75,14 +75,14 @@ mod imp {
     impl Default for PositionEntry {
         fn default() -> Self {
             Self {
-                max_x: Default::default(),
-                max_y: Default::default(),
+                max_x: Cell::default(),
+                max_y: Cell::default(),
                 entries: [
                     create_entry(&gettext("Horizontal position"), "x"),
                     create_entry(&gettext("Vertical position"), "y"),
                 ],
-                insert_handler_ids: Default::default(),
-                delete_handler_ids: Default::default(),
+                insert_handler_ids: RefCell::default(),
+                delete_handler_ids: RefCell::default(),
             }
         }
     }
@@ -143,19 +143,9 @@ mod imp {
 
     impl WidgetImpl for PositionEntry {
         fn mnemonic_activate(&self, _: bool) -> bool {
-            let (Some(editable_x), Some(editable_y)) = (
-                self.entries[usize::from(Axis::X)].delegate(),
-                self.entries[usize::from(Axis::Y)].delegate(),
-            ) else {
-                return false;
-            };
-            if editable_x.has_focus() {
-                self.entries[usize::from(Axis::Y)].grab_focus();
-            } else if editable_y.has_focus() {
-                self.entries[usize::from(Axis::X)].grab_focus();
-            } else {
-                self.entries[usize::from(Axis::X)].grab_focus();
-            }
+            let x_focused =
+                self.entries[usize::from(Axis::X)].delegate().is_some_and(|e| e.has_focus());
+            self.entries[usize::from(if x_focused { Axis::Y } else { Axis::X })].grab_focus();
             true
         }
     }
@@ -278,4 +268,8 @@ impl PositionEntry {
             closure_local!(|position_entry, axis, coord| callback(position_entry, axis, coord)),
         );
     }
+}
+
+impl Default for PositionEntry {
+    fn default() -> Self { Self::new() }
 }

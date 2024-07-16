@@ -1,4 +1,3 @@
-use gdk::glib::object::CastNone;
 use gio::ListModel;
 use glib::subclass::types::ObjectSubclassIsExt;
 use glib::{wrapper, Object};
@@ -66,7 +65,7 @@ impl Outputs {
         let index = outputs
             .iter()
             .position(|other| other.id() == output_id)
-            .unwrap_or_else(|| panic!("no output {}", output_id));
+            .unwrap_or_else(|| panic!("no output {output_id}"));
         let removed = outputs.remove(index);
         self.items_changed(index as u32, 1, 0);
         removed
@@ -77,12 +76,12 @@ impl Outputs {
     pub fn index(&self, index: usize) -> Output { self.imp().0.borrow()[index].clone() }
 
     pub fn position(&self, output: &Output) -> Option<u32> {
-        for i in 0..self.n_items() {
-            if *output == self.item(i).and_downcast::<Output>().unwrap() {
-                return Some(i);
-            }
-        }
-        None
+        self.imp()
+            .0
+            .borrow()
+            .iter()
+            .position(|o| o == output)
+            .map(|i| i.try_into().expect("smaller position"))
     }
 
     pub fn find_by_id(&self, output: OutputId) -> Option<Output> {
