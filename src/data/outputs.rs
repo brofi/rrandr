@@ -36,7 +36,9 @@ mod imp {
     impl ListModelImpl for Outputs {
         fn item_type(&self) -> Type { Output::static_type() }
 
-        fn n_items(&self) -> u32 { self.0.borrow().len() as u32 }
+        fn n_items(&self) -> u32 {
+            self.0.borrow().len().try_into().expect("ListModel should have less items")
+        }
 
         fn item(&self, position: u32) -> Option<Object> {
             self.0.borrow().get(position as usize).map(|o| o.clone().upcast::<Object>())
@@ -55,7 +57,7 @@ impl Outputs {
         let index = {
             let mut outputs = self.imp().0.borrow_mut();
             outputs.push(output.clone());
-            (outputs.len() - 1) as u32
+            u32::try_from(outputs.len() - 1).expect("ListModel should have less items")
         };
         self.items_changed(index, 0, 1);
     }
@@ -67,7 +69,7 @@ impl Outputs {
             .position(|other| other.id() == output_id)
             .unwrap_or_else(|| panic!("no output {output_id}"));
         let removed = outputs.remove(index);
-        self.items_changed(index as u32, 1, 0);
+        self.items_changed(index.try_into().expect("ListModel should have less items"), 1, 0);
         removed
     }
 

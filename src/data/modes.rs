@@ -36,7 +36,9 @@ mod imp {
     impl ListModelImpl for Modes {
         fn item_type(&self) -> Type { Mode::static_type() }
 
-        fn n_items(&self) -> u32 { self.0.borrow().len() as u32 }
+        fn n_items(&self) -> u32 {
+            self.0.borrow().len().try_into().expect("ListModel should have less items")
+        }
 
         fn item(&self, position: u32) -> Option<Object> {
             self.0.borrow().get(position as usize).map(|o| o.clone().upcast::<Object>())
@@ -55,7 +57,7 @@ impl Modes {
         let index = {
             let mut modes = self.imp().0.borrow_mut();
             modes.push(mode.clone());
-            (modes.len() - 1) as u32
+            u32::try_from(modes.len() - 1).expect("ListModel should have less items")
         };
         self.items_changed(index, 0, 1);
     }
