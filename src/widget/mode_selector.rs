@@ -191,9 +191,28 @@ mod imp {
             self.selected_mode.replace(selected_mode.cloned());
             let res_hid = self.resolution_selected_handler_id.borrow();
             let rr_hid = self.refresh_rate_selected_handler_id.borrow();
-            if let Some(mode) = selected_mode {
-                Self::select_mode(&self.resolution, res_hid.as_ref(), mode);
-                Self::select_mode(&self.refresh_rate, rr_hid.as_ref(), mode);
+
+            if let Some(selected_mode) = selected_mode {
+                if let Some(res_pos) =
+                    self.resolution.model().and_downcast::<Modes>().and_then(|modes| {
+                        modes.position_by_res(selected_mode.width(), selected_mode.height())
+                    })
+                {
+                    Self::select_pos(&self.resolution, res_hid.as_ref(), res_pos);
+                    Self::set_model(
+                        &self.refresh_rate,
+                        rr_hid.as_ref(),
+                        self.refresh_rates_model(selected_mode).as_ref(),
+                    );
+                    if let Some(rr_pos) = self
+                        .refresh_rate
+                        .model()
+                        .and_downcast::<Modes>()
+                        .and_then(|modes| modes.position(selected_mode))
+                    {
+                        Self::select_pos(&self.refresh_rate, rr_hid.as_ref(), rr_pos);
+                    }
+                }
             } else {
                 Self::select_pos(&self.refresh_rate, rr_hid.as_ref(), gtk::INVALID_LIST_POSITION);
                 Self::select_pos(&self.resolution, res_hid.as_ref(), gtk::INVALID_LIST_POSITION);
@@ -235,14 +254,6 @@ mod imp {
             dd.set_model(model);
             if let Some(hid) = hid {
                 dd.unblock_signal(hid);
-            }
-        }
-
-        fn select_mode(dd: &DropDown, hid: Option<&SignalHandlerId>, selected_mode: &Mode) {
-            if let Some(pos) =
-                dd.model().and_downcast::<Modes>().and_then(|modes| modes.position(selected_mode))
-            {
-                Self::select_pos(dd, hid, pos);
             }
         }
 

@@ -66,6 +66,15 @@ impl Modes {
         self.imp().0.borrow().iter().find(|&m| m.id() == mode).cloned()
     }
 
+    pub fn position_by_res(&self, width: u16, height: u16) -> Option<u32> {
+        self.imp()
+            .0
+            .borrow()
+            .iter()
+            .position(|m| m.width() == width && m.height() == height)
+            .map(|i| i.try_into().expect("smaller position"))
+    }
+
     pub fn position(&self, mode: &Mode) -> Option<u32> {
         self.imp()
             .0
