@@ -180,8 +180,11 @@ impl Randr {
         debug!("Applying changes");
         let primary = outputs.iter::<Output>().map(Result::unwrap).find(Output::primary);
         let screen_size = self.get_screen_size(outputs, primary.as_ref());
-        let screen_size_changed = self.screen_size.width != screen_size.width
+
+        let screen_size_px_changed = self.screen_size.width != screen_size.width
             || self.screen_size.height != screen_size.height;
+        let screen_size_mm_changed = self.screen_size.mwidth != screen_size.mwidth
+            || self.screen_size.mheight != screen_size.mheight;
 
         // Disable outputs
         for output in outputs.iter::<Output>().map(Result::unwrap) {
@@ -192,7 +195,7 @@ impl Randr {
             }
             let crtc = &self.crtcs.borrow()[&crtc_id];
             if !output.enabled()
-                || (screen_size_changed
+                || (screen_size_px_changed
                     && (i32::from(crtc.x) + i32::from(crtc.width) > i32::from(screen_size.width)
                         || i32::from(crtc.y) + i32::from(crtc.height)
                             > i32::from(screen_size.height)))
@@ -207,7 +210,7 @@ impl Randr {
             }
         }
 
-        if screen_size_changed {
+        if screen_size_px_changed || screen_size_mm_changed {
             debug!(
                 "Setting screen size to {}x{} px, {}x{} mm",
                 screen_size.width, screen_size.height, screen_size.mwidth, screen_size.mheight
@@ -286,6 +289,7 @@ impl Randr {
             .max(self.screen_size_range.max_height.min(bounds.height()));
 
         let ppi = primary.map_or(f64::from(PPI_DEFAULT), Output::ppi);
+        debug!("Using PPI {ppi:.2}");
 
         ScreenSize {
             width,
