@@ -1,7 +1,7 @@
 use gio::ListModel;
 use glib::subclass::types::ObjectSubclassIsExt;
 use glib::{wrapper, Object};
-use gtk::prelude::ListModelExt;
+use gtk::prelude::{ListModelExt, ListModelExtManual};
 use gtk::{gio, glib};
 use x11rb::protocol::randr::Mode as ModeId;
 
@@ -86,6 +86,26 @@ impl Modes {
             .iter()
             .position(|m| m == mode)
             .map(|i| i.try_into().expect("smaller position"))
+    }
+
+    pub fn resolutions(&self) -> Self {
+        let resolution_modes = Self::new();
+        for mode in self.iter::<Mode>().map(Result::unwrap) {
+            if !resolution_modes.contains_res(mode.width(), mode.height()) {
+                resolution_modes.append(&mode);
+            }
+        }
+        resolution_modes
+    }
+
+    pub fn refresh_rates(&self, res_mode: &Mode) -> Self {
+        let refresh_rate_modes = Self::new();
+        for mode in self.iter::<Mode>().map(Result::unwrap) {
+            if mode.width() == res_mode.width() && mode.height() == res_mode.height() {
+                refresh_rate_modes.append(&mode);
+            }
+        }
+        refresh_rate_modes
     }
 }
 

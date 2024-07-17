@@ -127,32 +127,6 @@ mod imp {
     }
 
     impl ModeSelector {
-        fn resolutions_model(&self) -> Option<Modes> {
-            if let Some(modes) = self.modes.borrow().as_ref() {
-                let resolution_modes = Modes::new();
-                for mode in modes.iter::<Mode>().map(Result::unwrap) {
-                    if !resolution_modes.contains_res(mode.width(), mode.height()) {
-                        resolution_modes.append(&mode);
-                    }
-                }
-                return Some(resolution_modes);
-            }
-            None
-        }
-
-        fn refresh_rates_model(&self, res_mode: &Mode) -> Option<Modes> {
-            if let Some(modes) = self.modes.borrow().as_ref() {
-                let refresh_rate_modes = Modes::new();
-                for mode in modes.iter::<Mode>().map(Result::unwrap) {
-                    if mode.width() == res_mode.width() && mode.height() == res_mode.height() {
-                        refresh_rate_modes.append(&mode);
-                    }
-                }
-                return Some(refresh_rate_modes);
-            }
-            None
-        }
-
         fn set_modes(&self, modes: Option<&Modes>) {
             let res_hid = self.resolution_selected_handler_id.borrow();
             let rr_hid = self.refresh_rate_selected_handler_id.borrow();
@@ -160,15 +134,18 @@ mod imp {
             Self::select_pos(&self.resolution, res_hid.as_ref(), gtk::INVALID_LIST_POSITION);
             self.modes.replace(modes.cloned());
 
-            let res_model = self.resolutions_model();
             let mut rr_model = None;
-            if let Some(res_model) = &res_model {
-                if res_model.n_items() > 0 {
-                    rr_model = self
-                        .refresh_rates_model(&res_model.item(0).and_downcast::<Mode>().unwrap());
+            let mut res_model = None;
+            if let Some(modes) = modes {
+                let resolutions = modes.resolutions();
+
+                if resolutions.n_items() > 0 {
+                    rr_model = Some(
+                        modes.refresh_rates(&resolutions.item(0).and_downcast::<Mode>().unwrap()),
+                    );
                 }
 
-                let format_width = res_model
+                let format_width = resolutions
                     .iter::<Mode>()
                     .map(Result::unwrap)
                     .map(|r| r.height().to_string().len())
@@ -178,6 +155,8 @@ mod imp {
                     ModeDropDown::Resolution,
                     Some(format_width),
                 )));
+
+                res_model = Some(resolutions);
             }
             Self::set_model(&self.resolution, res_hid.as_ref(), res_model.as_ref());
             Self::set_model(&self.refresh_rate, rr_hid.as_ref(), rr_model.as_ref());
@@ -188,7 +167,9 @@ mod imp {
             let res_hid = self.resolution_selected_handler_id.borrow();
             let rr_hid = self.refresh_rate_selected_handler_id.borrow();
 
-            if let Some(selected_mode) = selected_mode {
+            if let (Some(modes), Some(selected_mode)) =
+                (self.modes.borrow().as_ref(), selected_mode)
+            {
                 if let Some(res_pos) =
                     self.resolution.model().and_downcast::<Modes>().and_then(|modes| {
                         modes.position_by_res(selected_mode.width(), selected_mode.height())
@@ -198,7 +179,7 @@ mod imp {
                     Self::set_model(
                         &self.refresh_rate,
                         rr_hid.as_ref(),
-                        self.refresh_rates_model(selected_mode).as_ref(),
+                        Some(&modes.refresh_rates(selected_mode)),
                     );
                     if let Some(rr_pos) = self
                         .refresh_rate
@@ -219,13 +200,15 @@ mod imp {
         fn on_resolution_selected(&self, dd: &gtk::DropDown) {
             let selected_mode = dd.selected_item().and_downcast::<Mode>();
             if selected_mode != *self.selected_mode.borrow() {
-                if let Some(mode) = &selected_mode {
-                    Self::set_model(
-                        &self.refresh_rate,
-                        self.refresh_rate_selected_handler_id.borrow().as_ref(),
-                        self.refresh_rates_model(mode).as_ref(),
-                    );
+                let mut rr_model = None;
+                if let (Some(modes), Some(mode)) = (self.modes.borrow().as_ref(), &selected_mode) {
+                    rr_model = Some(modes.refresh_rates(mode));
                 }
+                Self::set_model(
+                    &self.refresh_rate,
+                    self.refresh_rate_selected_handler_id.borrow().as_ref(),
+                    rr_model.as_ref(),
+                );
                 self.selected_mode.replace(selected_mode);
                 self.obj().notify_selected_mode();
             }
