@@ -3,6 +3,8 @@ use glib::{closure_local, wrapper, Object, ValueDelegate};
 use gtk::subclass::prelude::ObjectSubclassIsExt;
 use gtk::{glib, Widget};
 
+use crate::data::values::I16;
+
 #[derive(ValueDelegate, Clone, Copy)]
 #[value_delegate(from = u8)]
 pub enum Axis {
@@ -52,21 +54,17 @@ mod imp {
     use glib::subclass::types::{ObjectSubclass, ObjectSubclassExt};
     use glib::subclass::Signal;
     use glib::types::StaticType;
-    use glib::{clone, derived_properties, object_subclass, Properties, SignalHandlerId, Type};
+    use glib::{clone, object_subclass, SignalHandlerId};
     use gtk::prelude::{BoxExt, EditableExt, EditableExtManual, EntryExt, ObjectExt, WidgetExt};
-    use gtk::subclass::prelude::DerivedObjectProperties;
     use gtk::subclass::widget::{WidgetClassExt, WidgetImpl};
     use gtk::{glib, BinLayout, Box, Entry, InputPurpose, Orientation, Widget};
 
     use super::Axis;
+    use crate::data::values::I16;
 
-    #[derive(Properties)]
-    #[properties(wrapper_type = super::PositionEntry)]
     pub struct PositionEntry {
-        #[property(set, maximum = i16::MAX.into())]
-        max_x: Cell<i32>,
-        #[property(set, maximum = i16::MAX.into())]
-        max_y: Cell<i32>,
+        pub(super) max_x: Cell<i16>,
+        pub(super) max_y: Cell<i16>,
         entries: [Entry; 2],
         insert_handler_ids: RefCell<[Option<SignalHandlerId>; 2]>,
         delete_handler_ids: RefCell<[Option<SignalHandlerId>; 2]>,
@@ -97,14 +95,13 @@ mod imp {
         fn class_init(klass: &mut Self::Class) { klass.set_layout_manager_type::<BinLayout>(); }
     }
 
-    #[derived_properties]
     impl ObjectImpl for PositionEntry {
         fn signals() -> &'static [Signal] {
             static SIGNALS: OnceLock<Vec<Signal>> = OnceLock::new();
             SIGNALS.get_or_init(|| {
                 vec![
                     Signal::builder("coordinate-changed")
-                        .param_types([Axis::static_type(), Type::I32])
+                        .param_types([Axis::static_type(), I16::static_type()])
                         .build(),
                 ]
             })
@@ -191,7 +188,7 @@ mod imp {
                 } else if coord.to_string() != self.entries[usize::from(axis)].text() {
                     self.entries[usize::from(axis)].set_text(&coord.to_string());
                 }
-                self.obj().emit_by_name::<()>("coordinate-changed", &[&axis, &i32::from(coord)]);
+                self.obj().emit_by_name::<()>("coordinate-changed", &[&axis, &I16::new(coord)]);
             } else if self.entries[usize::from(axis)].text().is_empty() {
                 self.insert_text("0", &mut 0, axis);
             }
@@ -213,17 +210,17 @@ mod imp {
                 } else {
                     self.entries[usize::from(axis)].set_text(&coord.to_string());
                 }
-                self.obj().emit_by_name::<()>("coordinate-changed", &[&axis, &i32::from(coord)]);
+                self.obj().emit_by_name::<()>("coordinate-changed", &[&axis, &I16::new(coord)]);
             } else {
                 self.delete_text(start_pos, end_pos, axis);
-                self.obj().emit_by_name::<()>("coordinate-changed", &[&axis, &0_i32]);
+                self.obj().emit_by_name::<()>("coordinate-changed", &[&axis, &I16::default()]);
             }
         }
 
         fn parse_coord(&self, text: &str, axis: Axis) -> Option<i16> {
-            let max: i16 = match axis {
-                Axis::X => i16::try_from(self.max_x.get()).unwrap_or(i16::MAX),
-                Axis::Y => i16::try_from(self.max_y.get()).unwrap_or(i16::MAX),
+            let max = match axis {
+                Axis::X => self.max_x.get(),
+                Axis::Y => self.max_y.get(),
             };
             match text.chars().filter(char::is_ascii_digit).collect::<String>().parse::<i16>() {
                 Ok(c) => Some(c.min(max)),
@@ -257,11 +254,15 @@ wrapper! {
 impl PositionEntry {
     pub fn new() -> Self { Object::new() }
 
+    pub fn set_max_x(&self, max_x: i16) { self.imp().max_x.set(max_x) }
+
+    pub fn set_max_y(&self, max_y: i16) { self.imp().max_y.set(max_y) }
+
     pub fn set_x(&self, text: &str) { self.imp().set_text(text, Axis::X); }
 
     pub fn set_y(&self, text: &str) { self.imp().set_text(text, Axis::Y); }
 
-    pub fn connect_coordinate_changed(&self, callback: impl Fn(&Self, Axis, i32) + 'static) {
+    pub fn connect_coordinate_changed(&self, callback: impl Fn(&Self, Axis, I16) + 'static) {
         self.connect_closure(
             "coordinate-changed",
             false,

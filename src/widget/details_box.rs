@@ -1,3 +1,4 @@
+use glib::subclass::types::ObjectSubclassIsExt;
 use glib::{closure_local, wrapper, Object, ValueDelegate};
 use gtk::prelude::ObjectExt;
 use gtk::{glib, Widget};
@@ -26,6 +27,7 @@ mod imp {
     use crate::data::mode::Mode;
     use crate::data::modes::Modes;
     use crate::data::output::Output;
+    use crate::data::values::I16;
     use crate::utils::nearly_eq;
     use crate::widget::checkbutton::CheckButton;
     use crate::widget::details_child::DetailsChild;
@@ -46,10 +48,8 @@ mod imp {
         pos_changed_handlers: RefCell<[Option<SignalHandlerId>; 2]>,
         pos_modify_sids: RefCell<[Option<SourceId>; 2]>,
         primary_changed_handler: RefCell<Option<SignalHandlerId>>,
-        #[property(get, set, construct, default = i16::MAX.try_into().unwrap(), maximum = u16::MAX.into())]
-        screen_max_width: Cell<u32>,
-        #[property(get, set, construct, default = i16::MAX.try_into().unwrap(), maximum = u16::MAX.into())]
-        screen_max_height: Cell<u32>,
+        pub(super) screen_max_width: Cell<u16>,
+        pub(super) screen_max_height: Cell<u16>,
         root: FlowBox,
         sw_enabled: Switch,
         mode_selector: ModeSelector,
@@ -168,23 +168,23 @@ mod imp {
                 self.sw_enabled.set_active(output.enabled());
                 self.cb_primary.set_active(output.primary());
 
-                self.position_entry.set_x(&output.pos_x().to_string());
-                self.position_entry.set_y(&output.pos_y().to_string());
+                self.position_entry.set_x(&output.x().to_string());
+                self.position_entry.set_y(&output.y().to_string());
                 if let Some(mode) = output.mode() {
-                    self.position_entry.set_max_x(i32::from(
+                    self.position_entry.set_max_x(
                         self.screen_max_width
                             .get()
                             .saturating_sub(mode.width())
                             .try_into()
                             .unwrap_or(i16::MAX),
-                    ));
-                    self.position_entry.set_max_y(i32::from(
+                    );
+                    self.position_entry.set_max_y(
                         self.screen_max_height
                             .get()
                             .saturating_sub(mode.height())
                             .try_into()
                             .unwrap_or(i16::MAX),
-                    ));
+                    );
                 } else {
                     self.position_entry.set_max_x(0);
                     self.position_entry.set_max_y(0);
@@ -219,7 +219,7 @@ mod imp {
                         if let Some(sid) = this.pos_modify_sids.borrow_mut()[usize::from(Axis::X)].take() {
                             sid.remove();
                         }
-                        this.position_entry.set_x(&o.pos_x().to_string());
+                        this.position_entry.set_x(&o.x().to_string());
                     }
                 ))),
                 Some(output.connect_pos_y_notify(clone!(
@@ -227,7 +227,7 @@ mod imp {
                         if let Some(sid) = this.pos_modify_sids.borrow_mut()[usize::from(Axis::Y)].take() {
                             sid.remove();
                         }
-                        this.position_entry.set_y(&o.pos_y().to_string());
+                        this.position_entry.set_y(&o.y().to_string());
                     }
                 )))
             ]);
@@ -293,7 +293,8 @@ mod imp {
             }
         }
 
-        fn update_position(&self, axis: Axis, coord: i32) {
+        fn update_position(&self, axis: Axis, coord: I16) {
+            let coord = coord.get();
             if let Some(output) = self.output.borrow().as_ref() {
                 if let Some(sid) = self.pos_modify_sids.borrow_mut()[usize::from(axis)].take() {
                     sid.remove();
@@ -305,14 +306,14 @@ mod imp {
                         @weak self as this, @weak output => move || {
                             this.pos_modify_sids.borrow_mut()[usize::from(axis)].take();
                             let cur_pos = match axis {
-                                Axis::X => output.pos_x(),
-                                Axis::Y => output.pos_y(),
+                                Axis::X => output.x(),
+                                Axis::Y => output.y(),
                             };
                             if cur_pos != coord {
                                 let set_coord = || {
                                     match axis {
-                                        Axis::X => output.set_pos_x(coord),
-                                        Axis::Y => output.set_pos_y(coord),
+                                        Axis::X => output.set_x(coord),
+                                        Axis::Y => output.set_y(coord),
                                     };
                                 };
                                 if let Some(handler_id) = &this.pos_changed_handlers.borrow()[usize::from(axis)] {
@@ -349,11 +350,14 @@ wrapper! {
 }
 
 impl DetailsBox {
-    pub fn new(screen_max_width: u16, screen_max_height: u16) -> Self {
-        Object::builder()
-            .property("screen-max-width", u32::from(screen_max_width))
-            .property("screen-max-height", u32::from(screen_max_height))
-            .build()
+    pub fn new() -> Self { Object::new() }
+
+    pub fn set_screen_max_width(&self, screen_max_width: u16) {
+        self.imp().screen_max_width.set(screen_max_width);
+    }
+
+    pub fn set_screen_max_height(&self, screen_max_height: u16) {
+        self.imp().screen_max_height.set(screen_max_height);
     }
 
     // TODO connect to Output properties notify signals instead of passing Update
@@ -365,6 +369,10 @@ impl DetailsBox {
             closure_local!(|details, output, update| callback(details, output, update)),
         );
     }
+}
+
+impl Default for DetailsBox {
+    fn default() -> Self { Self::new() }
 }
 
 #[derive(ValueDelegate, Clone, Copy)]

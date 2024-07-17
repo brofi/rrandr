@@ -5,6 +5,7 @@ use x11rb::protocol::randr::Output as OutputId;
 
 use crate::data::mode::Mode;
 use crate::data::modes::Modes;
+use crate::data::values::I16;
 use crate::math::{Rect, MM_PER_INCH};
 
 pub const PPI_DEFAULT: u8 = 96;
@@ -22,6 +23,7 @@ mod imp {
 
     use crate::data::mode::Mode;
     use crate::data::modes::Modes;
+    use crate::data::values::I16;
 
     #[derive(Properties, Default)]
     #[properties(wrapper_type = super::Output)]
@@ -36,10 +38,10 @@ mod imp {
         enabled: Cell<bool>,
         #[property(get, set)]
         primary: Cell<bool>,
-        #[property(get, set, maximum = i16::MAX.into())]
-        pos_y: Cell<i32>,
-        #[property(get, set, maximum = i16::MAX.into())]
-        pos_x: Cell<i32>,
+        #[property(get, set)]
+        pos_y: Cell<I16>,
+        #[property(get, set)]
+        pos_x: Cell<I16>,
         #[property(get, set, construct_only)]
         modes: RefCell<Modes>,
         #[property(get, set = Self::set_mode, nullable)]
@@ -102,8 +104,8 @@ impl Output {
             .property("product-name", product_name)
             .property("enabled", enabled)
             .property("primary", primary)
-            .property("pos-x", i32::from(pos_x))
-            .property("pos-y", i32::from(pos_y))
+            .property("pos-x", I16::new(pos_x))
+            .property("pos-y", I16::new(pos_y))
             .property("modes", modes)
             .property("mode", mode)
             .property("width", width)
@@ -111,28 +113,35 @@ impl Output {
             .build()
     }
 
+    pub fn x(&self) -> i16 { self.pos_x().get() }
+
+    pub fn y(&self) -> i16 { self.pos_y().get() }
+
+    pub fn set_x(&self, x: i16) { self.set_pos_x(I16::new(x)) }
+
+    pub fn set_y(&self, y: i16) { self.set_pos_y(I16::new(y)) }
+
     pub fn enable(&self) { self.enable_at(-1, -1); }
 
     pub fn enable_at(&self, x: i16, y: i16) {
         self.set_enabled(true);
         self.set_mode(Some(self.modes().item(0).and_downcast::<Mode>().expect("has mode")));
-        self.set_pos_x(i32::from(x));
-        self.set_pos_y(i32::from(y));
+        self.set_x(x);
+        self.set_y(y);
     }
 
     pub fn disable(&self) {
         self.set_enabled(false);
         self.set_primary(false);
-        self.set_pos_x(0);
-        self.set_pos_y(0);
+        self.set_x(0);
+        self.set_y(0);
         self.set_mode(None::<Mode>);
     }
 
     pub fn ppi(&self) -> f64 {
         if let Some(mode) = self.mode() {
-            if self.pos_y() > 0 {
-                return (f64::from(MM_PER_INCH) * f64::from(mode.height()))
-                    / f64::from(self.pos_y());
+            if self.y() > 0 {
+                return (f64::from(MM_PER_INCH) * f64::from(mode.height())) / f64::from(self.y());
             }
         }
         f64::from(PPI_DEFAULT)
@@ -140,12 +149,7 @@ impl Output {
 
     pub fn rect(&self) -> Rect {
         if let Some(mode) = self.mode() {
-            return Rect::new(
-                self.pos_x() as i16,
-                self.pos_y() as i16,
-                mode.width() as u16,
-                mode.height() as u16,
-            );
+            return Rect::new(self.x(), self.y(), mode.width(), mode.height());
         };
         Rect::default()
     }

@@ -8,7 +8,6 @@ use gtk::{glib, Accessible, Buildable, ConstraintTarget, DrawingArea, Widget};
 
 use super::details_box::Update;
 use crate::data::output::Output;
-use crate::data::outputs::Outputs;
 
 mod imp {
     use std::cell::{Cell, RefCell};
@@ -42,10 +41,8 @@ mod imp {
         #[property(get, set = Self::set_outputs)]
         outputs: RefCell<Outputs>,
         config: Config,
-        #[property(get, set = Self::set_screen_max_width, construct, default = i16::MAX.try_into().unwrap(), maximum = u16::MAX.into())]
-        screen_max_width: Cell<u32>,
-        #[property(get, set = Self::set_screen_max_height, construct, default = i16::MAX.try_into().unwrap(), maximum = u16::MAX.into())]
-        screen_max_height: Cell<u32>,
+        pub(super) screen_max_width: Cell<u16>,
+        pub(super) screen_max_height: Cell<u16>,
         pub(super) selected_output: RefCell<Option<Output>>,
         grab_offset: Cell<[f64; 2]>,
         scale: Cell<f64>,
@@ -127,18 +124,16 @@ mod imp {
                     let max_x =
                         i16::try_from(self.screen_max_width.get().saturating_sub(mode.width()))
                             .unwrap_or(i16::MAX);
-                    let x =
-                        output.pos_x().saturating_sub(i32::from(bounds.x())).min(i32::from(max_x));
-                    if x != output.pos_x() {
-                        output.set_pos_x(x);
+                    let x = output.x().saturating_sub(bounds.x()).min(max_x);
+                    if x != output.x() {
+                        output.set_x(x);
                     }
                     let max_y =
                         i16::try_from(self.screen_max_height.get().saturating_sub(mode.height()))
                             .unwrap_or(i16::MAX);
-                    let y =
-                        output.pos_y().saturating_sub(i32::from(bounds.y())).min(i32::from(max_y));
-                    if y != output.pos_y() {
-                        output.set_pos_y(y);
+                    let y = output.y().saturating_sub(bounds.y()).min(max_y);
+                    if y != output.y() {
+                        output.set_y(y);
                     }
                 }
             }
@@ -157,18 +152,6 @@ mod imp {
     }
 
     impl OutputArea {
-        fn set_screen_max_width(&self, screen_max_width: u32) {
-            self.screen_max_width.set(screen_max_width);
-            self.resize(self.obj().width(), self.obj().height());
-            self.obj().queue_draw();
-        }
-
-        fn set_screen_max_height(&self, screen_max_height: u32) {
-            self.screen_max_height.set(screen_max_height);
-            self.resize(self.obj().width(), self.obj().height());
-            self.obj().queue_draw();
-        }
-
         fn set_outputs(&self, outputs: &Outputs) {
             self.outputs.replace(outputs.clone());
             let selected = self.selected_output.take();
@@ -234,8 +217,8 @@ mod imp {
 
                 // Grab offset to output origin in global coordinates
                 self.grab_offset.set([
-                    f64::from(output.pos_x()) - (start_x - dx) / scale,
-                    f64::from(output.pos_y()) - (start_y - dy) / scale,
+                    f64::from(output.x()) - (start_x - dx) / scale,
+                    f64::from(output.y()) - (start_y - dy) / scale,
                 ]);
 
                 self.obj().emit_by_name::<()>("output-selected", &[&output]);
@@ -280,24 +263,24 @@ mod imp {
 
                 // Apply snap
                 if snap.x == 0 {
-                    if f64::from((new_x - output.pos_x() as i16).abs()) < snap_strength {
-                        new_x = output.pos_x() as i16;
+                    if f64::from((new_x - output.x()).abs()) < snap_strength {
+                        new_x = output.x();
                     }
                 } else if f64::from(snap.x.abs()) < snap_strength {
-                    new_x = (output.pos_x() as i16).saturating_add(i16::try_from(snap.x).unwrap());
+                    new_x = (output.x()).saturating_add(i16::try_from(snap.x).unwrap());
                 }
                 if snap.y == 0 {
-                    if f64::from((new_y - output.pos_y() as i16).abs()) < snap_strength {
-                        new_y = output.pos_y() as i16;
+                    if f64::from((new_y - output.y()).abs()) < snap_strength {
+                        new_y = output.y();
                     }
                 } else if f64::from(snap.y.abs()) < snap_strength {
-                    new_y = (output.pos_y() as i16).saturating_add(i16::try_from(snap.y).unwrap());
+                    new_y = (output.y()).saturating_add(i16::try_from(snap.y).unwrap());
                 }
 
                 // Update new position
-                if new_x != output.pos_x() as i16 || new_y != output.pos_y() as i16 {
-                    output.set_pos_x(i32::from(new_x));
-                    output.set_pos_y(i32::from(new_y));
+                if new_x != output.x() || new_y != output.y() {
+                    output.set_x(new_x);
+                    output.set_y(new_y);
                     self.resize(self.obj().width(), self.obj().height());
                     self.obj().queue_draw();
                 }
@@ -453,13 +436,13 @@ mod imp {
                 }
             }
             for output in outputs.iter::<Output>().map(Result::unwrap) {
-                let x = i32::from(data[&output.id()].0.x());
-                if x != output.pos_x() {
-                    output.set_pos_x(x);
+                let x = data[&output.id()].0.x();
+                if x != output.x() {
+                    output.set_x(x);
                 }
-                let y = i32::from(data[&output.id()].0.y());
-                if y != output.pos_y() {
-                    output.set_pos_y(y);
+                let y = data[&output.id()].0.y();
+                if y != output.y() {
+                    output.set_y(y);
                 }
             }
         }
@@ -534,12 +517,20 @@ wrapper! {
 }
 
 impl OutputArea {
-    pub fn new(outputs: &Outputs, screen_max_width: u16, screen_max_height: u16) -> Self {
-        Object::builder()
-            .property("outputs", outputs)
-            .property("screen-max-width", u32::from(screen_max_width))
-            .property("screen-max-height", u32::from(screen_max_height))
-            .build()
+    pub fn new() -> Self { Object::new() }
+
+    pub fn set_screen_max_width(&self, screen_max_width: u16) {
+        let imp = self.imp();
+        imp.screen_max_width.set(screen_max_width);
+        imp.resize(self.width(), self.height());
+        self.queue_draw();
+    }
+
+    pub fn set_screen_max_height(&self, screen_max_height: u16) {
+        let imp = self.imp();
+        imp.screen_max_height.set(screen_max_height);
+        imp.resize(self.width(), self.height());
+        self.queue_draw();
     }
 
     pub fn connect_output_selected(&self, callback: impl Fn(&Self, &Output) + 'static) {
@@ -597,4 +588,8 @@ impl OutputArea {
     pub fn select(&self, output: &Output) { self.imp().select(output); }
 
     pub fn deselect(&self) { self.imp().deselect(); }
+}
+
+impl Default for OutputArea {
+    fn default() -> Self { Self::new() }
 }

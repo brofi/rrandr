@@ -1,9 +1,12 @@
 use core::fmt;
 
 use gettextrs::gettext;
+use glib::subclass::types::ObjectSubclassIsExt;
 use glib::{wrapper, Object};
 use gtk::glib;
 use x11rb::protocol::randr::{Mode as ModeId, ModeFlag, ModeInfo};
+
+use super::values::U16;
 
 mod imp {
     use std::cell::Cell;
@@ -16,16 +19,18 @@ mod imp {
     use gtk::subclass::prelude::DerivedObjectProperties;
     use x11rb::protocol::randr::Mode as ModeId;
 
+    use crate::data::values::U16;
+
     #[derive(Default, Properties)]
     #[properties(wrapper_type = super::Mode)]
     pub struct Mode {
-        #[property(get, set)]
+        #[property(get, set, construct_only)]
         id: Cell<ModeId>,
-        #[property(get, set, maximum = u16::MAX.into())]
-        width: Cell<u32>,
-        #[property(get, set, maximum = u16::MAX.into())]
-        height: Cell<u32>,
-        #[property(get, set)]
+        #[property(set, construct_only)]
+        pub(super) width: Cell<U16>,
+        #[property(set, construct_only)]
+        pub(super) height: Cell<U16>,
+        #[property(get, set, construct_only)]
         refresh: Cell<f64>,
     }
 
@@ -48,11 +53,15 @@ impl Mode {
     pub fn new(id: ModeId, width: u16, height: u16, refresh: f64) -> Mode {
         Object::builder()
             .property("id", id)
-            .property("width", u32::from(width))
-            .property("height", u32::from(height))
+            .property("width", U16::new(width))
+            .property("height", U16::new(height))
             .property("refresh", refresh)
             .build()
     }
+
+    pub fn width(&self) -> u16 { self.imp().width.get().get() }
+
+    pub fn height(&self) -> u16 { self.imp().height.get().get() }
 
     pub fn as_resolution_str(&self, format_width: Option<usize>) -> String {
         let fw = format_width.unwrap_or_default();

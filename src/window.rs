@@ -128,20 +128,6 @@ mod imp {
 
         fn constructed(&self) {
             self.parent_constructed();
-            let obj = self.obj();
-
-            let _ = &self
-                .enabled_area
-                .get()
-                .bind_property("screen-max-width", &self.details.get(), "screen-max-width")
-                .bidirectional()
-                .build();
-            let _ = &self
-                .enabled_area
-                .get()
-                .bind_property("screen-max-height", &self.details.get(), "screen-max-height")
-                .bidirectional()
-                .build();
 
             // Remove focusable from automatically added FlowBoxChild
             let mut child = self.actions.first_child();
@@ -154,7 +140,7 @@ mod imp {
             event_controller_key.connect_key_pressed(clone!(
                 @weak self as this => @default-panic, move |eck, keyval, keycode, state| this.on_key_pressed(eck, keyval, keycode, state)
             ));
-            obj.add_controller(event_controller_key);
+            self.obj().add_controller(event_controller_key);
 
             self.details.connect_output_changed(clone!(
                 @weak self as this => move |_, output, update| {
@@ -365,10 +351,10 @@ impl Window {
     }
 
     pub fn set_screen_max_size(&self, width: u16, height: u16) {
-        self.imp().enabled_area.set_screen_max_width(u32::from(width));
-        self.imp().enabled_area.set_screen_max_height(u32::from(height));
-        self.imp().details.set_screen_max_width(u32::from(width));
-        self.imp().details.set_screen_max_height(u32::from(height));
+        self.imp().enabled_area.set_screen_max_width(width);
+        self.imp().enabled_area.set_screen_max_height(height);
+        self.imp().details.set_screen_max_width(width);
+        self.imp().details.set_screen_max_height(height);
     }
 
     pub fn set_outputs(&self, outputs: &Outputs) {

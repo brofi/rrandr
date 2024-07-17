@@ -336,8 +336,8 @@ impl Randr {
             "Trying to set output {} to CTRC {} at position +{}+{} with mode {}",
             output.name(),
             crtc,
-            output.pos_x(),
-            output.pos_y(),
+            output.x(),
+            output.y(),
             mode
         );
         Ok(set_crtc_config(
@@ -345,8 +345,8 @@ impl Randr {
             crtc,
             CURRENT_TIME,
             CURRENT_TIME,
-            output.pos_x() as i16,
-            output.pos_y() as i16,
+            output.x(),
+            output.y(),
             mode.id(),
             Rotation::ROTATE0,
             &[output.id()],
