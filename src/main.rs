@@ -20,6 +20,7 @@ use gio::resources_register_include;
 use gtk::{gio, glib};
 
 fn main() -> glib::ExitCode {
+    env_logger::init();
     setlocale(LocaleCategory::LcAll, "");
     let domainname = env!("CARGO_PKG_NAME");
     bindtextdomain(domainname, env!("RRANDR_LOCALE_DIR")).expect("bind text domain");

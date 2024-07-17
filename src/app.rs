@@ -16,6 +16,7 @@ mod imp {
     use gtk::prelude::{GtkApplicationExt, GtkWindowExt};
     use gtk::subclass::application::GtkApplicationImpl;
     use gtk::subclass::prelude::ApplicationImpl;
+    use log::error;
 
     use crate::window::{Action, Window};
     use crate::x11::popup::show_popup_windows;
@@ -81,7 +82,7 @@ mod imp {
             ));
             window.connect_identify(|_, btn| {
                 if let Err(e) = show_popup_windows(btn) {
-                    println!("Failed to identify outputs: {e:?}");
+                    error!("Failed to identify outputs: {e:?}");
                 }
             });
             window.present();

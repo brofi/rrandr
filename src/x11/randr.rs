@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use std::error::Error;
 
 use gtk::prelude::ListModelExtManual;
+use log::{debug, error};
 use x11rb::connection::{Connection as XConnection, RequestConnection};
 use x11rb::cookie::{Cookie, VoidCookie};
 use x11rb::errors::{ConnectionError, ReplyError};
@@ -56,7 +57,7 @@ impl Randr {
             mwidth: screen.width_in_millimeters,
             mheight: screen.height_in_millimeters,
         };
-        println!(
+        debug!(
             "Init screen size to {}x{} px, {}x{} mm",
             screen_size.width, screen_size.height, screen_size.mwidth, screen_size.mheight
         );
@@ -84,9 +85,9 @@ impl Randr {
             res.modes.iter().map(|m| (m.id, *m)).collect::<HashMap<_, _>>();
 
         #[cfg(debug_assertions)]
-        print_crtcs(&crtcs, &modes);
+        log_crtcs(&crtcs, &modes);
         #[cfg(debug_assertions)]
-        print_outputs(&outputs, &modes);
+        log_outputs(&outputs, &modes);
 
         Self { conn, root, screen_size, screen_size_range, primary, crtcs, outputs, modes }
     }
@@ -176,7 +177,7 @@ impl Randr {
     }
 
     pub fn apply(&self, outputs: &Outputs) -> bool {
-        println!("Applying changes");
+        debug!("Applying changes");
         let primary = outputs.iter::<Output>().map(Result::unwrap).find(Output::primary);
         let screen_size = self.get_screen_size(outputs, primary.as_ref());
         let screen_size_changed = self.screen_size.width != screen_size.width
@@ -207,7 +208,7 @@ impl Randr {
         }
 
         if screen_size_changed {
-            println!(
+            debug!(
                 "Setting screen size to {}x{} px, {}x{} mm",
                 screen_size.width, screen_size.height, screen_size.mwidth, screen_size.mheight
             );
@@ -320,7 +321,7 @@ impl Randr {
                 return Some(*crtc_id);
             }
         }
-        println!(
+        error!(
             "Failed to get empty CRTC for output {}",
             String::from_utf8_lossy(&output_info.name)
         );
@@ -329,10 +330,10 @@ impl Randr {
 
     fn update_crtc(&self, crtc: CrtcId, output: &Output) -> Result<SetConfig, ReplyError> {
         let Some(mode) = output.mode() else {
-            println!("Output {} is missing a mode.", output.name());
+            error!("Output {} is missing a mode.", output.name());
             return Ok(SetConfig::FAILED);
         };
-        println!(
+        debug!(
             "Trying to set output {} to CTRC {} at position +{}+{} with mode {}",
             output.name(),
             crtc,
@@ -356,11 +357,11 @@ impl Randr {
     }
 
     pub fn revert(&self) {
-        println!("Reverting changes");
+        debug!("Reverting changes");
         for crtc_id in self.crtcs.borrow().keys() {
             self.disable_crtc(*crtc_id).expect("disable CRTC");
         }
-        println!(
+        debug!(
             "Reverting screen size to {}x{} px, {}x{} mm",
             self.screen_size.width,
             self.screen_size.height,
@@ -442,43 +443,41 @@ fn get_crtcs(
 
 #[cfg(debug_assertions)]
 #[allow(clippy::use_debug)]
-fn print_crtcs(crtcs: &HashMap<CrtcId, CrtcInfo>, modes: &HashMap<ModeId, ModeInfo>) {
+fn log_crtcs(crtcs: &HashMap<CrtcId, CrtcInfo>, modes: &HashMap<ModeId, ModeInfo>) {
     for (crtc_id, crtc) in crtcs {
-        println!("{:-^40}", format!(" CRTC {crtc_id} "));
-        println!("XID:      {crtc_id}");
-        println!("Pos:      +{}+{}", crtc.x, crtc.y);
-        println!("Res:      {}x{}", crtc.width, crtc.height);
+        debug!("{:-^40}", format!(" CRTC {crtc_id} "));
+        debug!("XID:      {crtc_id}");
+        debug!("Pos:      +{}+{}", crtc.x, crtc.y);
+        debug!("Res:      {}x{}", crtc.width, crtc.height);
         if crtc.mode > 0 {
-            println!("Mode:     {}: {}", crtc.mode, Mode::from(modes[&crtc.mode]));
+            debug!("Mode:     {}: {}", crtc.mode, Mode::from(modes[&crtc.mode]));
         }
-        println!("Outputs:  {:?}", crtc.outputs);
-        println!("Rot:      {:#?}", crtc.rotation);
-        println!("Possible: {:?}", crtc.possible);
-        println!();
+        debug!("Outputs:  {:?}", crtc.outputs);
+        debug!("Rot:      {:#?}", crtc.rotation);
+        debug!("Possible: {:?}", crtc.possible);
     }
 }
 
 #[cfg(debug_assertions)]
 #[allow(clippy::use_debug)]
-fn print_outputs(outputs: &HashMap<OutputId, OutputInfo>, modes: &HashMap<ModeId, ModeInfo>) {
+fn log_outputs(outputs: &HashMap<OutputId, OutputInfo>, modes: &HashMap<ModeId, ModeInfo>) {
     for (output_id, output) in outputs {
         if output.connection == Connection::CONNECTED {
-            println!("{:-^40}", format!(" Output {} ", output_id));
-            println!("XID:   {output_id}");
-            println!("Name:  {}", String::from_utf8_lossy(&output.name));
-            println!("CRTC:  {}", output.crtc);
-            println!("CRTCs: {:?}", output.crtcs);
-            println!("Dim:   {}x{} mm", output.mm_width, output.mm_height);
-            println!("Preferred modes:");
+            debug!("{:-^40}", format!(" Output {} ", output_id));
+            debug!("XID:   {output_id}");
+            debug!("Name:  {}", String::from_utf8_lossy(&output.name));
+            debug!("CRTC:  {}", output.crtc);
+            debug!("CRTCs: {:?}", output.crtcs);
+            debug!("Dim:   {}x{} mm", output.mm_width, output.mm_height);
+            debug!("Preferred modes:");
             for mode_id in &output.modes[0..output.num_preferred.into()] {
-                println!("    {}: {}", mode_id, Mode::from(modes[mode_id]));
+                debug!("    {}: {}", mode_id, Mode::from(modes[mode_id]));
             }
-            println!("Modes:");
+            debug!("Modes:");
             for mode_id in &output.modes {
-                println!("    {}: {}", mode_id, Mode::from(modes[mode_id]));
+                debug!("    {}: {}", mode_id, Mode::from(modes[mode_id]));
             }
-            println!("Clones: {:?}", output.clones);
-            println!();
+            debug!("Clones: {:?}", output.clones);
         }
     }
 }
@@ -487,10 +486,10 @@ fn handle_reply_error(result: Result<SetConfig, ReplyError>, msg: &str) -> bool 
     let mut error = true;
     match result {
         Ok(SetConfig::SUCCESS) => error = false,
-        Ok(SetConfig::FAILED) => println!("Failed to {msg}."),
-        Ok(status) => println!("Failed to {msg}. Cause: {status:#?}"),
-        Err(ReplyError::X11Error(e)) => println!("{}", x_error_to_string(&e)),
-        Err(e) => println!("Failed to {msg}. Cause: {e:?}"),
+        Ok(SetConfig::FAILED) => error!("Failed to {msg}."),
+        Ok(status) => error!("Failed to {msg}. Cause: {status:#?}"),
+        Err(ReplyError::X11Error(e)) => error!("{}", x_error_to_string(&e)),
+        Err(e) => error!("Failed to {msg}. Cause: {e:?}"),
     }
     error
 }
@@ -503,10 +502,10 @@ fn handle_no_reply_error(
     match result {
         Ok(cookie) => match cookie.check() {
             Ok(()) => error = false,
-            Err(ReplyError::X11Error(e)) => println!("{}", x_error_to_string(&e)),
-            Err(e) => println!("Failed to {msg}. Cause: {e}"),
+            Err(ReplyError::X11Error(e)) => error!("{}", x_error_to_string(&e)),
+            Err(e) => error!("Failed to {msg}. Cause: {e}"),
         },
-        Err(e) => println!("Failed to request {msg}. Cause: {e}"),
+        Err(e) => error!("Failed to request {msg}. Cause: {e}"),
     }
     error
 }

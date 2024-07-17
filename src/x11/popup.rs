@@ -8,6 +8,7 @@ use gio::spawn_blocking;
 use glib::spawn_future_local;
 use gtk::prelude::WidgetExt;
 use gtk::{gio, glib, Button};
+use log::error;
 use pango::{FontDescription, Weight};
 use x11rb::connection::Connection as XConnection;
 use x11rb::errors::{ReplyError, ReplyOrIdError};
@@ -161,7 +162,7 @@ fn loop_x(conn: &XCBConnection, secs: f32) -> Result<(), ReplyError> {
                 }
             }
             Some(Event::Error(e)) => {
-                println!("{}", x_error_to_string(&e));
+                error!("{}", x_error_to_string(&e));
                 return Err(e.into());
             }
             _ => (),
