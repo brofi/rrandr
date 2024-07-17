@@ -128,15 +128,11 @@ mod imp {
 
     impl ModeSelector {
         fn resolutions_model(&self) -> Option<Modes> {
-            let mut cur_width = 0;
-            let mut cur_height = 0;
             if let Some(modes) = self.modes.borrow().as_ref() {
                 let resolution_modes = Modes::new();
                 for mode in modes.iter::<Mode>().map(Result::unwrap) {
-                    if mode.width() != cur_width || mode.height() != cur_height {
+                    if !resolution_modes.contains_res(mode.width(), mode.height()) {
                         resolution_modes.append(&mode);
-                        cur_width = mode.width();
-                        cur_height = mode.height();
                     }
                 }
                 return Some(resolution_modes);

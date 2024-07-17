@@ -75,6 +75,10 @@ impl Modes {
             .map(|i| i.try_into().expect("smaller position"))
     }
 
+    pub fn contains_res(&self, width: u16, height: u16) -> bool {
+        self.position_by_res(width, height).is_some()
+    }
+
     pub fn position(&self, mode: &Mode) -> Option<u32> {
         self.imp()
             .0
