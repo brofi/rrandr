@@ -311,6 +311,7 @@ mod imp {
             let about = AboutDialog::builder()
                 .transient_for(&*self.obj())
                 .modal(true)
+                .logo(&Texture::from_resource("/com/github/brofi/rrandr/logo.svg"))
                 .program_name(env!("CARGO_PKG_NAME"))
                 .version(env!("CARGO_PKG_VERSION"))
                 .comments(gettext("A graphical interface to the RandR X Window System extension."))
@@ -323,9 +324,6 @@ mod imp {
                 // per line).
                 .translator_credits(gettext("translator-credits"))
                 .build();
-            if let Ok(logo) = Texture::from_filename("src/res/logo.svg") {
-                about.set_logo(Some(&logo));
-            }
             if about.comments().unwrap() != env!("CARGO_PKG_DESCRIPTION") {
                 warn!("About dialog description differs from crate description");
             }
