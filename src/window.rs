@@ -65,6 +65,7 @@ mod imp {
         glib, template_callbacks, AboutDialog, ApplicationWindow, Button, CompositeTemplate,
         EventControllerKey, FlowBox, License, Paned, TemplateChild,
     };
+    use log::warn;
 
     use crate::data::output::Output;
     use crate::data::outputs::Outputs;
@@ -309,17 +310,24 @@ mod imp {
         fn on_about_clicked(&self, _btn: &Button) {
             let about = AboutDialog::builder()
                 .transient_for(&*self.obj())
+                .modal(true)
                 .program_name(env!("CARGO_PKG_NAME"))
                 .version(env!("CARGO_PKG_VERSION"))
-                .comments(env!("CARGO_PKG_DESCRIPTION"))
+                .comments(gettext("A graphical interface to the RandR X Window System extension."))
                 .website_label(gettext("Repository"))
                 .website(env!("CARGO_PKG_REPOSITORY"))
                 .copyright(env!("RRANDR_COPYRIGHT_NOTICE"))
                 .license_type(License::Gpl30)
                 .authors(env!("CARGO_PKG_AUTHORS").split(':').collect::<Vec<_>>())
+                // Translators: Add your name and email address to the translation (one translator
+                // per line).
+                .translator_credits(gettext("translator-credits"))
                 .build();
             if let Ok(logo) = Texture::from_filename("src/res/logo.svg") {
                 about.set_logo(Some(&logo));
+            }
+            if about.comments().unwrap() != env!("CARGO_PKG_DESCRIPTION") {
+                warn!("About dialog description differs from crate description");
             }
             about.show();
         }
