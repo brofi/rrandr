@@ -108,31 +108,29 @@ impl Modes {
         refresh_rate_modes
     }
 
-    pub fn next_scroll_mode(&self, mode: &Mode) -> Option<Mode> {
-        let list = self.imp().0.borrow();
-        if let Some(pos) = list.iter().position(|m| m == mode) {
-            return list
-                .iter()
-                .skip(pos + 1)
-                .find(|&m| m.width() == mode.width() && m.height() == mode.height())
-                .or(list.get(pos + 1))
-                .cloned();
+    fn scroll_modes(&self) -> Vec<Mode> {
+        let mut modes = Vec::new();
+        let mut other_modes = Vec::new();
+        if let Some(first) = self.imp().0.borrow().first() {
+            modes.push(first.clone());
+            for m in self.imp().0.borrow().iter().skip(1) {
+                if m.width() == first.width() && m.height() == first.height() {
+                    modes.push(m.clone());
+                } else {
+                    other_modes.push(m.clone());
+                }
+            }
         }
-        None
+        modes.append(&mut other_modes);
+        modes
+    }
+
+    pub fn next_scroll_mode(&self, mode: &Mode) -> Option<Mode> {
+        self.scroll_modes().iter().skip_while(|&m| m.id() != mode.id()).nth(1).cloned()
     }
 
     pub fn prev_scroll_mode(&self, mode: &Mode) -> Option<Mode> {
-        let list = self.imp().0.borrow();
-        if let Some(pos) = list.iter().rev().position(|m| m == mode) {
-            return list
-                .iter()
-                .rev()
-                .skip(pos + 1)
-                .find(|&m| m.width() == mode.width() && m.height() == mode.height())
-                .or(list.iter().rev().nth(pos + 1))
-                .cloned();
-        }
-        None
+        self.scroll_modes().iter().rev().skip_while(|&m| m.id() != mode.id()).nth(1).cloned()
     }
 }
 
