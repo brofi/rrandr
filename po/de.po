@@ -7,8 +7,8 @@ msgid ""
 msgstr ""
 "Project-Id-Version: rrandr 0.2.0\n"
 "Report-Msgid-Bugs-To: https://github.com/brofi/rrandr/issues\n"
-"POT-Creation-Date: 2024-07-15 23:39+0200\n"
-"PO-Revision-Date: 2024-07-16 00:03+0200\n"
+"POT-Creation-Date: 2024-07-18 04:31+0200\n"
+"PO-Revision-Date: 2024-07-18 04:43+0200\n"
 "Last-Translator: Andreas Becker <brofi.archlinux@gmail.com>\n"
 "Language-Team: German\n"
 "Language: de\n"
@@ -18,7 +18,7 @@ msgstr ""
 "Plural-Forms: nplurals=2; plural=(n != 1);\n"
 "X-Generator: Poedit 3.4.2\n"
 
-#: src/data/mode.rs:63
+#: src/data/mode.rs:72
 msgid "Hz"
 msgstr "Hz"
 
@@ -31,20 +31,56 @@ msgid "Show shortcuts"
 msgstr "Tastenkombination anzeigen"
 
 #: src/res/shortcuts.ui:20
-msgid "Expand/collapse disabled output view"
-msgstr "Ansicht deaktivierter Bildschirme ein-/ausblenden"
-
-#: src/res/shortcuts.ui:26
-msgid "Enable/disable selected output"
-msgstr "Ausgewählten Bildschirm aktivieren/deaktivieren"
-
-#: src/res/shortcuts.ui:32
 msgid "Close window"
 msgstr "Fenster schließen"
 
-#: src/res/shortcuts.ui:38
+#: src/res/shortcuts.ui:26
 msgid "Close application"
 msgstr "Andwendung schließen"
+
+#: src/res/shortcuts.ui:34
+msgid "Enabled output view"
+msgstr "Ansicht aktivierter Bildschirme"
+
+#: src/res/shortcuts.ui:37 src/widget/details_box.rs:81
+msgid "Set as primary"
+msgstr "Als primären Bildschirm festlegen"
+
+#: src/res/shortcuts.ui:38
+msgid "Double-click"
+msgstr "Doppelklick"
+
+#: src/res/shortcuts.ui:44
+msgid "Next mode"
+msgstr "Nächster Modus"
+
+#: src/res/shortcuts.ui:45
+msgid "Mouse wheel down"
+msgstr "Mausrad runter"
+
+#: src/res/shortcuts.ui:51
+msgid "Previous mode"
+msgstr "Vorheriger Modus"
+
+#: src/res/shortcuts.ui:52
+msgid "Mouse wheel up"
+msgstr "Mausrad hoch"
+
+#: src/res/shortcuts.ui:58
+msgid "Disable selected output"
+msgstr "Ausgewählten Bildschirm deaktivieren"
+
+#: src/res/shortcuts.ui:66
+msgid "Disabled output view"
+msgstr "Ansicht deaktivierter Bildschirme"
+
+#: src/res/shortcuts.ui:69
+msgid "Enable selected output"
+msgstr "Ausgewählten Bildschirm aktivieren"
+
+#: src/res/shortcuts.ui:75
+msgid "Toggle view"
+msgstr "Ansicht umschalten"
 
 #: src/res/window.ui:58
 msgid "About"
@@ -70,35 +106,31 @@ msgstr "Änderungen verwerfen"
 msgid "_Reset"
 msgstr "_Verwerfen"
 
-#: src/widget/details_box.rs:77
+#: src/widget/details_box.rs:78
 msgid "Enable/disable"
 msgstr "Aktivieren/deaktivieren"
 
-#: src/widget/details_box.rs:80
-msgid "Set as primary"
-msgstr "Als primären Bildschirm festlegen"
-
 #. Output status
-#: src/widget/details_box.rs:117
+#: src/widget/details_box.rs:118
 msgid "Enabled"
 msgstr "Aktiv"
 
 #. Output mode consisting of resolution and refresh rate
-#: src/widget/details_box.rs:122
+#: src/widget/details_box.rs:123
 msgid "Mode"
 msgstr "Modus"
 
 #. Output position consisting of X and Y coordinate
-#: src/widget/details_box.rs:127
+#: src/widget/details_box.rs:128
 msgid "Position"
 msgstr "Position"
 
 #. Primary output status
-#: src/widget/details_box.rs:132
+#: src/widget/details_box.rs:133
 msgid "Primary"
 msgstr "Primär"
 
-#: src/widget/dialog.rs:144
+#: src/widget/dialog.rs:132
 msgid "_Close"
 msgstr "_Schließen"
 
@@ -110,53 +142,53 @@ msgstr "Auflösung"
 msgid "Refresh rate"
 msgstr "Bildwiederholfrequenz"
 
-#: src/widget/position_entry.rs:81
+#: src/widget/position_entry.rs:79
 msgid "Horizontal position"
 msgstr "Horizontale Position"
 
-#: src/widget/position_entry.rs:82
+#: src/widget/position_entry.rs:80
 msgid "Vertical position"
 msgstr "Vertikale Position"
 
+#: src/window.rs:236
+msgid "Confirm changes"
+msgstr "Änderungen bestätigen"
+
+#: src/window.rs:237
+msgid "Keep changes?"
+msgstr "Änderungen behalten?"
+
 #. Translators: '{}' gets replaced with the number of seconds left.
-#: src/window.rs:251
+#: src/window.rs:239 src/window.rs:262
 msgid "Reverting in {} second"
 msgid_plural "Reverting in {} seconds"
 msgstr[0] "Zurücksetzen in {} Sekunde"
 msgstr[1] "Zurücksetzen in {} Sekunden"
 
-#: src/window.rs:257
-msgid "Confirm changes"
-msgstr "Änderungen bestätigen"
-
-#: src/window.rs:258
-msgid "Keep changes?"
-msgstr "Änderungen behalten?"
-
-#: src/window.rs:260
+#: src/window.rs:244
 msgid "_Keep"
 msgstr "_Behalten"
 
-#: src/window.rs:260
+#: src/window.rs:244
 msgid "_Revert"
 msgstr "_Zurücksetzen"
 
-#: src/window.rs:261
+#: src/window.rs:245
 msgid "Keep changes"
 msgstr "Änderungen behalten"
 
-#: src/window.rs:261
+#: src/window.rs:245
 msgid "Revert changes"
 msgstr "Änderungen zurücksetzen"
 
-#: src/window.rs:299 src/window.rs:300
+#: src/window.rs:290 src/window.rs:291
 msgid "Failure"
 msgstr "Fehler"
 
-#: src/window.rs:301
+#: src/window.rs:292
 msgid "Changes have been reverted."
 msgstr "Änderungen wurden zurückgesetzt."
 
-#: src/window.rs:324
+#: src/window.rs:315
 msgid "Repository"
 msgstr "Projektarchiv"
