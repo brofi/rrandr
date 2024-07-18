@@ -1,8 +1,7 @@
-use gdk::prelude::ListModelExtManual;
 use glib::object::ObjectExt;
 use glib::subclass::types::ObjectSubclassIsExt;
 use glib::{closure_local, wrapper, Object};
-use gtk::prelude::WidgetExt;
+use gtk::prelude::{ListModelExtManual, WidgetExt};
 use gtk::subclass::drawing_area::DrawingAreaImpl;
 use gtk::{glib, Accessible, Buildable, ConstraintTarget, DrawingArea, Widget};
 
@@ -17,7 +16,7 @@ mod imp {
     use gdk::DragAction;
     use glib::subclass::object::{ObjectImpl, ObjectImplExt};
     use glib::subclass::Signal;
-    use glib::{clone, derived_properties, object_subclass, Properties, Value};
+    use glib::{clone, derived_properties, object_subclass, Propagation, Properties, Value};
     use gtk::prelude::{
         DrawingAreaExtManual, GestureDragExt, ListModelExt, ListModelExtManual, ObjectExt,
         StaticType, WidgetExt,
@@ -25,7 +24,10 @@ mod imp {
     use gtk::subclass::drawing_area::{DrawingAreaImpl, DrawingAreaImplExt};
     use gtk::subclass::prelude::{DerivedObjectProperties, ObjectSubclass, ObjectSubclassExt};
     use gtk::subclass::widget::WidgetImpl;
-    use gtk::{glib, DrawingArea, DropTarget, EventControllerMotion, GestureDrag};
+    use gtk::{
+        glib, DrawingArea, DropTarget, EventControllerMotion, EventControllerScroll,
+        EventControllerScrollFlags, GestureClick, GestureDrag,
+    };
 
     use crate::config::Config;
     use crate::data::output::Output;
@@ -81,14 +83,14 @@ mod imp {
 
             let gesture_drag = GestureDrag::new();
             gesture_drag.connect_drag_begin(clone!(
-            @weak self as this => move |g, start_x, start_y| this.on_drag_begin(g, start_x, start_y)
-        ));
+                @weak self as this => move |g, start_x, start_y| this.on_drag_begin(g, start_x, start_y)
+            ));
             gesture_drag.connect_drag_update(clone!(
-            @weak self as this => move |g, offset_x, offset_y| this.on_drag_update(g, offset_x, offset_y)
-        ));
+                @weak self as this => move |g, offset_x, offset_y| this.on_drag_update(g, offset_x, offset_y)
+            ));
             gesture_drag.connect_drag_end(clone!(
-            @weak self as this => move |g, offset_x, offset_y| this.on_drag_end(g, offset_x, offset_y)
-        ));
+                @weak self as this => move |g, offset_x, offset_y| this.on_drag_end(g, offset_x, offset_y)
+            ));
             obj.add_controller(gesture_drag);
 
             let event_controller_motion = EventControllerMotion::new();
@@ -105,6 +107,20 @@ mod imp {
             ));
             drop_target.connect_motion(Self::on_drop_motion);
             obj.add_controller(drop_target);
+
+            let gesture_click = GestureClick::new();
+            gesture_click.connect_pressed(clone!(
+                @weak self as this => move |gc, n_press, x, y| this.on_click(gc, n_press, x, y)
+            ));
+            obj.add_controller(gesture_click);
+
+            let event_controller_scroll = EventControllerScroll::builder()
+                .flags(EventControllerScrollFlags::DISCRETE | EventControllerScrollFlags::VERTICAL)
+                .build();
+            event_controller_scroll.connect_scroll(clone!(
+                @weak self as this => @default-panic, move |ecs, x, y| this.on_discrete_vertical_scroll(ecs, x, y)
+            ));
+            obj.add_controller(event_controller_scroll);
         }
     }
 
@@ -492,6 +508,42 @@ mod imp {
         }
 
         fn on_drop_motion(_dt: &DropTarget, _x: f64, _y: f64) -> DragAction { DragAction::MOVE }
+
+        fn on_click(&self, _gc: &GestureClick, n_press: i32, x: f64, y: f64) {
+            if n_press == 2 {
+                if let Some(output) = self.get_output_at(x, y) {
+                    output.set_primary(!output.primary());
+                    self.obj().update(&output, Update::Primary);
+                }
+            }
+        }
+
+        fn on_discrete_vertical_scroll(
+            &self,
+            _ecs: &EventControllerScroll,
+            _x: f64,
+            y: f64,
+        ) -> Propagation {
+            if let Some(selected) = self.selected_output.borrow().as_ref() {
+                let mode = selected.mode().expect("output should have a mode");
+                let next = if y > 0. {
+                    selected.modes().next_scroll_mode(&mode)
+                } else {
+                    selected.modes().prev_scroll_mode(&mode)
+                };
+                if let Some(next) = next {
+                    let update = if mode.width() != next.width() || mode.height() != next.height() {
+                        Update::Resolution
+                    } else {
+                        Update::Refresh
+                    };
+                    selected.set_mode(Some(&next));
+                    self.obj().update(selected, update);
+                    return Propagation::Stop;
+                }
+            }
+            Propagation::Proceed
+        }
 
         fn get_output_at(&self, x: f64, y: f64) -> Option<Output> {
             let scale = self.scale.get();

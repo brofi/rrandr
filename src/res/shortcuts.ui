@@ -17,18 +17,6 @@
             </child>
             <child>
               <object class="GtkShortcutsShortcut">
-                <property name="title" translatable="yes">Expand/collapse disabled output view</property>
-                <property name="accelerator">F9</property>
-              </object>
-            </child>
-            <child>
-              <object class="GtkShortcutsShortcut">
-                <property name="title" translatable="yes">Enable/disable selected output</property>
-                <property name="accelerator">Delete</property>
-              </object>
-            </child>
-            <child>
-              <object class="GtkShortcutsShortcut">
                 <property name="title" translatable="yes">Close window</property>
                 <property name="accelerator">&lt;ctrl&gt;W</property>
               </object>
@@ -37,6 +25,55 @@
               <object class="GtkShortcutsShortcut">
                 <property name="title" translatable="yes">Close application</property>
                 <property name="action-name">window.close</property>
+              </object>
+            </child>
+          </object>
+        </child>
+        <child>
+          <object class="GtkShortcutsGroup">
+            <property name="title" translatable="yes">Enabled output view</property>
+            <child>
+              <object class="GtkShortcutsShortcut">
+                <property name="title" translatable="yes">Set as primary</property>
+                <property name="subtitle" translatable="yes">Double-click</property>
+                <property name="shortcut-type">gesture</property>
+              </object>
+            </child>
+            <child>
+              <object class="GtkShortcutsShortcut">
+                <property name="title" translatable="yes">Next mode</property>
+                <property name="subtitle" translatable="yes">Mouse wheel down</property>
+                <property name="shortcut-type">gesture</property>
+              </object>
+            </child>
+            <child>
+              <object class="GtkShortcutsShortcut">
+                <property name="title" translatable="yes">Previous mode</property>
+                <property name="subtitle" translatable="yes">Mouse wheel up</property>
+                <property name="shortcut-type">gesture</property>
+              </object>
+            </child>
+            <child>
+              <object class="GtkShortcutsShortcut">
+                <property name="title" translatable="yes">Disable selected output</property>
+                <property name="accelerator">Delete</property>
+              </object>
+            </child>
+          </object>
+        </child>
+        <child>
+          <object class="GtkShortcutsGroup">
+            <property name="title" translatable="yes">Disabled output view</property>
+            <child>
+              <object class="GtkShortcutsShortcut">
+                <property name="title" translatable="yes">Enable selected output</property>
+                <property name="accelerator">Delete</property>
+              </object>
+            </child>
+            <child>
+              <object class="GtkShortcutsShortcut">
+                <property name="title" translatable="yes">Toggle view</property>
+                <property name="accelerator">F9</property>
               </object>
             </child>
           </object>

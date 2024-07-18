@@ -107,6 +107,33 @@ impl Modes {
         }
         refresh_rate_modes
     }
+
+    pub fn next_scroll_mode(&self, mode: &Mode) -> Option<Mode> {
+        let list = self.imp().0.borrow();
+        if let Some(pos) = list.iter().position(|m| m == mode) {
+            return list
+                .iter()
+                .skip(pos + 1)
+                .find(|&m| m.width() == mode.width() && m.height() == mode.height())
+                .or(list.get(pos + 1))
+                .cloned();
+        }
+        None
+    }
+
+    pub fn prev_scroll_mode(&self, mode: &Mode) -> Option<Mode> {
+        let list = self.imp().0.borrow();
+        if let Some(pos) = list.iter().rev().position(|m| m == mode) {
+            return list
+                .iter()
+                .rev()
+                .skip(pos + 1)
+                .find(|&m| m.width() == mode.width() && m.height() == mode.height())
+                .or(list.iter().rev().nth(pos + 1))
+                .cloned();
+        }
+        None
+    }
 }
 
 impl Default for Modes {
