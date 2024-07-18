@@ -21,6 +21,7 @@ mod imp {
         gio, glib, Align, BinLayout, Box, DropDown, Label, Orientation, SignalListItemFactory,
         Widget,
     };
+    use x11rb::protocol::randr::ModeFlag;
 
     use crate::data::mode::Mode;
     use crate::data::modes::Modes;
@@ -277,10 +278,24 @@ mod imp {
             if let (Some(label), Some(mode)) =
                 (list_item.child().and_downcast::<Label>(), list_item.item().and_downcast::<Mode>())
             {
-                label.set_label(&match mdd {
-                    ModeDropDown::Resolution => mode.as_resolution_str(res_format_width),
-                    ModeDropDown::RefreshRate => mode.as_refresh_rate_str(),
-                });
+                match mdd {
+                    ModeDropDown::Resolution => {
+                        label.set_text(&mode.as_resolution_str(res_format_width));
+                    }
+                    ModeDropDown::RefreshRate => {
+                        let text = mode.as_refresh_rate_str();
+                        let mark_flags = ModeFlag::INTERLACE | ModeFlag::DOUBLE_SCAN;
+                        if mode.flags().intersects(mark_flags) {
+                            label.set_markup(&format!("<i>{text}</i>"));
+                            label.set_tooltip_text(Some(&format!(
+                                "{:#?}",
+                                mode.flags() & mark_flags
+                            )));
+                        } else {
+                            label.set_text(&text);
+                        }
+                    }
+                }
             }
         });
         factory

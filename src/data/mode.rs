@@ -32,6 +32,8 @@ mod imp {
         pub(super) height: Cell<U16>,
         #[property(get, set, construct_only)]
         refresh: Cell<f64>,
+        #[property(set, construct_only)]
+        pub(super) flags: Cell<u32>,
     }
 
     #[object_subclass]
@@ -50,12 +52,13 @@ wrapper! {
 }
 
 impl Mode {
-    pub fn new(id: ModeId, width: u16, height: u16, refresh: f64) -> Mode {
+    pub fn new(id: ModeId, width: u16, height: u16, refresh: f64, flags: ModeFlag) -> Mode {
         Object::builder()
             .property("id", id)
             .property("width", U16::new(width))
             .property("height", U16::new(height))
             .property("refresh", refresh)
+            .property("flags", u32::from(flags))
             .build()
     }
 
@@ -63,19 +66,27 @@ impl Mode {
 
     pub fn height(&self) -> u16 { self.imp().height.get().get() }
 
+    pub fn flags(&self) -> ModeFlag { self.imp().flags.get().into() }
+
     pub fn as_resolution_str(&self, format_width: Option<usize>) -> String {
         let fw = format_width.unwrap_or_default();
         format!("{}\u{202F}x\u{202F}{:<fw$}", self.width(), self.height())
     }
 
-    pub fn as_refresh_rate_str(self) -> String {
+    pub fn as_refresh_rate_str(&self) -> String {
         format!("{:.2}\u{202F}{}", self.refresh(), gettext("Hz"))
     }
 }
 
 impl From<ModeInfo> for Mode {
     fn from(mode_info: ModeInfo) -> Self {
-        Self::new(mode_info.id, mode_info.width, mode_info.height, get_refresh_rate(&mode_info))
+        Self::new(
+            mode_info.id,
+            mode_info.width,
+            mode_info.height,
+            get_refresh_rate(&mode_info),
+            mode_info.mode_flags,
+        )
     }
 }
 
