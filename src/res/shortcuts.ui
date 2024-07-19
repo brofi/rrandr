@@ -34,6 +34,36 @@
             <property name="title" translatable="yes">Enabled output view</property>
             <child>
               <object class="GtkShortcutsShortcut">
+                <property name="title" translatable="yes">Move selected output up</property>
+                <property name="accelerator">Up k</property>
+              </object>
+            </child>
+            <child>
+              <object class="GtkShortcutsShortcut">
+                <property name="title" translatable="yes">Move selected output down</property>
+                <property name="accelerator">Down j</property>
+              </object>
+            </child>
+            <child>
+              <object class="GtkShortcutsShortcut">
+                <property name="title" translatable="yes">Move selected output left</property>
+                <property name="accelerator">Left h</property>
+              </object>
+            </child>
+            <child>
+              <object class="GtkShortcutsShortcut">
+                <property name="title" translatable="yes">Move selected output right</property>
+                <property name="accelerator">Right l</property>
+              </object>
+            </child>
+            <child>
+              <object class="GtkShortcutsShortcut">
+                <property name="title" translatable="yes">Disable selected output</property>
+                <property name="accelerator">Delete</property>
+              </object>
+            </child>
+            <child>
+              <object class="GtkShortcutsShortcut">
                 <property name="title" translatable="yes">Set as primary</property>
                 <property name="subtitle" translatable="yes">Double-click</property>
                 <property name="shortcut-type">gesture</property>
@@ -51,12 +81,6 @@
                 <property name="title" translatable="yes">Previous mode</property>
                 <property name="subtitle" translatable="yes">Mouse wheel up</property>
                 <property name="shortcut-type">gesture</property>
-              </object>
-            </child>
-            <child>
-              <object class="GtkShortcutsShortcut">
-                <property name="title" translatable="yes">Disable selected output</property>
-                <property name="accelerator">Delete</property>
               </object>
             </child>
           </object>

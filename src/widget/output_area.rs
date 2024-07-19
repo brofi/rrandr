@@ -13,7 +13,7 @@ mod imp {
     use std::collections::HashMap;
     use std::sync::OnceLock;
 
-    use gdk::DragAction;
+    use gdk::{DragAction, Key, ModifierType};
     use glib::subclass::object::{ObjectImpl, ObjectImplExt};
     use glib::subclass::Signal;
     use glib::{clone, derived_properties, object_subclass, Propagation, Properties, Value};
@@ -25,8 +25,8 @@ mod imp {
     use gtk::subclass::prelude::{DerivedObjectProperties, ObjectSubclass, ObjectSubclassExt};
     use gtk::subclass::widget::WidgetImpl;
     use gtk::{
-        glib, DrawingArea, DropTarget, EventControllerMotion, EventControllerScroll,
-        EventControllerScrollFlags, GestureClick, GestureDrag,
+        glib, DrawingArea, DropTarget, EventControllerKey, EventControllerMotion,
+        EventControllerScroll, EventControllerScrollFlags, GestureClick, GestureDrag,
     };
 
     use crate::config::Config;
@@ -36,6 +36,8 @@ mod imp {
     use crate::math::{Point, Rect};
     use crate::widget::details_box::Update;
     use crate::window::PADDING;
+
+    const MOVE_DISTANCE: i16 = 10;
 
     #[derive(Default, Properties)]
     #[properties(wrapper_type = super::OutputArea)]
@@ -121,6 +123,12 @@ mod imp {
                 @weak self as this => @default-panic, move |ecs, x, y| this.on_discrete_vertical_scroll(ecs, x, y)
             ));
             obj.add_controller(event_controller_scroll);
+
+            let event_controller_key = EventControllerKey::new();
+            event_controller_key.connect_key_pressed(clone!(
+                @weak self as this => @default-panic, move |eck, keyval, keycode, state| this.on_key_pressed(eck, keyval, keycode, state)
+            ));
+            self.obj().add_controller(event_controller_key);
         }
     }
 
@@ -539,6 +547,43 @@ mod imp {
                     };
                     selected.set_mode(Some(&next));
                     self.obj().update(selected, update);
+                    return Propagation::Stop;
+                }
+            }
+            Propagation::Proceed
+        }
+
+        fn on_key_pressed(
+            &self,
+            _eck: &EventControllerKey,
+            keyval: Key,
+            _keycode: u32,
+            _state: ModifierType,
+        ) -> Propagation {
+            if let Some(selected) = self.selected_output.borrow().as_ref() {
+                let [x, y] = [selected.x(), selected.y()];
+                let update_pos = match keyval {
+                    Key::Up | Key::k => {
+                        selected.set_y(y - MOVE_DISTANCE);
+                        true
+                    }
+                    Key::Down | Key::j => {
+                        selected.set_y(y + MOVE_DISTANCE);
+                        true
+                    }
+                    Key::Left | Key::h => {
+                        selected.set_x(x - MOVE_DISTANCE);
+                        true
+                    }
+                    Key::Right | Key::l => {
+                        selected.set_x(x + MOVE_DISTANCE);
+                        true
+                    }
+                    _ => false,
+                };
+                if update_pos {
+                    self.resize(self.obj().width(), self.obj().height());
+                    self.obj().queue_draw();
                     return Propagation::Stop;
                 }
             }
