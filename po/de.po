@@ -7,8 +7,8 @@ msgid ""
 msgstr ""
 "Project-Id-Version: rrandr 0.2.0\n"
 "Report-Msgid-Bugs-To: https://github.com/brofi/rrandr/issues\n"
-"POT-Creation-Date: 2024-07-18 05:45+0200\n"
-"PO-Revision-Date: 2024-07-18 05:46+0200\n"
+"POT-Creation-Date: 2024-07-19 02:40+0200\n"
+"PO-Revision-Date: 2024-07-19 02:41+0200\n"
 "Last-Translator: Andreas Becker <brofi.archlinux@gmail.com>\n"
 "Language-Team: German\n"
 "Language: de\n"
@@ -18,7 +18,7 @@ msgstr ""
 "Plural-Forms: nplurals=2; plural=(n != 1);\n"
 "X-Generator: Poedit 3.4.2\n"
 
-#: src/data/mode.rs:72
+#: src/data/mode.rs:77
 msgid "Hz"
 msgstr "Hz"
 
@@ -82,27 +82,35 @@ msgstr "Ausgewählten Bildschirm aktivieren"
 msgid "Toggle view"
 msgstr "Ansicht umschalten"
 
-#: src/res/window.ui:58
+#: src/res/window.ui:57
 msgid "About"
 msgstr "Über"
 
-#: src/res/window.ui:66
+#: src/res/window.ui:61
+msgid "_About"
+msgstr "Ü_ber"
+
+#: src/res/window.ui:71
 msgid "Identify outputs"
 msgstr "Bildschirme identifizieren"
 
-#: src/res/window.ui:78
+#: src/res/window.ui:75
+msgid "_Identify"
+msgstr "_Identifizieren"
+
+#: src/res/window.ui:90
 msgid "Apply changes"
 msgstr "Änderungen übernehmen"
 
-#: src/res/window.ui:82
+#: src/res/window.ui:94
 msgid "_Apply"
 msgstr "Ü_bernehmen"
 
-#: src/res/window.ui:90
+#: src/res/window.ui:102
 msgid "Reset changes"
 msgstr "Änderungen verwerfen"
 
-#: src/res/window.ui:94
+#: src/res/window.ui:106
 msgid "_Reset"
 msgstr "_Verwerfen"
 
@@ -134,11 +142,11 @@ msgstr "Primär"
 msgid "_Close"
 msgstr "_Schließen"
 
-#: src/widget/mode_selector.rs:53
+#: src/widget/mode_selector.rs:54
 msgid "Resolution"
 msgstr "Auflösung"
 
-#: src/widget/mode_selector.rs:58
+#: src/widget/mode_selector.rs:59
 msgid "Refresh rate"
 msgstr "Bildwiederholfrequenz"
 
@@ -189,16 +197,16 @@ msgstr "Fehler"
 msgid "Changes have been reverted."
 msgstr "Änderungen wurden zurückgesetzt."
 
-#: src/window.rs:316
+#: src/window.rs:317
 msgid "A graphical interface to the RandR X Window System extension."
 msgstr "Eine grafische Schnittstelle zur RandR Erweiterung des X Window Systems."
 
-#: src/window.rs:317
+#: src/window.rs:318
 msgid "Repository"
 msgstr "Projektarchiv"
 
 #. Translators: Add your name and email address to the translation (one translator
 #. per line).
-#: src/window.rs:324
+#: src/window.rs:325
 msgid "translator-credits"
 msgstr "Andreas Becker <brofi.archlinux@gmail.com>"

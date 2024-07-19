@@ -2,20 +2,29 @@ use glib::{wrapper, Object};
 use gtk::{glib, Widget};
 
 mod imp {
+    use std::cell::Cell;
+
     use glib::subclass::object::{ObjectImpl, ObjectImplExt};
     use glib::subclass::types::ObjectSubclass;
     use glib::{derived_properties, object_subclass, GString, Properties};
     use gtk::prelude::{BoxExt, ObjectExt, WidgetExt};
     use gtk::subclass::prelude::{DerivedObjectProperties, ObjectSubclassExt};
     use gtk::subclass::widget::{WidgetClassExt, WidgetImpl};
-    use gtk::{glib, AccessibleRole, Align, BinLayout, Box, Image, Label, Orientation, Widget};
+    use gtk::{
+        glib, AccessibleRole, Align, BinLayout, Box, IconLookupFlags, IconTheme, Image, Label,
+        Orientation, Widget,
+    };
 
     use crate::window::SPACING;
+
+    const NO_ICON: &str = "image-missing";
 
     #[derive(Properties)]
     #[properties(wrapper_type = super::IconText)]
     pub struct IconText {
         hbox: Box,
+        #[property(get, set, construct_only)]
+        prefer_icon_only: Cell<bool>,
         #[property(name = "icon-name", get = Self::icon_name, set = Self::set_icon_name, type = GString)]
         image: Image,
         #[property(get = Self::label, set = Self::set_label, type = GString)]
@@ -30,11 +39,12 @@ mod imp {
                     .halign(Align::Center)
                     .build(),
                 image: Image::builder()
-                    .icon_name("image-missing")
+                    .icon_name(NO_ICON)
                     .valign(Align::Center)
-                    .hexpand(true)
+                    .visible(false)
                     .build(),
-                label: Label::builder().hexpand(true).visible(false).use_underline(true).build(),
+                label: Label::builder().use_underline(true).visible(false).build(),
+                prefer_icon_only: Cell::default(),
             }
         }
     }
@@ -74,14 +84,40 @@ mod imp {
 
         fn set_label(&self, text: &str) {
             self.label.set_label(text);
-            self.label.set_visible(true);
-            self.image.set_hexpand(false);
-            self.hbox.set_spacing(SPACING.into());
+            if !self.prefer_icon_only.get() {
+                self.hbox.set_spacing(SPACING.into());
+                self.label.set_visible(true);
+            }
         }
 
-        fn icon_name(&self) -> GString { self.image.icon_name().unwrap_or_default() }
+        fn icon_name(&self) -> GString {
+            self.image.icon_name().expect(&format!("icon name should be '{}' by default", NO_ICON))
+        }
 
-        fn set_icon_name(&self, icon_name: &str) { self.image.set_icon_name(Some(icon_name)) }
+        fn set_icon_name(&self, icon_name: &str) {
+            if self.icon_exists(icon_name) {
+                self.image.set_icon_name(Some(icon_name));
+                self.image.set_visible(true);
+            } else {
+                self.hbox.set_spacing(0);
+                self.label.set_visible(true);
+            }
+        }
+
+        fn icon_exists(&self, icon_name: &str) -> bool {
+            let obj = self.obj();
+            IconTheme::for_display(&obj.display())
+                .lookup_icon(
+                    icon_name,
+                    &[],
+                    48,
+                    1,
+                    obj.direction(),
+                    IconLookupFlags::FORCE_SYMBOLIC,
+                )
+                .icon_name()
+                .is_some_and(|p| p.to_str().is_some_and(|name| name != NO_ICON))
+        }
     }
 }
 

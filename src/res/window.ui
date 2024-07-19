@@ -54,16 +54,28 @@
                   <object class="GtkButton">
                     <signal name="clicked" handler="on_about_clicked" swapped="true" />
                     <property name="margin-end">12</property>
-                    <property name="icon-name">help-about-symbolic</property>
                     <property name="tooltip-text" translatable="yes">About</property>
+                    <property name="child">
+                      <object class="IconText">
+                        <property name="icon-name">help-about-symbolic</property>
+                        <property name="label" translatable="yes">_About</property>
+                        <property name="prefer-icon-only">true</property>
+                      </object>
+                    </property>
                   </object>
                 </child>
                 <child>
                   <object class="GtkButton">
                     <signal name="clicked" handler="on_identify_clicked" swapped="true" />
                     <property name="margin-end">12</property>
-                    <property name="icon-name">video-display-symbolic</property>
                     <property name="tooltip-text" translatable="yes">Identify outputs</property>
+                    <property name="child">
+                      <object class="IconText">
+                        <property name="icon-name">video-display-symbolic</property>
+                        <property name="label" translatable="yes">_Identify</property>
+                        <property name="prefer-icon-only">true</property>
+                      </object>
+                    </property>
                   </object>
                 </child>
                 <child>
