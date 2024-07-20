@@ -323,7 +323,7 @@ mod imp {
             let about = AboutDialog::builder()
                 .transient_for(&*self.obj())
                 .modal(true)
-                .logo(&Texture::from_resource("/com/github/brofi/rrandr/logo.svg"))
+                .logo(&Texture::from_resource("/com/github/brofi/rrandr/rrandr.svg"))
                 .program_name(env!("CARGO_PKG_NAME"))
                 .version(env!("CARGO_PKG_VERSION"))
                 .comments(gettext("A graphical interface to the RandR X Window System extension."))
