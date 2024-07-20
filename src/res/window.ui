@@ -2,8 +2,8 @@
 <interface>
   <template class="MainWindow" parent="GtkApplicationWindow">
     <property name="title">RRandR</property>
-    <property name="default-width">800</property>
-    <property name="default-height">600</property>
+    <property name="default-width">1024</property>
+    <property name="default-height">576</property>
     <child>
       <object class="GtkBox">
         <property name="orientation">vertical</property>
