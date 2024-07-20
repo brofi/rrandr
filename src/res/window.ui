@@ -86,7 +86,7 @@
                     </style>
                     <child>
                       <object class="GtkButton">
-                        <signal name="clicked" handler="on_apply_clicked" swapped="true" />
+                        <property name="action-name">win.apply</property>
                         <property name="tooltip-text" translatable="yes">Apply changes</property>
                         <property name="child">
                           <object class="IconText">
@@ -98,7 +98,7 @@
                     </child>
                     <child>
                       <object class="GtkButton">
-                        <signal name="clicked" handler="on_reset_clicked" swapped="true" />
+                        <property name="action-name">win.reset</property>
                         <property name="tooltip-text" translatable="yes">Reset changes</property>
                         <property name="child">
                           <object class="IconText">

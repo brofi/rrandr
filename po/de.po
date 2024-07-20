@@ -7,8 +7,8 @@ msgid ""
 msgstr ""
 "Project-Id-Version: rrandr 0.2.0\n"
 "Report-Msgid-Bugs-To: https://github.com/brofi/rrandr/issues\n"
-"POT-Creation-Date: 2024-07-19 04:25+0200\n"
-"PO-Revision-Date: 2024-07-19 04:28+0200\n"
+"POT-Creation-Date: 2024-07-20 04:46+0200\n"
+"PO-Revision-Date: 2024-07-20 04:47+0200\n"
 "Last-Translator: Andreas Becker <brofi.archlinux@gmail.com>\n"
 "Language-Team: German\n"
 "Language: de\n"
@@ -26,75 +26,83 @@ msgstr "Hz"
 msgid "General"
 msgstr "Allgemein"
 
-#: src/res/shortcuts.ui:14
-msgid "Show shortcuts"
-msgstr "Tastenkombination anzeigen"
+#: src/res/shortcuts.ui:14 src/res/window.ui:90
+msgid "Apply changes"
+msgstr "Änderungen übernehmen"
 
-#: src/res/shortcuts.ui:20
+#: src/res/shortcuts.ui:20 src/res/window.ui:102
+msgid "Reset changes"
+msgstr "Änderungen verwerfen"
+
+#: src/res/shortcuts.ui:26
 msgid "Close window"
 msgstr "Fenster schließen"
 
-#: src/res/shortcuts.ui:26
+#: src/res/shortcuts.ui:32
 msgid "Close application"
 msgstr "Andwendung schließen"
 
-#: src/res/shortcuts.ui:34
+#: src/res/shortcuts.ui:38
+msgid "Show shortcuts"
+msgstr "Tastenkombination anzeigen"
+
+#: src/res/shortcuts.ui:46
 msgid "Enabled output view"
 msgstr "Ansicht aktivierter Bildschirme"
 
-#: src/res/shortcuts.ui:37 src/res/shortcuts.ui:43
+#: src/res/shortcuts.ui:49
 msgid "Move selected output up"
 msgstr "Ausgewählten Bildschirm nach oben verschieben"
 
-#: src/res/shortcuts.ui:49 src/res/shortcuts.ui:55
+#: src/res/shortcuts.ui:55
 msgid "Move selected output down"
 msgstr "Ausgewählten Bildschirm nach unten verschieben"
 
-#: src/res/shortcuts.ui:61 src/res/shortcuts.ui:67
+#: src/res/shortcuts.ui:61
 msgid "Move selected output left"
 msgstr "Ausgewählten Bildschirm nach links verschieben"
 
-#: src/res/shortcuts.ui:73 src/res/shortcuts.ui:79
+#: src/res/shortcuts.ui:67
 msgid "Move selected output right"
 msgstr "Ausgewählten Bildschirm nach rechts verschieben"
 
-#: src/res/shortcuts.ui:85
+#: src/res/shortcuts.ui:73
 msgid "Disable selected output"
 msgstr "Ausgewählten Bildschirm deaktivieren"
 
-#: src/res/shortcuts.ui:91 src/widget/details_box.rs:81
+#: src/res/shortcuts.ui:79 src/widget/details_box.rs:81
 msgid "Set as primary"
 msgstr "Als primären Bildschirm festlegen"
 
-#: src/res/shortcuts.ui:92
+#: src/res/shortcuts.ui:80
 msgid "Double-click"
 msgstr "Doppelklick"
 
-#: src/res/shortcuts.ui:98
+#: src/res/shortcuts.ui:86
 msgid "Next mode"
 msgstr "Nächster Modus"
 
-#: src/res/shortcuts.ui:99
+#: src/res/shortcuts.ui:87
 msgid "Mouse wheel down"
 msgstr "Mausrad runter"
 
-#: src/res/shortcuts.ui:105
+#: src/res/shortcuts.ui:93
 msgid "Previous mode"
 msgstr "Vorheriger Modus"
 
-#: src/res/shortcuts.ui:106
+#: src/res/shortcuts.ui:94
 msgid "Mouse wheel up"
 msgstr "Mausrad hoch"
 
-#: src/res/shortcuts.ui:114
+#: src/res/shortcuts.ui:102
 msgid "Disabled output view"
 msgstr "Ansicht deaktivierter Bildschirme"
 
-#: src/res/shortcuts.ui:117
+#: src/res/shortcuts.ui:105
 msgid "Enable selected output"
 msgstr "Ausgewählten Bildschirm aktivieren"
 
-#: src/res/shortcuts.ui:123
+#: src/res/shortcuts.ui:111
 msgid "Toggle view"
 msgstr "Ansicht umschalten"
 
@@ -114,17 +122,9 @@ msgstr "Bildschirme identifizieren"
 msgid "_Identify"
 msgstr "_Identifizieren"
 
-#: src/res/window.ui:90
-msgid "Apply changes"
-msgstr "Änderungen übernehmen"
-
 #: src/res/window.ui:94
 msgid "_Apply"
 msgstr "Ü_bernehmen"
-
-#: src/res/window.ui:102
-msgid "Reset changes"
-msgstr "Änderungen verwerfen"
 
 #: src/res/window.ui:106
 msgid "_Reset"
@@ -174,55 +174,55 @@ msgstr "Horizontale Position"
 msgid "Vertical position"
 msgstr "Vertikale Position"
 
-#: src/window.rs:237
+#: src/window.rs:240
 msgid "Confirm changes"
 msgstr "Änderungen bestätigen"
 
-#: src/window.rs:238
+#: src/window.rs:241
 msgid "Keep changes?"
 msgstr "Änderungen behalten?"
 
 #. Translators: '{}' gets replaced with the number of seconds left.
-#: src/window.rs:240 src/window.rs:263
+#: src/window.rs:243 src/window.rs:266
 msgid "Reverting in {} second"
 msgid_plural "Reverting in {} seconds"
 msgstr[0] "Zurücksetzen in {} Sekunde"
 msgstr[1] "Zurücksetzen in {} Sekunden"
 
-#: src/window.rs:245
+#: src/window.rs:248
 msgid "_Keep"
 msgstr "_Behalten"
 
-#: src/window.rs:245
+#: src/window.rs:248
 msgid "_Revert"
 msgstr "_Zurücksetzen"
 
-#: src/window.rs:246
+#: src/window.rs:249
 msgid "Keep changes"
 msgstr "Änderungen behalten"
 
-#: src/window.rs:246
+#: src/window.rs:249
 msgid "Revert changes"
 msgstr "Änderungen zurücksetzen"
 
-#: src/window.rs:291 src/window.rs:292
+#: src/window.rs:296 src/window.rs:297
 msgid "Failure"
 msgstr "Fehler"
 
-#: src/window.rs:293
+#: src/window.rs:298
 msgid "Changes have been reverted."
 msgstr "Änderungen wurden zurückgesetzt."
 
-#: src/window.rs:317
+#: src/window.rs:319
 msgid "A graphical interface to the RandR X Window System extension."
 msgstr "Eine grafische Schnittstelle zur RandR Erweiterung des X Window Systems."
 
-#: src/window.rs:318
+#: src/window.rs:320
 msgid "Repository"
 msgstr "Projektarchiv"
 
 #. Translators: Add your name and email address to the translation (one translator
 #. per line).
-#: src/window.rs:325
+#: src/window.rs:327
 msgid "translator-credits"
 msgstr "Andreas Becker <brofi.archlinux@gmail.com>"

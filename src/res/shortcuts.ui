@@ -11,8 +11,14 @@
             <property name="title" translatable="yes">General</property>
             <child>
               <object class="GtkShortcutsShortcut">
-                <property name="title" translatable="yes">Show shortcuts</property>
-                <property name="action-name">win.show-help-overlay</property>
+                <property name="title" translatable="yes">Apply changes</property>
+                <property name="action-name">win.apply</property>
+              </object>
+            </child>
+            <child>
+              <object class="GtkShortcutsShortcut">
+                <property name="title" translatable="yes">Reset changes</property>
+                <property name="action-name">win.reset</property>
               </object>
             </child>
             <child>
@@ -25,6 +31,12 @@
               <object class="GtkShortcutsShortcut">
                 <property name="title" translatable="yes">Close application</property>
                 <property name="action-name">window.close</property>
+              </object>
+            </child>
+            <child>
+              <object class="GtkShortcutsShortcut">
+                <property name="title" translatable="yes">Show shortcuts</property>
+                <property name="action-name">win.show-help-overlay</property>
               </object>
             </child>
           </object>

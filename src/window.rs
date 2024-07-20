@@ -1,7 +1,8 @@
-use gio::{ActionGroup, ActionMap};
+use gio::{ActionEntry, ActionGroup, ActionMap};
 use glib::object::IsA;
+use glib::subclass::types::ObjectSubclassIsExt;
 use glib::{closure_local, wrapper, Object};
-use gtk::prelude::ObjectExt;
+use gtk::prelude::{ActionMapExtManual, ObjectExt};
 use gtk::{
     gio, glib, Accessible, Application, ApplicationWindow, Buildable, Button, ConstraintTarget,
     Native, Root, ShortcutManager, Widget,
@@ -93,6 +94,8 @@ mod imp {
 
         fn constructed(&self) {
             self.parent_constructed();
+            let obj = self.obj();
+            obj.setup_actions();
 
             self.set_screen_max_size();
             self.set_outputs();
@@ -108,7 +111,7 @@ mod imp {
             event_controller_key.connect_key_pressed(clone!(
                 @weak self as this => @default-panic, move |eck, keyval, keycode, state| this.on_key_pressed(eck, keyval, keycode, state)
             ));
-            self.obj().add_controller(event_controller_key);
+            obj.add_controller(event_controller_key);
 
             self.details.connect_output_changed(clone!(
                 @weak self as this => move |_, output, update| {
@@ -227,8 +230,7 @@ mod imp {
             self.details.set_output(None::<Output>);
         }
 
-        #[template_callback]
-        fn on_apply_clicked(&self, _btn: &Button) {
+        pub(super) fn apply(&self) {
             let obj = self.obj();
             self.randr.replace(Randr::new());
             if self.randr.borrow().apply(&self.get_outputs()) {
@@ -299,8 +301,7 @@ mod imp {
             }
         }
 
-        #[template_callback]
-        fn on_reset_clicked(&self, _btn: &Button) { self.set_outputs(); }
+        pub(super) fn reset(&self) { self.set_outputs(); }
 
         #[template_callback]
         fn on_identify_clicked(&self, btn: &Button) {
@@ -368,6 +369,17 @@ impl Window {
             false,
             closure_local!(|window, btn| callback(window, btn)),
         );
+    }
+
+    fn setup_actions(&self) {
+        self.add_action_entries([
+            ActionEntry::builder("reset")
+                .activate(|window: &Self, _, _| window.imp().reset())
+                .build(),
+            ActionEntry::builder("apply")
+                .activate(|window: &Self, _, _| window.imp().apply())
+                .build(),
+        ]);
     }
 }
 
