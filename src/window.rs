@@ -1,46 +1,18 @@
 use gio::{ActionGroup, ActionMap};
 use glib::object::IsA;
-use glib::{closure_local, wrapper, Object, ValueDelegate};
-use gtk::prelude::{ListModelExtManual, ObjectExt};
-use gtk::subclass::prelude::ObjectSubclassIsExt;
+use glib::{closure_local, wrapper, Object};
+use gtk::prelude::ObjectExt;
 use gtk::{
     gio, glib, Accessible, Application, ApplicationWindow, Buildable, Button, ConstraintTarget,
     Native, Root, ShortcutManager, Widget,
 };
 
-use crate::data::output::Output;
-use crate::data::outputs::Outputs;
-
 pub const PADDING: u16 = 12;
 pub const SPACING: u16 = 6;
 
-#[derive(ValueDelegate, Clone, Copy)]
-#[value_delegate(from = u8)]
-pub enum Action {
-    Keep,
-    Revert,
-}
-
-impl From<u8> for Action {
-    fn from(v: u8) -> Self {
-        match v {
-            0 => Action::Keep,
-            1 => Action::Revert,
-            x => panic!("Not an action value: {x}"),
-        }
-    }
-}
-
-impl<'a> From<&'a Action> for u8 {
-    fn from(v: &'a Action) -> Self { *v as u8 }
-}
-
-impl From<Action> for u8 {
-    fn from(v: Action) -> Self { v as u8 }
-}
-
 mod imp {
-    use std::cell::Cell;
+    use std::cell::{Cell, RefCell};
+    use std::rc::Rc;
     use std::sync::OnceLock;
     use std::time::Duration;
 
@@ -51,10 +23,10 @@ mod imp {
     use glib::subclass::types::{ObjectSubclass, ObjectSubclassExt};
     use glib::subclass::{InitializingObject, Signal};
     use glib::types::StaticType;
-    use glib::{
-        clone, object_subclass, spawn_future_local, timeout_add, ControlFlow, Propagation, Type,
+    use glib::{clone, object_subclass, spawn_future_local, timeout_add, ControlFlow, Propagation};
+    use gtk::prelude::{
+        GtkWindowExt, ListModelExt, ListModelExtManual, ObjectExt, StaticTypeExt, WidgetExt,
     };
-    use gtk::prelude::{GtkWindowExt, ListModelExt, ObjectExt, StaticTypeExt, WidgetExt};
     use gtk::subclass::application_window::ApplicationWindowImpl;
     use gtk::subclass::widget::{
         CompositeTemplateCallbacksClass, CompositeTemplateClass, CompositeTemplateInitializingExt,
@@ -74,12 +46,14 @@ mod imp {
     use crate::widget::disabled_output_area::DisabledOutputArea;
     use crate::widget::icon_text::IconText;
     use crate::widget::output_area::OutputArea;
+    use crate::x11::randr::{Randr, ScreenSizeRange};
 
     const CONFIRM_DIALOG_SHOW_SECS: u8 = 15;
 
     #[derive(CompositeTemplate, Default)]
     #[template(resource = "/com/github/brofi/rrandr/window.ui")]
     pub struct Window {
+        randr: Rc<RefCell<Randr>>,
         #[template_child]
         paned: TemplateChild<Paned>,
         #[template_child]
@@ -113,22 +87,15 @@ mod imp {
         fn signals() -> &'static [Signal] {
             static SIGNALS: OnceLock<Vec<Signal>> = OnceLock::new();
             SIGNALS.get_or_init(|| {
-                vec![
-                    Signal::builder("apply")
-                        .param_types([Button::static_type(), Outputs::static_type()])
-                        .return_type_from(Type::BOOL)
-                        .build(),
-                    Signal::builder("confirm-action")
-                        .param_types([super::Action::static_type()])
-                        .build(),
-                    Signal::builder("reset").param_types([Button::static_type()]).build(),
-                    Signal::builder("identify").param_types([Button::static_type()]).build(),
-                ]
+                vec![Signal::builder("identify").param_types([Button::static_type()]).build()]
             })
         }
 
         fn constructed(&self) {
             self.parent_constructed();
+
+            self.set_screen_max_size();
+            self.set_outputs();
 
             // Remove focusable from automatically added FlowBoxChild
             let mut child = self.actions.first_child();
@@ -158,6 +125,39 @@ mod imp {
 
     #[template_callbacks]
     impl Window {
+        fn set_screen_max_size(&self) {
+            let ScreenSizeRange { max_width, max_height, .. } =
+                self.randr.borrow().screen_size_range();
+            self.enabled_area.set_screen_max_width(max_width);
+            self.enabled_area.set_screen_max_height(max_height);
+            self.details.set_screen_max_width(max_width);
+            self.details.set_screen_max_height(max_height);
+        }
+
+        fn set_outputs(&self) {
+            let outputs = self.randr.borrow().output_model();
+            let enabled = Outputs::new();
+            let disabled = Outputs::new();
+            for output in outputs.iter::<Output>().map(Result::unwrap) {
+                if output.enabled() { enabled.append(&output) } else { disabled.append(&output) }
+            }
+            // Keep selection when outputs move from enabled to disabled and vice versa
+            if let Some(selected) =
+                self.enabled_area.selected_output().or(self.disabled_area.selected_output())
+            {
+                if let Some(o) = outputs.find_by_id(selected.id()) {
+                    if selected.enabled() && !o.enabled() {
+                        self.disabled_area.select(&o);
+                    } else if !selected.enabled() && o.enabled() {
+                        self.enabled_area.select(&o);
+                    }
+                    self.details.set_output(Some(o));
+                }
+            }
+            self.enabled_area.set_outputs(&enabled);
+            self.disabled_area.set_outputs(&disabled);
+        }
+
         fn on_key_pressed(
             &self,
             _eck: &EventControllerKey,
@@ -228,9 +228,10 @@ mod imp {
         }
 
         #[template_callback]
-        fn on_apply_clicked(&self, btn: &Button) {
+        fn on_apply_clicked(&self, _btn: &Button) {
             let obj = self.obj();
-            if obj.emit_by_name::<bool>("apply", &[&btn, &self.get_outputs()]) {
+            self.randr.replace(Randr::new());
+            if self.randr.borrow().apply(&self.get_outputs()) {
                 let mut secs = CONFIRM_DIALOG_SHOW_SECS.saturating_sub(1);
 
                 let dialog = Dialog::builder(&*obj)
@@ -268,18 +269,19 @@ mod imp {
                             dialog.set_message(msg);
                             if secs == 0 {
                                 dialog.close();
-                                window.obj().emit_by_name::<()>("confirm-action", &[&super::Action::Revert]);
+                                window.revert();
                             }
                         }
                     }
                 ));
 
                 dialog.connect_action(clone!(
-                @weak self as window => move |_, i| {
-                    let i = u8::try_from(i).expect("two actions");
-                    window.obj().emit_by_name::<()>("confirm-action", &[&super::Action::from(i)]);
-                }
-            ));
+                    @weak self as window => move |_, i| if i == 0 {
+                        window.randr.replace(Randr::new());
+                    } else if i == 1 {
+                        window.revert();
+                    }
+                ));
                 dialog.connect_close_request(move |_| {
                     receiver.close();
                     Propagation::Proceed
@@ -287,6 +289,7 @@ mod imp {
 
                 dialog.show();
             } else {
+                self.revert();
                 Dialog::builder(&*obj)
                     .title(&gettext("Failure"))
                     .heading(&gettext("Failure"))
@@ -297,9 +300,7 @@ mod imp {
         }
 
         #[template_callback]
-        fn on_reset_clicked(&self, btn: &Button) {
-            self.obj().emit_by_name::<()>("reset", &[&btn]);
-        }
+        fn on_reset_clicked(&self, _btn: &Button) { self.set_outputs(); }
 
         #[template_callback]
         fn on_identify_clicked(&self, btn: &Button) {
@@ -342,6 +343,11 @@ mod imp {
             }
             outputs
         }
+
+        fn revert(&self) {
+            self.randr.borrow().revert();
+            self.set_outputs();
+        }
     }
 }
 
@@ -354,57 +360,6 @@ wrapper! {
 impl Window {
     pub fn new(app: &impl IsA<Application>) -> Self {
         Object::builder().property("application", app).build()
-    }
-
-    pub fn set_screen_max_size(&self, width: u16, height: u16) {
-        self.imp().enabled_area.set_screen_max_width(width);
-        self.imp().enabled_area.set_screen_max_height(height);
-        self.imp().details.set_screen_max_width(width);
-        self.imp().details.set_screen_max_height(height);
-    }
-
-    pub fn set_outputs(&self, outputs: &Outputs) {
-        let imp = self.imp();
-        let enabled = Outputs::new();
-        let disabled = Outputs::new();
-        for output in outputs.iter::<Output>().map(Result::unwrap) {
-            if output.enabled() { enabled.append(&output) } else { disabled.append(&output) }
-        }
-        // Keep selection when outputs move from enabled to disabled and vice versa
-        if let Some(selected) =
-            imp.enabled_area.selected_output().or(imp.disabled_area.selected_output())
-        {
-            if let Some(o) = outputs.find_by_id(selected.id()) {
-                if selected.enabled() && !o.enabled() {
-                    imp.disabled_area.select(&o);
-                } else if !selected.enabled() && o.enabled() {
-                    imp.enabled_area.select(&o);
-                }
-                imp.details.set_output(Some(o));
-            }
-        }
-        imp.enabled_area.set_outputs(&enabled);
-        imp.disabled_area.set_outputs(&disabled);
-    }
-
-    pub fn connect_apply(&self, callback: impl Fn(&Self, &Button, &Outputs) -> bool + 'static) {
-        self.connect_closure(
-            "apply",
-            false,
-            closure_local!(|window, btn, outputs| callback(window, btn, outputs)),
-        );
-    }
-
-    pub fn connect_confirm_action(&self, callback: impl Fn(&Self, Action) + 'static) {
-        self.connect_closure(
-            "confirm-action",
-            false,
-            closure_local!(|window, action| callback(window, action)),
-        );
-    }
-
-    pub fn connect_reset(&self, callback: impl Fn(&Self, &Button) + 'static) {
-        self.connect_closure("reset", false, closure_local!(|window, btn| callback(window, btn)));
     }
 
     pub fn connect_identify(&self, callback: impl Fn(&Self, &Button) + 'static) {
