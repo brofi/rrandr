@@ -9,12 +9,13 @@ use x11rb::cookie::{Cookie, VoidCookie};
 use x11rb::errors::{ConnectionError, ReplyError};
 use x11rb::protocol::randr::{
     get_crtc_info, get_output_info, get_output_primary, get_output_property,
-    get_screen_resources_current, get_screen_size_range, set_crtc_config, set_output_primary,
-    set_screen_size, Connection, Crtc as CrtcId, GetCrtcInfoReply, GetOutputInfoReply,
-    GetOutputPrimaryReply, GetScreenResourcesCurrentReply, GetScreenSizeRangeReply, Mode as ModeId,
-    ModeInfo, Output as OutputId, Rotation, ScreenSize, SetConfig,
+    get_screen_resources_current, get_screen_size_range, query_version, set_crtc_config,
+    set_output_primary, set_screen_size, Connection, Crtc as CrtcId, GetCrtcInfoReply,
+    GetOutputInfoReply, GetOutputPrimaryReply, GetScreenResourcesCurrentReply,
+    GetScreenSizeRangeReply, Mode as ModeId, ModeInfo, Output as OutputId, QueryVersionReply,
+    Rotation, ScreenSize, SetConfig,
 };
-use x11rb::protocol::xproto::{intern_atom, AtomEnum, Window as WindowId};
+use x11rb::protocol::xproto::{intern_atom, query_extension, AtomEnum, Window as WindowId};
 use x11rb::rust_connection::RustConnection;
 use x11rb::CURRENT_TIME;
 
@@ -25,11 +26,15 @@ use crate::data::output::{Output, PPI_DEFAULT};
 use crate::data::outputs::Outputs;
 use crate::math::{Rect, MM_PER_INCH};
 
+type Version = QueryVersionReply;
 pub type ScreenSizeRange = GetScreenSizeRangeReply;
 type ScreenResources = GetScreenResourcesCurrentReply;
 pub type OutputInfo = GetOutputInfoReply;
 type CrtcInfo = GetCrtcInfoReply;
 type Primary = GetOutputPrimaryReply;
+
+const MIN_VERSION: [u32; 2] = [1, 3];
+const CLIENT_VERSION: [u32; 2] = [1, 5];
 
 pub struct Randr {
     conn: RustConnection,
@@ -400,6 +405,24 @@ impl Randr {
             .expect("revert CRTC");
         }
     }
+}
+
+pub fn check() -> Result<(), Box<dyn Error>> {
+    if let Ok((conn, _)) = x11rb::connect(None) {
+        let extension = query_extension(&conn, "RANDR".as_bytes())?.reply()?;
+        if extension.present {
+            let Version { major_version: major, minor_version: minor, .. } =
+                query_version(&conn, CLIENT_VERSION[0], CLIENT_VERSION[1])?.reply()?;
+            if major < MIN_VERSION[0] || (major == MIN_VERSION[0] && minor < MIN_VERSION[1]) {
+                return Err(format!("RandR version {}.{} not supported", major, minor).into());
+            }
+        } else {
+            return Err("RandR extension not found".into());
+        }
+    } else {
+        return Err("Failed to connect to X Server".into());
+    }
+    Ok(())
 }
 
 // TODO checkout GetXIDListRequest
