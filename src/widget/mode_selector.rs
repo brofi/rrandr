@@ -3,6 +3,7 @@ use gtk::{glib, Widget};
 
 mod imp {
     use std::cell::RefCell;
+    use std::collections::HashMap;
     use std::sync::OnceLock;
 
     use gettextrs::gettext;
@@ -18,19 +19,13 @@ mod imp {
     use gtk::subclass::prelude::DerivedObjectProperties;
     use gtk::subclass::widget::{WidgetClassExt, WidgetImpl};
     use gtk::{
-        gio, glib, Align, BinLayout, Box, DropDown, Label, Orientation, SignalListItemFactory,
-        Widget,
+        gio, glib, Align, BinLayout, Box, DropDown, Image, Label, ListItem, Orientation,
+        SignalListItemFactory, Widget,
     };
     use x11rb::protocol::randr::ModeFlag;
 
     use crate::data::mode::Mode;
     use crate::data::modes::Modes;
-
-    #[derive(Clone, Copy)]
-    enum ModeDropDown {
-        Resolution,
-        RefreshRate,
-    }
 
     #[derive(Properties)]
     #[properties(wrapper_type = super::ModeSelector)]
@@ -43,6 +38,7 @@ mod imp {
         pub(super) resolution_selected_handler_id: RefCell<Option<SignalHandlerId>>,
         pub(super) refresh_rate: DropDown,
         pub(super) refresh_rate_selected_handler_id: RefCell<Option<SignalHandlerId>>,
+        selected_handlers_list_item: RefCell<HashMap<ListItem, SignalHandlerId>>,
     }
 
     impl Default for ModeSelector {
@@ -52,15 +48,15 @@ mod imp {
                 selected_mode: RefCell::default(),
                 resolution: DropDown::builder()
                     .tooltip_text(gettext("Resolution"))
-                    .factory(&factory(ModeDropDown::Resolution))
+                    .factory(&factory(bind_res_mode))
                     .build(),
                 resolution_selected_handler_id: RefCell::default(),
                 refresh_rate: DropDown::builder()
                     .tooltip_text(gettext("Refresh rate"))
-                    .factory(&factory(ModeDropDown::RefreshRate))
-                    .list_factory(&list_factory(ModeDropDown::RefreshRate, None))
+                    .factory(&factory(bind_rr_mode))
                     .build(),
                 refresh_rate_selected_handler_id: RefCell::default(),
+                selected_handlers_list_item: RefCell::default(),
             }
         }
     }
@@ -101,8 +97,11 @@ mod imp {
             linkbox.append(&self.refresh_rate);
             linkbox.set_parent(&*self.obj());
 
+            self.refresh_rate
+                .set_list_factory(Some(&self.list_factory(&self.refresh_rate, bind_list_rr_mode)));
+
             self.resolution_selected_handler_id.replace(Some(
-                self.resolution.connect_selected_notify(clone!(
+                self.resolution.connect_selected_item_notify(clone!(
                     @weak self as this => move |dd| this.on_resolution_selected(dd)
                 )),
             ));
@@ -152,10 +151,11 @@ mod imp {
                     .map(|r| r.height().to_string().len())
                     .max()
                     .unwrap_or_default();
-                self.resolution.set_list_factory(Some(&list_factory(
-                    ModeDropDown::Resolution,
-                    Some(format_width),
-                )));
+                self.resolution.set_list_factory(Some(
+                    &self.list_factory(&self.resolution, move |label, mode| {
+                        bind_list_res_mode(label, mode, Some(format_width));
+                    }),
+                ));
 
                 res_model = Some(resolutions);
             }
@@ -246,9 +246,53 @@ mod imp {
                 dd.unblock_signal(hid);
             }
         }
+
+        fn list_factory(
+            &self,
+            dd: &DropDown,
+            bind_mode: impl Fn(&Label, &Mode) + 'static,
+        ) -> SignalListItemFactory {
+            let factory = SignalListItemFactory::new();
+            factory.connect_setup(|_f, list_item| {
+                let hbox = Box::builder()
+                    .orientation(Orientation::Horizontal)
+                    .spacing(4)
+                    .halign(Align::End)
+                    .build();
+                hbox.append(&Image::from_icon_name("object-select-symbolic"));
+                hbox.append(&Label::builder().css_classes(["monospace"]).build());
+                list_item.set_child(Some(&hbox));
+            });
+            factory.connect_bind(clone!(
+                @weak self as this, @weak dd => move |_f, list_item| {
+                    if let (Some(label), Some(mode)) = (
+                        list_item
+                            .child()
+                            .and_then(|hbox| hbox.last_child())
+                            .and_downcast::<Label>(),
+                        list_item.item().and_downcast::<Mode>(),
+                    ) {
+                        this.selected_handlers_list_item.borrow_mut().insert(
+                            list_item.clone(), dd.connect_selected_item_notify(clone!(
+                                @strong list_item => move |dd| update_list_item_selected_icon(dd, &list_item)
+                            ))
+                        );
+                        update_list_item_selected_icon(&dd, list_item);
+                        bind_mode(&label, &mode);
+                    }
+                }
+            ));
+            factory.connect_unbind(clone!(
+                @weak self as this, @weak dd => move |_f, list_item|
+                    if let Some(handler) = this.selected_handlers_list_item.borrow_mut().remove(list_item) {
+                        dd.disconnect(handler);
+                    };
+            ));
+            factory
+        }
     }
 
-    fn factory(mdd: ModeDropDown) -> SignalListItemFactory {
+    fn factory(bind_mode: impl Fn(&Label, &Mode) + 'static) -> SignalListItemFactory {
         let factory = SignalListItemFactory::new();
         factory.connect_setup(|_f, list_item| {
             list_item.set_child(Some(&Label::new(None)));
@@ -257,48 +301,39 @@ mod imp {
             if let (Some(label), Some(mode)) =
                 (list_item.child().and_downcast::<Label>(), list_item.item().and_downcast::<Mode>())
             {
-                label.set_label(&match mdd {
-                    ModeDropDown::Resolution => {
-                        mode.as_resolution_str(None).replace('x', "\u{00D7}")
-                    }
-                    ModeDropDown::RefreshRate => mode.as_refresh_rate_str(),
-                });
+                bind_mode(&label, &mode);
             }
         });
         factory
     }
 
-    fn list_factory(mdd: ModeDropDown, res_format_width: Option<usize>) -> SignalListItemFactory {
-        let factory = SignalListItemFactory::new();
-        factory.connect_setup(|_f, list_item| {
-            let label = Label::builder().halign(Align::End).css_classes(["monospace"]).build();
-            list_item.set_child(Some(&label));
-        });
-        factory.connect_bind(move |_f, list_item| {
-            if let (Some(label), Some(mode)) =
-                (list_item.child().and_downcast::<Label>(), list_item.item().and_downcast::<Mode>())
-            {
-                match mdd {
-                    ModeDropDown::Resolution => {
-                        label.set_text(&mode.as_resolution_str(res_format_width));
-                    }
-                    ModeDropDown::RefreshRate => {
-                        let text = mode.as_refresh_rate_str();
-                        let mark_flags = ModeFlag::INTERLACE | ModeFlag::DOUBLE_SCAN;
-                        if mode.flags().intersects(mark_flags) {
-                            label.set_markup(&format!("<i>{text}</i>"));
-                            label.set_tooltip_text(Some(&format!(
-                                "{:#?}",
-                                mode.flags() & mark_flags
-                            )));
-                        } else {
-                            label.set_text(&text);
-                        }
-                    }
-                }
-            }
-        });
-        factory
+    fn bind_res_mode(label: &Label, mode: &Mode) {
+        label.set_text(&mode.as_resolution_str(None).replace('x', "\u{00D7}"));
+    }
+
+    fn bind_list_res_mode(label: &Label, mode: &Mode, format_width: Option<usize>) {
+        label.set_text(&mode.as_resolution_str(format_width));
+    }
+
+    fn bind_rr_mode(label: &Label, mode: &Mode) { label.set_text(&mode.as_refresh_rate_str()); }
+
+    fn bind_list_rr_mode(label: &Label, mode: &Mode) {
+        let text = mode.as_refresh_rate_str();
+        let mark_flags = ModeFlag::INTERLACE | ModeFlag::DOUBLE_SCAN;
+        if mode.flags().intersects(mark_flags) {
+            label.set_markup(&format!("<i>{text}</i>"));
+            label.set_tooltip_text(Some(&format!("{:#?}", mode.flags() & mark_flags)));
+        } else {
+            label.set_text(&text);
+        }
+    }
+
+    fn update_list_item_selected_icon(dd: &DropDown, list_item: &ListItem) {
+        if let Some(icon) =
+            list_item.child().and_then(|hbox| hbox.first_child()).and_downcast::<Image>()
+        {
+            icon.set_opacity(if dd.selected_item() == list_item.item() { 1. } else { 0. });
+        }
     }
 
     fn activate(_: &SignalClassHandlerToken, values: &[Value]) -> Option<Value> {
