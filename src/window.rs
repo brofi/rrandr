@@ -303,6 +303,16 @@ mod imp {
 
         pub(super) fn reset(&self) { self.set_outputs(); }
 
+        pub(super) fn reload(&self) {
+            self.randr.replace(Randr::new());
+            self.reset();
+        }
+
+        pub(super) fn redraw(&self) {
+            self.enabled_area.queue_draw();
+            self.disabled_area.queue_draw();
+        }
+
         #[template_callback]
         fn on_identify_clicked(&self, btn: &Button) {
             self.obj().emit_by_name::<()>("identify", &[&btn]);
@@ -378,6 +388,12 @@ impl Window {
                 .build(),
             ActionEntry::builder("apply")
                 .activate(|window: &Self, _, _| window.imp().apply())
+                .build(),
+            ActionEntry::builder("reload")
+                .activate(|window: &Self, _, _| window.imp().reload())
+                .build(),
+            ActionEntry::builder("redraw")
+                .activate(|window: &Self, _, _| window.imp().redraw())
                 .build(),
         ]);
     }

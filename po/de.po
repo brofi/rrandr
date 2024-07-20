@@ -7,8 +7,8 @@ msgid ""
 msgstr ""
 "Project-Id-Version: rrandr 0.2.0\n"
 "Report-Msgid-Bugs-To: https://github.com/brofi/rrandr/issues\n"
-"POT-Creation-Date: 2024-07-20 04:46+0200\n"
-"PO-Revision-Date: 2024-07-20 04:47+0200\n"
+"POT-Creation-Date: 2024-07-20 05:05+0200\n"
+"PO-Revision-Date: 2024-07-20 05:07+0200\n"
 "Last-Translator: Andreas Becker <brofi.archlinux@gmail.com>\n"
 "Language-Team: German\n"
 "Language: de\n"
@@ -35,74 +35,82 @@ msgid "Reset changes"
 msgstr "Änderungen verwerfen"
 
 #: src/res/shortcuts.ui:26
+msgid "Reload RandR configuration"
+msgstr "RandR Konfiguration neu laden"
+
+#: src/res/shortcuts.ui:32
+msgid "Redraw view"
+msgstr "Ansicht neu zeichnen"
+
+#: src/res/shortcuts.ui:38
 msgid "Close window"
 msgstr "Fenster schließen"
 
-#: src/res/shortcuts.ui:32
+#: src/res/shortcuts.ui:44
 msgid "Close application"
 msgstr "Andwendung schließen"
 
-#: src/res/shortcuts.ui:38
+#: src/res/shortcuts.ui:50
 msgid "Show shortcuts"
 msgstr "Tastenkombination anzeigen"
 
-#: src/res/shortcuts.ui:46
+#: src/res/shortcuts.ui:58
 msgid "Enabled output view"
 msgstr "Ansicht aktivierter Bildschirme"
 
-#: src/res/shortcuts.ui:49
+#: src/res/shortcuts.ui:61
 msgid "Move selected output up"
 msgstr "Ausgewählten Bildschirm nach oben verschieben"
 
-#: src/res/shortcuts.ui:55
+#: src/res/shortcuts.ui:67
 msgid "Move selected output down"
 msgstr "Ausgewählten Bildschirm nach unten verschieben"
 
-#: src/res/shortcuts.ui:61
+#: src/res/shortcuts.ui:73
 msgid "Move selected output left"
 msgstr "Ausgewählten Bildschirm nach links verschieben"
 
-#: src/res/shortcuts.ui:67
+#: src/res/shortcuts.ui:79
 msgid "Move selected output right"
 msgstr "Ausgewählten Bildschirm nach rechts verschieben"
 
-#: src/res/shortcuts.ui:73
+#: src/res/shortcuts.ui:85
 msgid "Disable selected output"
 msgstr "Ausgewählten Bildschirm deaktivieren"
 
-#: src/res/shortcuts.ui:79 src/widget/details_box.rs:81
+#: src/res/shortcuts.ui:91 src/widget/details_box.rs:81
 msgid "Set as primary"
 msgstr "Als primären Bildschirm festlegen"
 
-#: src/res/shortcuts.ui:80
+#: src/res/shortcuts.ui:92
 msgid "Double-click"
 msgstr "Doppelklick"
 
-#: src/res/shortcuts.ui:86
+#: src/res/shortcuts.ui:98
 msgid "Next mode"
 msgstr "Nächster Modus"
 
-#: src/res/shortcuts.ui:87
+#: src/res/shortcuts.ui:99
 msgid "Mouse wheel down"
 msgstr "Mausrad runter"
 
-#: src/res/shortcuts.ui:93
+#: src/res/shortcuts.ui:105
 msgid "Previous mode"
 msgstr "Vorheriger Modus"
 
-#: src/res/shortcuts.ui:94
+#: src/res/shortcuts.ui:106
 msgid "Mouse wheel up"
 msgstr "Mausrad hoch"
 
-#: src/res/shortcuts.ui:102
+#: src/res/shortcuts.ui:114
 msgid "Disabled output view"
 msgstr "Ansicht deaktivierter Bildschirme"
 
-#: src/res/shortcuts.ui:105
+#: src/res/shortcuts.ui:117
 msgid "Enable selected output"
 msgstr "Ausgewählten Bildschirm aktivieren"
 
-#: src/res/shortcuts.ui:111
+#: src/res/shortcuts.ui:123
 msgid "Toggle view"
 msgstr "Ansicht umschalten"
 
@@ -213,16 +221,16 @@ msgstr "Fehler"
 msgid "Changes have been reverted."
 msgstr "Änderungen wurden zurückgesetzt."
 
-#: src/window.rs:319
+#: src/window.rs:329
 msgid "A graphical interface to the RandR X Window System extension."
 msgstr "Eine grafische Schnittstelle zur RandR Erweiterung des X Window Systems."
 
-#: src/window.rs:320
+#: src/window.rs:330
 msgid "Repository"
 msgstr "Projektarchiv"
 
 #. Translators: Add your name and email address to the translation (one translator
 #. per line).
-#: src/window.rs:327
+#: src/window.rs:337
 msgid "translator-credits"
 msgstr "Andreas Becker <brofi.archlinux@gmail.com>"
