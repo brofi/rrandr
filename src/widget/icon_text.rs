@@ -91,7 +91,9 @@ mod imp {
         }
 
         fn icon_name(&self) -> GString {
-            self.image.icon_name().expect(&format!("icon name should be '{}' by default", NO_ICON))
+            self.image
+                .icon_name()
+                .unwrap_or_else(|| panic!("icon name should be '{NO_ICON}' by default"))
         }
 
         fn set_icon_name(&self, icon_name: &str) {

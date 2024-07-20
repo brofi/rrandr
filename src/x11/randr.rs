@@ -414,7 +414,7 @@ pub fn check() -> Result<(), Box<dyn Error>> {
             let Version { major_version: major, minor_version: minor, .. } =
                 query_version(&conn, CLIENT_VERSION[0], CLIENT_VERSION[1])?.reply()?;
             if major < MIN_VERSION[0] || (major == MIN_VERSION[0] && minor < MIN_VERSION[1]) {
-                return Err(format!("RandR version {}.{} not supported", major, minor).into());
+                return Err(format!("RandR version {major}.{minor} not supported").into());
             }
         } else {
             return Err("RandR extension not found".into());
