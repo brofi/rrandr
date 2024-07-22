@@ -23,7 +23,10 @@ mod imp {
     use glib::subclass::types::{ObjectSubclass, ObjectSubclassExt};
     use glib::subclass::{InitializingObject, Signal};
     use glib::types::StaticType;
-    use glib::{clone, object_subclass, spawn_future_local, timeout_future_seconds, Propagation};
+    use glib::{
+        clone, object_subclass, spawn_future_local, timeout_future_seconds, MainContext, Priority,
+        Propagation,
+    };
     use gtk::prelude::{
         GtkWindowExt, ListModelExt, ListModelExtManual, ObjectExt, StaticTypeExt, WidgetExt,
     };
@@ -46,14 +49,15 @@ mod imp {
     use crate::widget::disabled_output_area::DisabledOutputArea;
     use crate::widget::icon_text::IconText;
     use crate::widget::output_area::OutputArea;
-    use crate::x11::randr::{Randr, ScreenSizeRange};
+    use crate::x11::randr::{self, Randr, ScreenSizeRange, Snapshot};
 
     const CONFIRM_DIALOG_SHOW_SECS: u8 = 15;
 
     #[derive(CompositeTemplate, Default)]
     #[template(resource = "/com/github/brofi/rrandr/window.ui")]
     pub struct Window {
-        randr: Rc<RefCell<Randr>>,
+        randr: Rc<Randr>,
+        snapshot: RefCell<Option<Snapshot>>,
         #[template_child]
         paned: TemplateChild<Paned>,
         #[template_child]
@@ -118,6 +122,8 @@ mod imp {
                     this.disabled_area.update(output, update);
                 }
             ));
+
+            self.setup_randr_notify();
         }
     }
 
@@ -128,8 +134,7 @@ mod imp {
     #[template_callbacks]
     impl Window {
         fn set_screen_max_size(&self) {
-            let ScreenSizeRange { max_width, max_height, .. } =
-                self.randr.borrow().screen_size_range();
+            let ScreenSizeRange { max_width, max_height, .. } = self.randr.screen_size_range();
             self.enabled_area.set_screen_max_width(max_width);
             self.enabled_area.set_screen_max_height(max_height);
             self.details.set_screen_max_width(max_width);
@@ -137,7 +142,7 @@ mod imp {
         }
 
         fn set_outputs(&self) {
-            let outputs = self.randr.borrow().output_model();
+            let outputs = self.randr.output_model();
             let enabled = Outputs::new();
             let disabled = Outputs::new();
             for output in outputs.iter::<Output>().map(Result::unwrap) {
@@ -231,8 +236,8 @@ mod imp {
 
         pub(super) fn apply(&self) {
             let obj = self.obj();
-            self.randr.replace(Randr::new());
-            if self.randr.borrow().apply(&self.get_outputs()) {
+            self.snapshot.replace(Some(self.randr.snapshot()));
+            if self.randr.apply(&self.get_outputs()) {
                 let dialog = Dialog::builder(&*obj)
                     .title(&gettext("Confirm changes"))
                     .heading(&gettext("Keep changes?"))
@@ -254,15 +259,13 @@ mod imp {
                             dialog.set_message(msg);
                             timeout_future_seconds(1).await;
                         }
-                                dialog.close();
-                                window.revert();
+                        dialog.close();
+                        window.revert();
                     }),
                 );
 
                 dialog.connect_action(clone!(
-                    @weak self as window => move |_, i| if i == 0 {
-                        window.randr.replace(Randr::new());
-                    } else if i == 1 {
+                    @weak self as window => move |_, i| if i == 1 {
                         window.revert();
                     }
                 ));
@@ -284,11 +287,6 @@ mod imp {
         }
 
         pub(super) fn reset(&self) { self.set_outputs(); }
-
-        pub(super) fn reload(&self) {
-            self.randr.replace(Randr::new());
-            self.reset();
-        }
 
         pub(super) fn redraw(&self) {
             self.enabled_area.queue_draw();
@@ -338,8 +336,28 @@ mod imp {
         }
 
         fn revert(&self) {
-            self.randr.borrow().revert();
-            self.set_outputs();
+            if let Some(snapshot) = self.snapshot.take() {
+                self.randr.revert(snapshot);
+                self.set_outputs();
+            }
+        }
+
+        fn setup_randr_notify(&self) {
+            let (sender, receiver) = async_channel::unbounded();
+            if randr::run_event_loop(sender).is_ok() {
+                let ctx = MainContext::ref_thread_default();
+                ctx.spawn_local_with_priority(
+                    Priority::DEFAULT_IDLE,
+                    clone!(@weak self as this => async move {
+                        while let Ok(event) = receiver.recv().await {
+                            this.obj().set_sensitive(false);
+                            this.randr.handle_event(&event);
+                            this.set_outputs();
+                            this.obj().set_sensitive(true);
+                        }
+                    }),
+                );
+            }
         }
     }
 }
@@ -370,9 +388,6 @@ impl Window {
                 .build(),
             ActionEntry::builder("apply")
                 .activate(|window: &Self, _, _| window.imp().apply())
-                .build(),
-            ActionEntry::builder("reload")
-                .activate(|window: &Self, _, _| window.imp().reload())
                 .build(),
             ActionEntry::builder("redraw")
                 .activate(|window: &Self, _, _| window.imp().redraw())

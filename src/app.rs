@@ -37,7 +37,6 @@ mod imp {
             let obj = self.obj();
             obj.set_accels_for_action("win.apply", &["<Ctrl>S"]);
             obj.set_accels_for_action("win.reset", &["<Ctrl>BackSpace"]);
-            obj.set_accels_for_action("win.reload", &["F5"]);
             obj.set_accels_for_action("win.redraw", &["<Ctrl>R"]);
             obj.set_accels_for_action("window.close", &["<Ctrl>Q", "<Ctrl>W"]);
         }

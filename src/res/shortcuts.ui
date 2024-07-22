@@ -23,12 +23,6 @@
             </child>
             <child>
               <object class="GtkShortcutsShortcut">
-                <property name="title" translatable="yes">Reload RandR configuration</property>
-                <property name="action-name">win.reload</property>
-              </object>
-            </child>
-            <child>
-              <object class="GtkShortcutsShortcut">
                 <property name="title" translatable="yes">Redraw view</property>
                 <property name="action-name">win.redraw</property>
               </object>
