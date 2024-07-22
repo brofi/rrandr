@@ -15,7 +15,6 @@ mod imp {
     use std::cell::{Cell, RefCell};
     use std::rc::Rc;
     use std::sync::OnceLock;
-    use std::time::Duration;
 
     use gdk::{Key, ModifierType, Texture};
     use gettextrs::{gettext, ngettext};
@@ -24,7 +23,7 @@ mod imp {
     use glib::subclass::types::{ObjectSubclass, ObjectSubclassExt};
     use glib::subclass::{InitializingObject, Signal};
     use glib::types::StaticType;
-    use glib::{clone, object_subclass, spawn_future_local, timeout_add, ControlFlow, Propagation};
+    use glib::{clone, object_subclass, spawn_future_local, timeout_future_seconds, Propagation};
     use gtk::prelude::{
         GtkWindowExt, ListModelExt, ListModelExtManual, ObjectExt, StaticTypeExt, WidgetExt,
     };
@@ -234,48 +233,31 @@ mod imp {
             let obj = self.obj();
             self.randr.replace(Randr::new());
             if self.randr.borrow().apply(&self.get_outputs()) {
-                let mut secs = CONFIRM_DIALOG_SHOW_SECS.saturating_sub(1);
-
                 let dialog = Dialog::builder(&*obj)
                     .title(&gettext("Confirm changes"))
                     .heading(&gettext("Keep changes?"))
                     .message(&ngettext!(
                         "Reverting in {} second",
                         "Reverting in {} seconds",
-                        secs.into(),
-                        secs
+                        CONFIRM_DIALOG_SHOW_SECS.into(),
+                        CONFIRM_DIALOG_SHOW_SECS
                     ))
                     .actions(&[&gettext("_Keep"), &gettext("_Revert")])
                     .tooltips(&[&gettext("Keep changes"), &gettext("Revert changes")])
                     .build();
 
-                let (sender, receiver) = async_channel::bounded(1);
-                timeout_add(Duration::from_secs(1), move || {
-                    secs = secs.saturating_sub(1);
-                    if sender.send_blocking(secs).is_ok() && secs > 0 {
-                        ControlFlow::Continue
-                    } else {
-                        ControlFlow::Break
-                    }
-                });
-                spawn_future_local(clone!(
-                    @strong receiver, @strong dialog, @weak self as window => async move {
-                        while let Ok(secs) = receiver.recv().await {
+                let countdown = spawn_future_local(
+                    clone!(@strong dialog, @weak self as window => async move {
+                        for i in (1..=CONFIRM_DIALOG_SHOW_SECS).rev() {
                             // Translators: '{}' gets replaced with the number of seconds left.
-                            let msg = ngettext!(
-                                "Reverting in {} second",
-                                "Reverting in {} seconds",
-                                secs.into(),
-                                secs
-                            );
+                            let msg = ngettext!("Reverting in {} second","Reverting in {} seconds", i.into(), i);
                             dialog.set_message(msg);
-                            if secs == 0 {
+                            timeout_future_seconds(1).await;
+                        }
                                 dialog.close();
                                 window.revert();
-                            }
-                        }
-                    }
-                ));
+                    }),
+                );
 
                 dialog.connect_action(clone!(
                     @weak self as window => move |_, i| if i == 0 {
@@ -285,7 +267,7 @@ mod imp {
                     }
                 ));
                 dialog.connect_close_request(move |_| {
-                    receiver.close();
+                    countdown.abort();
                     Propagation::Proceed
                 });
 
