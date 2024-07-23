@@ -167,7 +167,7 @@ impl Randr {
         debug!("Dimension: {width}x{height}");
 
         let mut crtcs = self.crtcs.borrow_mut();
-        let Some(crtc) = crtcs.get_mut(&crtc) else {
+        let Some(crtc_info) = crtcs.get_mut(&crtc) else {
             debug!("New CRTC found: {crtc}");
             let crtc_info = self
                 .conn
@@ -179,12 +179,12 @@ impl Randr {
             return;
         };
 
-        crtc.mode = mode;
-        crtc.rotation = rot;
-        crtc.x = x;
-        crtc.y = y;
-        crtc.width = width;
-        crtc.height = height;
+        crtc_info.mode = mode;
+        crtc_info.rotation = rot;
+        crtc_info.x = x;
+        crtc_info.y = y;
+        crtc_info.width = width;
+        crtc_info.height = height;
     }
 
     fn handle_output_change(&self, data: &NotifyData) {
@@ -233,18 +233,28 @@ impl Randr {
                     }
                 }
             }
+            output_info.crtc = crtc;
         }
+
+        output_info.connection = conn;
+        output_info.subpixel_order = subp;
 
         // Update modes (there can be new and/or deleted modes)
         let modes = get_screen_resources_current(&self.conn, self.root)
-                .expect("should send screen resources request")
-                .reply()
-                .expect("should get screen resources reply")
-                .modes;
+            .expect("should send screen resources request")
+            .reply()
+            .expect("should get screen resources reply")
+            .modes;
         *self.modes.borrow_mut() = modes.iter().map(|m| (m.id, *m)).collect::<HashMap<_, _>>();
 
-        // Update full output info (since output modes can change)
-        *output_info = get_output_info(&self.conn, output, timestamp).unwrap().reply().unwrap();
+        // Update output modes
+        if mode > 0 {
+            output_info.modes = get_output_info(&self.conn, output, timestamp)
+                .expect("should request output info")
+                .reply()
+                .expect("should get output info reply")
+                .modes;
+        }
 
         // Update primary output
         self.primary.set(
@@ -509,11 +519,12 @@ impl Randr {
             return Ok(SetConfig::FAILED);
         };
         debug!(
-            "Trying to set output {} to CTRC {} at position +{}+{} with mode {}",
+            "Trying to set output {} to CTRC {} at position +{}+{} with mode {} ({})",
             output.name(),
             crtc,
             output.x(),
             output.y(),
+            mode.id(),
             mode
         );
         Ok(set_crtc_config(
