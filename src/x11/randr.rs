@@ -433,7 +433,16 @@ impl Randr {
                     return false;
                 }
             }
-            if handle_reply_error(self.update_crtc(crtc_id, &output), "update CRTC") {
+            if handle_reply_error(
+                self.update_crtc(
+                    crtc_id,
+                    output.x(),
+                    output.y(),
+                    output.mode().map_or(0, |m| m.id()),
+                    &[output.id()],
+                ),
+                "update CRTC",
+            ) {
                 return false;
             }
         }
@@ -480,22 +489,6 @@ impl Randr {
         }
     }
 
-    fn disable_crtc(&self, crtc: CrtcId) -> Result<SetConfig, ReplyError> {
-        Ok(set_crtc_config(
-            &self.conn,
-            crtc,
-            CURRENT_TIME,
-            CURRENT_TIME,
-            0,
-            0,
-            0,
-            Rotation::ROTATE0,
-            &[],
-        )?
-        .reply()?
-        .status)
-    }
-
     fn get_valid_empty_crtc(&self, output_id: OutputId) -> Option<CrtcId> {
         let output_info = &self.outputs.borrow()[&output_id];
         for (crtc_id, crtc) in self.crtcs.borrow().iter() {
@@ -513,39 +506,85 @@ impl Randr {
         None
     }
 
-    fn update_crtc(&self, crtc: CrtcId, output: &Output) -> Result<SetConfig, ReplyError> {
-        let Some(mode) = output.mode() else {
-            error!("Output {} is missing a mode.", output.name());
+    fn disable_crtc(&self, crtc: CrtcId) -> Result<SetConfig, ReplyError> {
+        self.update_crtc(crtc, 0, 0, 0, &[])
+    }
+
+    fn update_crtc(
+        &self,
+        crtc: CrtcId,
+        x: i16,
+        y: i16,
+        mode: ModeId,
+        outputs: &[OutputId],
+    ) -> Result<SetConfig, ReplyError> {
+        if outputs.len() > 1 {
+            error!("Attaching multiple outputs to one CRTC is not supported yet");
+            return Ok(SetConfig::FAILED);
+        }
+
+        if mode == 0 && !outputs.is_empty() || mode > 0 && outputs.is_empty() {
+            error!("Output must be set if mode is set and vice versa");
+            return Ok(SetConfig::FAILED);
+        }
+
+        let crtcs = self.crtcs.borrow();
+        let Some(crtc_info) = crtcs.get(&crtc) else {
+            error!("Unknown CRTC: {crtc}");
             return Ok(SetConfig::FAILED);
         };
-        debug!(
-            "Trying to set output {} to CTRC {} at position +{}+{} with mode {} ({})",
-            output.name(),
-            crtc,
-            output.x(),
-            output.y(),
-            mode.id(),
-            mode
-        );
+
+        if mode > 0 && !self.modes.borrow().contains_key(&mode) {
+            error!("Unknown mode: {mode}");
+            return Ok(SetConfig::FAILED);
+        }
+
+        if !outputs.is_empty() && mode > 0 {
+            if let Some(output_info) = self.outputs.borrow().get(&outputs[0]) {
+                if !crtc_info.possible.contains(&outputs[0]) || !output_info.crtcs.contains(&crtc) {
+                    error!("Cannot attach output {} to CRTC {crtc}", outputs[0]);
+                    return Ok(SetConfig::FAILED);
+                }
+                if !output_info.modes.contains(&mode) {
+                    error!("Mode {mode} not valid for output {}", outputs[0]);
+                    return Ok(SetConfig::FAILED);
+                }
+            } else {
+                error!("Unknown output: {}", outputs[0]);
+                return Ok(SetConfig::FAILED);
+            }
+        }
+
+        if outputs.is_empty() {
+            debug!("Disabling crtc {crtc}");
+        } else {
+            debug!(
+                "Attaching output {} to CTRC {} at position +{}+{} with mode {}",
+                outputs[0], crtc, x, y, mode
+            );
+        }
+
         Ok(set_crtc_config(
             &self.conn,
             crtc,
             CURRENT_TIME,
             CURRENT_TIME,
-            output.x(),
-            output.y(),
-            mode.id(),
+            x,
+            y,
+            mode,
             Rotation::ROTATE0,
-            &[output.id()],
+            outputs,
         )?
         .reply()?
         .status)
     }
 
-    pub fn revert(&self, snapshot: Snapshot) {
+    pub fn revert(&self, snapshot: Snapshot) -> bool {
         debug!("Reverting changes");
         for crtc_id in self.crtcs.borrow().keys() {
-            self.disable_crtc(*crtc_id).expect("disable CRTC");
+            if handle_reply_error(self.disable_crtc(*crtc_id), "disable CRTC") {
+                return false;
+            }
         }
         debug!(
             "Reverting screen size to {}x{} px, {}x{} mm",
@@ -554,33 +593,34 @@ impl Randr {
             snapshot.screen_size.mwidth,
             snapshot.screen_size.mheight
         );
-        set_screen_size(
-            &self.conn,
-            snapshot.root,
-            snapshot.screen_size.width,
-            snapshot.screen_size.height,
-            snapshot.screen_size.mwidth.into(),
-            snapshot.screen_size.mheight.into(),
-        )
-        .expect("revert screen size request")
-        .check()
-        .expect("revert screen size");
-        for (crtc_id, crtc_info) in snapshot.crtcs {
-            set_crtc_config(
+        if handle_no_reply_error(
+            set_screen_size(
                 &self.conn,
-                crtc_id,
-                CURRENT_TIME,
-                CURRENT_TIME,
-                crtc_info.x,
-                crtc_info.y,
-                crtc_info.mode,
-                crtc_info.rotation,
-                &crtc_info.outputs,
-            )
-            .expect("revert CRTC request")
-            .reply()
-            .expect("revert CRTC");
+                snapshot.root,
+                snapshot.screen_size.width,
+                snapshot.screen_size.height,
+                snapshot.screen_size.mwidth.into(),
+                snapshot.screen_size.mheight.into(),
+            ),
+            "revert screen size",
+        ) {
+            return false;
         }
+        for (crtc_id, crtc_info) in snapshot.crtcs {
+            if handle_reply_error(
+                self.update_crtc(
+                    crtc_id,
+                    crtc_info.x,
+                    crtc_info.y,
+                    crtc_info.mode,
+                    &crtc_info.outputs,
+                ),
+                "revert CRTC",
+            ) {
+                return false;
+            };
+        }
+        true
     }
 }
 
