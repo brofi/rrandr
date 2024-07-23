@@ -210,12 +210,15 @@ impl Randr {
             return;
         };
 
+        // Update CRTC association
         if crtc != output_info.crtc {
+            // Remove output from old CRTC
             if output_info.crtc > 0 {
                 if let Some(crtc_info) = self.crtcs.borrow_mut().get_mut(&output_info.crtc) {
                     crtc_info.outputs.retain(|o| *o != output);
                 }
             }
+            // Add output to new CRTC
             if crtc > 0 {
                 if let Some(crtc_info) = self.crtcs.borrow_mut().get_mut(&crtc) {
                     if !crtc_info.outputs.contains(&output) {
@@ -223,30 +226,26 @@ impl Randr {
                     }
                 }
             }
-            output_info.crtc = crtc;
         }
 
-        if mode > 0 {
-            let mut modes = self.modes.borrow_mut();
-            if !modes.contains_key(&mode) {
-                debug!("New mode found: {mode}");
-                let res = get_screen_resources_current(&self.conn, self.root)
-                    .expect("should send screen resources request")
-                    .reply()
-                    .expect("should get screen resources reply");
-                *modes = res.modes.iter().map(|m| (m.id, *m)).collect::<HashMap<_, _>>();
-            }
-        }
+        // Update modes (there can be new and/or deleted modes)
+        let modes = get_screen_resources_current(&self.conn, self.root)
+                .expect("should send screen resources request")
+                .reply()
+                .expect("should get screen resources reply")
+                .modes;
+        *self.modes.borrow_mut() = modes.iter().map(|m| (m.id, *m)).collect::<HashMap<_, _>>();
 
+        // Update full output info (since output modes can change)
+        *output_info = get_output_info(&self.conn, output, timestamp).unwrap().reply().unwrap();
+
+        // Update primary output
         self.primary.set(
             get_output_primary(&self.conn, self.root)
                 .expect("should send primary request")
                 .reply()
                 .expect("should get primary reply"),
         );
-
-        output_info.connection = conn;
-        output_info.subpixel_order = subp;
     }
 
     pub fn screen_size_range(&self) -> ScreenSizeRange { self.screen_size_range }
