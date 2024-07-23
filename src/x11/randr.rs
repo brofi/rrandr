@@ -189,7 +189,14 @@ impl Randr {
 
     fn handle_output_change(&self, data: &NotifyData) {
         let OutputChange {
-            window, output, crtc, mode, connection: conn, subpixel_order: subp, ..
+            timestamp,
+            window,
+            output,
+            crtc,
+            mode,
+            connection: conn,
+            subpixel_order: subp,
+            ..
         } = data.as_oc();
 
         debug!("OutputChangeNotify for output: {output}");
