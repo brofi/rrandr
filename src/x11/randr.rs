@@ -484,8 +484,8 @@ impl Randr {
         ScreenSize {
             width,
             height,
-            mwidth: ((f64::from(MM_PER_INCH) * f64::from(width)) / ppi) as u16,
-            mheight: ((f64::from(MM_PER_INCH) * f64::from(height)) / ppi) as u16,
+            mwidth: ((f64::from(MM_PER_INCH) * f64::from(width)) / ppi).round().max(1.) as u16,
+            mheight: ((f64::from(MM_PER_INCH) * f64::from(height)) / ppi).round().max(1.) as u16,
         }
     }
 
