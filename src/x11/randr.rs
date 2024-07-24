@@ -606,19 +606,40 @@ impl Randr {
         ) {
             return false;
         }
+
         for (crtc_id, crtc_info) in snapshot.crtcs {
-            if handle_reply_error(
-                self.update_crtc(
-                    crtc_id,
-                    crtc_info.x,
-                    crtc_info.y,
-                    crtc_info.mode,
-                    &crtc_info.outputs,
-                ),
-                "revert CRTC",
-            ) {
-                return false;
-            };
+            if crtc_info.mode == 0 {
+                continue;
+            }
+
+            let mut mode = 0;
+            if self.modes.borrow().contains_key(&crtc_info.mode) {
+                mode = crtc_info.mode;
+            } else {
+                warn!(
+                    "Mode {} is no longer available (trying to select next best mode)",
+                    crtc_info.mode
+                );
+                let outputs = self.outputs.borrow();
+                if let Some(m) = crtc_info
+                    .outputs
+                    .first()
+                    .and_then(|output_id| outputs.get(output_id))
+                    .and_then(|output_info| output_info.modes.first())
+                {
+                    debug!("Selecting replacement mode {m}");
+                    mode = *m;
+                }
+            }
+
+            if mode > 0 {
+                if handle_reply_error(
+                    self.update_crtc(crtc_id, crtc_info.x, crtc_info.y, mode, &crtc_info.outputs),
+                    "revert CRTC",
+                ) {
+                    return false;
+                };
+            }
         }
         true
     }
