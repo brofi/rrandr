@@ -45,9 +45,9 @@ mod imp {
         message: TemplateChild<Label>,
         #[template_child]
         buttons: TemplateChild<Box>,
-        #[property(set = Self::set_actions, nullable)]
+        #[property(set = Self::set_actions, construct, nullable)]
         actions: RefCell<Option<StringList>>,
-        #[property(set, nullable)]
+        #[property(set, construct, nullable)]
         tooltips: RefCell<Option<StringList>>,
     }
 
