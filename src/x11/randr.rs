@@ -457,19 +457,19 @@ impl Randr {
     }
 
     fn get_valid_empty_crtc(&self, output_id: OutputId) -> Option<CrtcId> {
-        let output_info = &self.outputs.borrow()[&output_id];
-        for (crtc_id, crtc) in self.crtcs.borrow().iter() {
-            if crtc.outputs.is_empty()
-                && output_info.crtcs.contains(crtc_id)
-                && crtc.possible.contains(&output_id)
-            {
+        let outputs = self.outputs.borrow();
+        let Some(output_info) = outputs.get(&output_id) else {
+            error!("Unknown output {output_id}");
+            return None;
+        };
+        for crtc_id in &output_info.crtcs {
+            if let Some(crtc_info) = self.crtcs.borrow().get(&crtc_id) {
+                if crtc_info.outputs.is_empty() && crtc_info.possible.contains(&output_id) {
                 return Some(*crtc_id);
+                }
             }
         }
-        error!(
-            "Failed to get empty CRTC for output {}",
-            String::from_utf8_lossy(&output_info.name)
-        );
+        error!("Failed to get empty CRTC for output {output_id}");
         None
     }
 
