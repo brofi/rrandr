@@ -36,6 +36,7 @@ type ScreenResources = GetScreenResourcesCurrentReply;
 pub type OutputInfo = GetOutputInfoReply;
 type CrtcInfo = GetCrtcInfoReply;
 type Primary = GetOutputPrimaryReply;
+type Edid = Vec<u8>;
 
 const DISPLAY: Option<&str> = None;
 // const DISPLAY: Option<&str> = Some(":1");
@@ -58,6 +59,7 @@ pub struct Randr {
     crtcs: RefCell<HashMap<CrtcId, CrtcInfo>>,
     outputs: RefCell<HashMap<OutputId, OutputInfo>>,
     modes: RefCell<HashMap<ModeId, ModeInfo>>,
+    edids: HashMap<OutputId, Option<Edid>>,
 }
 
 impl Default for Randr {
@@ -99,8 +101,10 @@ impl Randr {
 
         let crtcs: HashMap<CrtcId, CrtcInfo> = get_crtcs(crtcs).expect("reply for crtcs");
 
-        let modes: HashMap<ModeId, ModeInfo> =
-            res.modes.iter().map(|m| (m.id, *m)).collect::<HashMap<_, _>>();
+        let modes: HashMap<ModeId, ModeInfo> = res.modes.iter().map(|m| (m.id, *m)).collect();
+
+        let edids: HashMap<OutputId, Option<Edid>> =
+            res.outputs.iter().map(|&o| (o, get_edid(&conn, o).ok())).collect();
 
         #[cfg(debug_assertions)]
         log_crtcs(&crtcs, &modes);
@@ -116,6 +120,7 @@ impl Randr {
             crtcs: RefCell::new(crtcs),
             outputs: RefCell::new(outputs),
             modes: RefCell::new(modes),
+            edids,
         }
     }
 
@@ -289,10 +294,15 @@ impl Randr {
                 mode = modes.find_by_id(crtc_info.mode);
                 pos = [crtc_info.x, crtc_info.y];
             }
+            let product_name = self
+                .edids
+                .get(id)
+                .and_then(|e| e.as_ref().map(|edid| get_monitor_name(edid)))
+                .unwrap_or_default();
             outputs.append(&Output::new(
                 *id,
                 String::from_utf8_lossy(&output_info.name).into_owned(),
-                self.get_monitor_name(*id),
+                product_name,
                 enabled,
                 *id == self.primary.get().output,
                 pos[0],
@@ -312,52 +322,6 @@ impl Randr {
             screen_size: self.screen_size.get(),
             crtcs: self.crtcs.borrow().clone(),
         }
-    }
-
-    fn get_edid(&self, output: OutputId) -> Result<Vec<u8>, Box<dyn Error>> {
-        let name = "EDID";
-        let property = intern_atom(&self.conn, true, name.as_bytes())?.reply()?.atom;
-        if property == AtomEnum::NONE.into() {
-            return Err(format!("No property named: {name}").into());
-        }
-        Ok(get_output_property(
-            &self.conn,
-            output,
-            property,
-            AtomEnum::INTEGER,
-            0,
-            256,
-            false,
-            false,
-        )?
-        .reply()?
-        .data)
-    }
-
-    fn get_monitor_name(&self, output: OutputId) -> Option<String> {
-        if let Ok(edid) = self.get_edid(output) {
-            if edid.len() >= 128 {
-                let version = edid[0x12];
-                let revision = edid[0x13];
-                if version == 1 && (revision == 3 || revision == 4) {
-                    let mut i = 0x48;
-                    while i <= 0x6C {
-                        // This 18 byte descriptor is a used as a display descriptor with a tag 0xFC
-                        // (display product name).
-                        if edid[i..(i + 3)] == [0, 0, 0] && edid[i + 3] == 0xFC && edid[i + 4] == 0
-                        {
-                            return Some(
-                                String::from_utf8_lossy(&edid[(i + 5)..(i + 18)])
-                                    .trim_end()
-                                    .to_owned(),
-                            );
-                        }
-                        i += 18;
-                    }
-                }
-            }
-        }
-        None
     }
 
     pub fn apply(&self, outputs: &Outputs) -> bool {
@@ -635,13 +599,13 @@ impl Randr {
                 }
             }
 
-            if mode > 0 {
-                if handle_reply_error(
+            if mode > 0
+                && handle_reply_error(
                     self.update_crtc(crtc_id, crtc_info.x, crtc_info.y, mode, &crtc_info.outputs),
                     "revert CRTC",
-                ) {
-                    return false;
-                };
+                )
+            {
+                return false;
             }
         }
         true
@@ -686,6 +650,38 @@ pub fn run_event_loop(sender: Sender<Event>) -> Result<JoinHandle<()>, Box<dyn E
     });
 
     Ok(handle)
+}
+
+fn get_edid(conn: &RustConnection, output: OutputId) -> Result<Edid, Box<dyn Error>> {
+    let name = "EDID";
+    let property = intern_atom(conn, true, name.as_bytes())?.reply()?.atom;
+    if property == AtomEnum::NONE.into() {
+        return Err(format!("No property named: {name}").into());
+    }
+    Ok(get_output_property(conn, output, property, AtomEnum::INTEGER, 0, 256, false, false)?
+        .reply()?
+        .data)
+}
+
+fn get_monitor_name(edid: &[u8]) -> Option<String> {
+    if edid.len() >= 128 {
+        let version = edid[0x12];
+        let revision = edid[0x13];
+        if version == 1 && (revision == 3 || revision == 4) {
+            let mut i = 0x48;
+            while i <= 0x6C {
+                // This 18 byte descriptor is a used as a display descriptor with a tag 0xFC
+                // (display product name).
+                if edid[i..(i + 3)] == [0, 0, 0] && edid[i + 3] == 0xFC && edid[i + 4] == 0 {
+                    return Some(
+                        String::from_utf8_lossy(&edid[(i + 5)..(i + 18)]).trim_end().to_owned(),
+                    );
+                }
+                i += 18;
+            }
+        }
+    }
+    None
 }
 
 // TODO checkout GetXIDListRequest
