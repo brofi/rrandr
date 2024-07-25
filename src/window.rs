@@ -23,10 +23,7 @@ mod imp {
     use glib::subclass::types::{ObjectSubclass, ObjectSubclassExt};
     use glib::subclass::{InitializingObject, Signal};
     use glib::types::StaticType;
-    use glib::{
-        clone, object_subclass, spawn_future_local, timeout_future_seconds, MainContext, Priority,
-        Propagation,
-    };
+    use glib::{clone, object_subclass, spawn_future_local, timeout_future_seconds, Propagation};
     use gtk::prelude::{
         GtkWindowExt, ListModelExt, ListModelExtManual, ObjectExt, StaticTypeExt, WidgetExt,
     };
@@ -345,18 +342,14 @@ mod imp {
         fn setup_randr_notify(&self) {
             let (sender, receiver) = async_channel::unbounded();
             if randr::run_event_loop(sender).is_ok() {
-                let ctx = MainContext::ref_thread_default();
-                ctx.spawn_local_with_priority(
-                    Priority::DEFAULT_IDLE,
-                    clone!(@weak self as this => async move {
-                        while let Ok(event) = receiver.recv().await {
-                            this.obj().set_sensitive(false);
-                            this.randr.handle_event(&event);
+                spawn_future_local(clone!(@weak self as this => async move {
+                    while let Ok(event) = receiver.recv().await {
+                        this.randr.handle_event(&event);
+                        if receiver.is_empty() {
                             this.set_outputs();
-                            this.obj().set_sensitive(true);
                         }
-                    }),
-                );
+                    }
+                }));
             }
         }
     }
