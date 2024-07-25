@@ -37,6 +37,9 @@ pub type OutputInfo = GetOutputInfoReply;
 type CrtcInfo = GetCrtcInfoReply;
 type Primary = GetOutputPrimaryReply;
 
+const DISPLAY: Option<&str> = None;
+// const DISPLAY: Option<&str> = Some(":1");
+
 const MIN_VERSION: [u32; 2] = [1, 3];
 const CLIENT_VERSION: [u32; 2] = [1, 5];
 
@@ -63,7 +66,7 @@ impl Default for Randr {
 
 impl Randr {
     pub fn new() -> Self {
-        let (conn, screen_num) = x11rb::connect(None).expect("connection to X Server");
+        let (conn, screen_num) = x11rb::connect(DISPLAY).expect("connection to X Server");
         let screen = &conn.setup().roots[screen_num];
         let root = screen.root;
         let screen_size = ScreenSize {
@@ -646,7 +649,7 @@ impl Randr {
 }
 
 pub fn check() -> Result<(), Box<dyn Error>> {
-    if let Ok((conn, _)) = x11rb::connect(None) {
+    if let Ok((conn, _)) = x11rb::connect(DISPLAY) {
         let extension = query_extension(&conn, "RANDR".as_bytes())?.reply()?;
         if extension.present {
             let Version { major_version: major, minor_version: minor, .. } =
@@ -664,7 +667,7 @@ pub fn check() -> Result<(), Box<dyn Error>> {
 }
 
 pub fn run_event_loop(sender: Sender<Event>) -> Result<JoinHandle<()>, Box<dyn Error>> {
-    let (conn, screen_num) = x11rb::connect(None)?;
+    let (conn, screen_num) = x11rb::connect(DISPLAY)?;
     let root = conn.setup().roots[screen_num].root;
 
     conn.randr_select_input(
