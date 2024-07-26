@@ -465,7 +465,7 @@ impl Randr {
         for crtc_id in &output_info.crtcs {
             if let Some(crtc_info) = self.crtcs.borrow().get(&crtc_id) {
                 if crtc_info.outputs.is_empty() && crtc_info.possible.contains(&output_id) {
-                return Some(*crtc_id);
+                    return Some(*crtc_id);
                 }
             }
         }
@@ -546,33 +546,26 @@ impl Randr {
         .status)
     }
 
-    pub fn revert(&self, snapshot: Snapshot) -> bool {
+    pub fn revert(&self, snapshot: Snapshot) {
         debug!("Reverting changes");
+
         for crtc_id in self.crtcs.borrow().keys() {
-            if handle_reply_error(self.disable_crtc(*crtc_id), "disable CRTC") {
-                return false;
-            }
+            handle_reply_error(self.disable_crtc(*crtc_id), &format!("disable CRTC {crtc_id}"));
         }
-        debug!(
-            "Reverting screen size to {}x{} px, {}x{} mm",
-            snapshot.screen_size.width,
-            snapshot.screen_size.height,
-            snapshot.screen_size.mwidth,
-            snapshot.screen_size.mheight
-        );
-        if handle_no_reply_error(
+
+        let ScreenSize { width, height, mwidth, mheight } = snapshot.screen_size;
+        debug!("Reverting screen size to {width}x{height} px, {mwidth}x{mheight} mm");
+        handle_no_reply_error(
             set_screen_size(
                 &self.conn,
                 snapshot.root,
-                snapshot.screen_size.width,
-                snapshot.screen_size.height,
-                snapshot.screen_size.mwidth.into(),
-                snapshot.screen_size.mheight.into(),
+                width,
+                height,
+                mwidth.into(),
+                mheight.into(),
             ),
-            "revert screen size",
-        ) {
-            return false;
-        }
+            &format!("revert screen size to {width}x{height} px, {mwidth}x{mheight} mm"),
+        );
 
         for (crtc_id, crtc_info) in snapshot.crtcs {
             if crtc_info.mode == 0 {
@@ -599,16 +592,15 @@ impl Randr {
                 }
             }
 
-            if mode > 0
-                && handle_reply_error(
+            if mode > 0 {
+                handle_reply_error(
                     self.update_crtc(crtc_id, crtc_info.x, crtc_info.y, mode, &crtc_info.outputs),
                     "revert CRTC",
-                )
-            {
-                return false;
+                );
+            } else {
+                error!("No mode for CRTC {crtc_id}");
             }
         }
-        true
     }
 }
 
