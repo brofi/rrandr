@@ -85,6 +85,7 @@ wrapper! {
 }
 
 impl Output {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         id: OutputId,
         name: String,

@@ -463,7 +463,7 @@ impl Randr {
             return None;
         };
         for crtc_id in &output_info.crtcs {
-            if let Some(crtc_info) = self.crtcs.borrow().get(&crtc_id) {
+            if let Some(crtc_info) = self.crtcs.borrow().get(crtc_id) {
                 if crtc_info.outputs.is_empty() && crtc_info.possible.contains(&output_id) {
                     return Some(*crtc_id);
                 }

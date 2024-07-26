@@ -1,6 +1,4 @@
 #![warn(clippy::pedantic)]
-#![allow(clippy::too_many_arguments)]
-#![allow(clippy::too_many_lines)]
 // #![warn(clippy::restriction)]
 
 mod app;
