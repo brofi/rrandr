@@ -147,7 +147,7 @@ impl Randr {
             ..
         } = *event;
 
-        debug!("ScreenChangeNotifyEvent: {width}x{height}");
+        debug!("ScreenChangeNotifyEvent: {width}x{height} px, {mwidth}x{mheight} mm");
 
         if root != window || root != self.root {
             warn!("Unknown window");
@@ -449,10 +449,10 @@ impl Randr {
         }
 
         if mwidth == 0 || mheight == 0 {
-            let ppi = primary.map_or(f64::from(PPI_DEFAULT), Output::ppi);
-            debug!("Using PPI {ppi:.2}");
-            mwidth = ((f64::from(MM_PER_INCH) * f64::from(width)) / ppi).round().max(1.) as u16;
-            mheight = ((f64::from(MM_PER_INCH) * f64::from(height)) / ppi).round().max(1.) as u16;
+            let ppi = primary.map_or(PPI_DEFAULT, Output::ppi);
+            debug!("Using PPI {:.2}x{:.2}", ppi[0], ppi[1]);
+            mwidth = ((MM_PER_INCH * f64::from(width)) / ppi[0]).ceil() as u16;
+            mheight = ((MM_PER_INCH * f64::from(height)) / ppi[1]).ceil() as u16;
         }
 
         ScreenSize { width, height, mwidth, mheight }

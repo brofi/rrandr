@@ -8,7 +8,7 @@ use crate::data::modes::Modes;
 use crate::data::values::I16;
 use crate::math::{Rect, MM_PER_INCH};
 
-pub const PPI_DEFAULT: u8 = 96;
+pub const PPI_DEFAULT: [f64; 2] = [96., 96.];
 
 mod imp {
     use std::cell::{Cell, RefCell};
@@ -139,14 +139,16 @@ impl Output {
         self.set_mode(None::<Mode>);
     }
 
-    pub fn ppi(&self) -> f64 {
+    pub fn ppi(&self) -> [f64; 2] {
         if let Some(mode) = self.mode() {
-            if self.height() > 0 {
-                return (f64::from(MM_PER_INCH) * f64::from(mode.height()))
-                    / f64::from(self.height());
+            if self.width() > 0 && self.height() > 0 {
+                return [
+                    (MM_PER_INCH * f64::from(mode.width())) / f64::from(self.width()),
+                    (MM_PER_INCH * f64::from(mode.height())) / f64::from(self.height()),
+                ];
             }
         }
-        f64::from(PPI_DEFAULT)
+        PPI_DEFAULT
     }
 
     pub fn rect(&self) -> Rect {
