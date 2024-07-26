@@ -102,12 +102,16 @@ mod imp {
 
             self.resolution_selected_handler_id.replace(Some(
                 self.resolution.connect_selected_item_notify(clone!(
-                    @weak self as this => move |dd| this.on_resolution_selected(dd)
+                    #[weak(rename_to = this)]
+                    self,
+                    move |dd| this.on_resolution_selected(dd)
                 )),
             ));
             self.refresh_rate_selected_handler_id.replace(Some(
                 self.refresh_rate.connect_selected_item_notify(clone!(
-                    @weak self as this => move |dd| this.on_refresh_rate_selected(dd)
+                    #[weak(rename_to = this)]
+                    self,
+                    move |dd| this.on_refresh_rate_selected(dd)
                 )),
             ));
         }
@@ -151,11 +155,12 @@ mod imp {
                     .map(|r| r.height().to_string().len())
                     .max()
                     .unwrap_or_default();
-                self.resolution.set_list_factory(Some(
-                    &self.list_factory(&self.resolution, move |label, mode| {
+                self.resolution.set_list_factory(Some(&self.list_factory(
+                    &self.resolution,
+                    move |label, mode| {
                         bind_list_res_mode(label, mode, Some(format_width));
-                    }),
-                ));
+                    },
+                )));
 
                 res_model = Some(resolutions);
             }
@@ -264,7 +269,11 @@ mod imp {
                 list_item.set_child(Some(&hbox));
             });
             factory.connect_bind(clone!(
-                @weak self as this, @weak dd => move |_f, list_item| {
+                #[weak(rename_to = this)]
+                self,
+                #[weak]
+                dd,
+                move |_f, list_item| {
                     if let (Some(label), Some(mode)) = (
                         list_item
                             .child()
@@ -273,9 +282,12 @@ mod imp {
                         list_item.item().and_downcast::<Mode>(),
                     ) {
                         this.selected_handlers_list_item.borrow_mut().insert(
-                            list_item.clone(), dd.connect_selected_item_notify(clone!(
-                                @strong list_item => move |dd| update_list_item_selected_icon(dd, &list_item)
-                            ))
+                            list_item.clone(),
+                            dd.connect_selected_item_notify(clone!(
+                                #[strong]
+                                list_item,
+                                move |dd| update_list_item_selected_icon(dd, &list_item)
+                            )),
                         );
                         update_list_item_selected_icon(&dd, list_item);
                         bind_mode(&label, &mode);
@@ -283,10 +295,17 @@ mod imp {
                 }
             ));
             factory.connect_unbind(clone!(
-                @weak self as this, @weak dd => move |_f, list_item|
-                    if let Some(handler) = this.selected_handlers_list_item.borrow_mut().remove(list_item) {
+                #[weak(rename_to = this)]
+                self,
+                #[weak]
+                dd,
+                move |_f, list_item| {
+                    if let Some(handler) =
+                        this.selected_handlers_list_item.borrow_mut().remove(list_item)
+                    {
                         dd.disconnect(handler);
                     };
+                }
             ));
             factory
         }

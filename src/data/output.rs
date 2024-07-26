@@ -141,7 +141,8 @@ impl Output {
     pub fn ppi(&self) -> f64 {
         if let Some(mode) = self.mode() {
             if self.height() > 0 {
-                return (f64::from(MM_PER_INCH) * f64::from(mode.height())) / f64::from(self.height());
+                return (f64::from(MM_PER_INCH) * f64::from(mode.height()))
+                    / f64::from(self.height());
             }
         }
         f64::from(PPI_DEFAULT)

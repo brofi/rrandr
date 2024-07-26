@@ -80,24 +80,34 @@ mod imp {
             obj.set_focusable(true);
 
             obj.set_draw_func(clone!(
-                @weak self as this => move |_d, cr, width, height| this.on_draw(cr, width, height)
+                #[weak(rename_to = this)]
+                self,
+                move |_d, cr, width, height| this.on_draw(cr, width, height)
             ));
 
             let gesture_drag = GestureDrag::new();
             gesture_drag.connect_drag_begin(clone!(
-                @weak self as this => move |g, start_x, start_y| this.on_drag_begin(g, start_x, start_y)
+                #[weak(rename_to = this)]
+                self,
+                move |g, start_x, start_y| this.on_drag_begin(g, start_x, start_y)
             ));
             gesture_drag.connect_drag_update(clone!(
-                @weak self as this => move |g, offset_x, offset_y| this.on_drag_update(g, offset_x, offset_y)
+                #[weak(rename_to = this)]
+                self,
+                move |g, offset_x, offset_y| this.on_drag_update(g, offset_x, offset_y)
             ));
             gesture_drag.connect_drag_end(clone!(
-                @weak self as this => move |g, offset_x, offset_y| this.on_drag_end(g, offset_x, offset_y)
+                #[weak(rename_to = this)]
+                self,
+                move |g, offset_x, offset_y| this.on_drag_end(g, offset_x, offset_y)
             ));
             obj.add_controller(gesture_drag);
 
             let event_controller_motion = EventControllerMotion::new();
             event_controller_motion.connect_motion(clone!(
-                @weak self as this => move |ecm, x, y| this.on_motion(ecm, x, y)
+                #[weak(rename_to = this)]
+                self,
+                move |ecm, x, y| this.on_motion(ecm, x, y)
             ));
             event_controller_motion.connect_enter(Self::on_enter);
             event_controller_motion.connect_leave(Self::on_leave);
@@ -105,14 +115,19 @@ mod imp {
 
             let drop_target = DropTarget::new(Output::static_type(), DragAction::MOVE);
             drop_target.connect_drop(clone!(
-                @weak self as this => @default-panic, move |dt, v, x, y| this.on_drop(dt, v, x, y)
+                #[weak(rename_to = this)]
+                self,
+                #[upgrade_or_panic]
+                move |dt, v, x, y| this.on_drop(dt, v, x, y)
             ));
             drop_target.connect_motion(Self::on_drop_motion);
             obj.add_controller(drop_target);
 
             let gesture_click = GestureClick::new();
             gesture_click.connect_pressed(clone!(
-                @weak self as this => move |gc, n_press, x, y| this.on_click(gc, n_press, x, y)
+                #[weak(rename_to = this)]
+                self,
+                move |gc, n_press, x, y| this.on_click(gc, n_press, x, y)
             ));
             obj.add_controller(gesture_click);
 
@@ -120,13 +135,19 @@ mod imp {
                 .flags(EventControllerScrollFlags::DISCRETE | EventControllerScrollFlags::VERTICAL)
                 .build();
             event_controller_scroll.connect_scroll(clone!(
-                @weak self as this => @default-panic, move |ecs, x, y| this.on_discrete_vertical_scroll(ecs, x, y)
+                #[weak(rename_to = this)]
+                self,
+                #[upgrade_or_panic]
+                move |ecs, x, y| this.on_discrete_vertical_scroll(ecs, x, y)
             ));
             obj.add_controller(event_controller_scroll);
 
             let event_controller_key = EventControllerKey::new();
             event_controller_key.connect_key_pressed(clone!(
-                @weak self as this => @default-panic, move |eck, keyval, keycode, state| this.on_key_pressed(eck, keyval, keycode, state)
+                #[weak(rename_to = this)]
+                self,
+                #[upgrade_or_panic]
+                move |eck, keyval, keycode, state| this.on_key_pressed(eck, keyval, keycode, state)
             ));
             self.obj().add_controller(event_controller_key);
         }

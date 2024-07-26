@@ -75,30 +75,43 @@ mod imp {
             obj.set_content_width(150);
 
             obj.set_draw_func(clone!(
-                @weak self as this  => move |_d, cr, width, height| this.on_draw(cr, width, height)
+                #[weak(rename_to = this)]
+                self,
+                move |_d, cr, width, height| this.on_draw(cr, width, height)
             ));
 
             let drag_source = DragSource::builder().actions(DragAction::MOVE).build();
             drag_source.connect_prepare(clone!(
-                @weak self as this => @default-panic, move |ds, x, y| this.on_drag_prepare(ds, x, y)
+                #[weak(rename_to = this)]
+                self,
+                #[upgrade_or_panic]
+                move |ds, x, y| this.on_drag_prepare(ds, x, y)
             ));
             drag_source.connect_drag_begin(clone!(
-                @weak self as this => move |ds, d| this.on_drag_begin(ds, d)
+                #[weak(rename_to = this)]
+                self,
+                move |ds, d| this.on_drag_begin(ds, d)
             ));
             drag_source.connect_drag_end(clone!(
-                @weak self as this => move |ds, d, del| this.on_drag_end(ds, d, del)
+                #[weak(rename_to = this)]
+                self,
+                move |ds, d, del| this.on_drag_end(ds, d, del)
             ));
             obj.add_controller(drag_source);
 
             let gesture_click = GestureClick::new();
             gesture_click.connect_pressed(clone!(
-                @weak self as this => move |gc, n_press, x, y| this.on_click(gc, n_press, x, y)
+                #[weak(rename_to = this)]
+                self,
+                move |gc, n_press, x, y| this.on_click(gc, n_press, x, y)
             ));
             obj.add_controller(gesture_click);
 
             let event_controller_motion = EventControllerMotion::new();
             event_controller_motion.connect_motion(clone!(
-                @weak self as this => move |ecm, x, y| this.on_motion(ecm, x, y)
+                #[weak(rename_to = this)]
+                self,
+                move |ecm, x, y| this.on_motion(ecm, x, y)
             ));
             obj.add_controller(event_controller_motion);
 

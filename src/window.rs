@@ -109,12 +109,17 @@ mod imp {
 
             let event_controller_key = EventControllerKey::new();
             event_controller_key.connect_key_pressed(clone!(
-                @weak self as this => @default-panic, move |eck, keyval, keycode, state| this.on_key_pressed(eck, keyval, keycode, state)
+                #[weak(rename_to = this)]
+                self,
+                #[upgrade_or_panic]
+                move |eck, keyval, keycode, state| this.on_key_pressed(eck, keyval, keycode, state)
             ));
             obj.add_controller(event_controller_key);
 
             self.details.connect_output_changed(clone!(
-                @weak self as this => move |_, output, update| {
+                #[weak(rename_to = this)]
+                self,
+                move |_, output, update| {
                     this.enabled_area.update(output, update);
                     this.disabled_area.update(output, update);
                 }
@@ -248,21 +253,32 @@ mod imp {
                     .tooltips(&[&gettext("Keep changes"), &gettext("Revert changes")])
                     .build();
 
-                let countdown = spawn_future_local(
-                    clone!(@strong dialog, @weak self as window => async move {
+                let countdown = spawn_future_local(clone!(
+                    #[weak(rename_to = window)]
+                    self,
+                    #[strong]
+                    dialog,
+                    async move {
                         for i in (1..=CONFIRM_DIALOG_SHOW_SECS).rev() {
                             // Translators: '{}' gets replaced with the number of seconds left.
-                            let msg = ngettext!("Reverting in {} second","Reverting in {} seconds", i.into(), i);
+                            let msg = ngettext!(
+                                "Reverting in {} second",
+                                "Reverting in {} seconds",
+                                i.into(),
+                                i
+                            );
                             dialog.set_message(msg);
                             timeout_future_seconds(1).await;
                         }
                         dialog.close();
                         window.revert();
-                    }),
-                );
+                    }
+                ));
 
                 dialog.connect_action(clone!(
-                    @weak self as window => move |_, i| if i == 1 {
+                    #[weak(rename_to = window)]
+                    self,
+                    move |_, i| if i == 1 {
                         window.revert();
                     }
                 ));
@@ -342,14 +358,18 @@ mod imp {
         fn setup_randr_notify(&self) {
             let (sender, receiver) = async_channel::unbounded();
             if randr::run_event_loop(sender).is_ok() {
-                spawn_future_local(clone!(@weak self as this => async move {
-                    while let Ok(event) = receiver.recv().await {
-                        this.randr.handle_event(&event);
-                        if receiver.is_empty() {
-                            this.set_outputs();
+                spawn_future_local(clone!(
+                    #[weak(rename_to = this)]
+                    self,
+                    async move {
+                        while let Ok(event) = receiver.recv().await {
+                            this.randr.handle_event(&event);
+                            if receiver.is_empty() {
+                                this.set_outputs();
+                            }
                         }
                     }
-                }));
+                ));
             }
         }
     }

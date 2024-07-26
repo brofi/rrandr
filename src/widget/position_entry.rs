@@ -118,14 +118,18 @@ mod imp {
             for (i, entry) in self.entries.iter().enumerate() {
                 if let Some(editable) = entry.delegate() {
                     let id = editable.connect_insert_text(clone!(
-                        @weak self as this => move |editable, text, position| {
+                        #[weak(rename_to = this)]
+                        self,
+                        move |editable, text, position| {
                             this.insert_coord(text, position, Axis::from(i));
                             editable.stop_signal_emission_by_name("insert_text");
                         }
                     ));
                     self.insert_handler_ids.borrow_mut()[i] = Some(id);
                     let id = editable.connect_delete_text(clone!(
-                        @weak self as this => move |editable, start_pos, end_pos| {
+                        #[weak(rename_to = this)]
+                        self,
+                        move |editable, start_pos, end_pos| {
                             this.delete_coord(start_pos, end_pos, Axis::from(i));
                             editable.stop_signal_emission_by_name("delete_text");
                         }

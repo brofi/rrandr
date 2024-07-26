@@ -12,7 +12,7 @@ mod imp {
 
     use gdk::{Key, ModifierType};
     use gettextrs::gettext;
-    use glib::object::{Cast, CastNone};
+    use glib::object::CastNone;
     use glib::subclass::types::ObjectSubclassExt;
     use glib::subclass::{InitializingObject, Signal};
     use glib::{
@@ -75,12 +75,12 @@ mod imp {
             let eck = EventControllerKey::new();
             eck.connect_key_pressed(|eck, keyval, _keycode, state| match keyval {
                 Key::Escape => {
-                    eck.widget().downcast::<Window>().unwrap().close();
+                    eck.widget().and_downcast::<Window>().unwrap().close();
                     Propagation::Stop
                 }
                 Key::w => {
                     if state.contains(ModifierType::CONTROL_MASK) {
-                        eck.widget().downcast::<Window>().unwrap().close();
+                        eck.widget().and_downcast::<Window>().unwrap().close();
                         Propagation::Stop
                     } else {
                         Propagation::Proceed
@@ -123,15 +123,23 @@ mod imp {
                         .to_string();
                     let btn = Self::create_action_button(&action, &tooltip);
                     self.buttons.append(&btn);
-                    btn.connect_clicked(clone!(@weak self as dialog => move |_| {
-                        dialog.obj().emit_by_name::<()>("action", &[&i]);
-                        dialog.obj().close();
-                    }));
+                    btn.connect_clicked(clone!(
+                        #[weak(rename_to = dialog)]
+                        self,
+                        move |_| {
+                            dialog.obj().emit_by_name::<()>("action", &[&i]);
+                            dialog.obj().close();
+                        },
+                    ));
                 }
             } else {
                 let btn = Self::create_action_button(&gettext("_Close"), "");
                 self.buttons.append(&btn);
-                btn.connect_clicked(clone!(@weak self as dialog => move |_| dialog.obj().close()));
+                btn.connect_clicked(clone!(
+                    #[weak(rename_to = dialog)]
+                    self,
+                    move |_| dialog.obj().close()
+                ));
             }
             self.actions.replace(actions.cloned());
         }

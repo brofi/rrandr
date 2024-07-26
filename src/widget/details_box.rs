@@ -135,16 +135,24 @@ mod imp {
             ));
 
             self.sw_enabled.connect_active_notify(clone!(
-                @weak self as this => move |sw| this.on_enabled_switched(sw)
+                #[weak(rename_to = this)]
+                self,
+                move |sw| this.on_enabled_switched(sw)
             ));
             self.mode_selector.connect_selected_mode_notify(clone!(
-                @weak self as this => move |mode_selector| this.on_mode_selected(mode_selector)
+                #[weak(rename_to = this)]
+                self,
+                move |mode_selector| this.on_mode_selected(mode_selector)
             ));
             self.position_entry.connect_coordinate_changed(clone!(
-                @weak self as this => move |_, axis, coord| this.update_position(axis, coord);
+                #[weak(rename_to = this)]
+                self,
+                move |_, axis, coord| this.update_position(axis, coord)
             ));
             self.cb_primary.connect_active_notify(clone!(
-                @weak self as this => move |cb| this.on_primary_checked(cb)
+                #[weak(rename_to = this)]
+                self,
+                move |cb| this.on_primary_checked(cb)
             ));
 
             self.root.set_parent(&*obj);
@@ -202,34 +210,48 @@ mod imp {
 
         fn connect_output_property_handlers(&self, output: &Output) {
             self.enabled_changed_handler.replace(Some(output.connect_enabled_notify(clone!(
-                @weak self as this => move |o| {
+                #[weak(rename_to = this)]
+                self,
+                move |o| {
                     this.sw_enabled.set_active(o.enabled());
                     this.update_visibility();
                 }
             ))));
             self.mode_changed_handler.replace(Some(output.connect_mode_notify(clone!(
-                @weak self as this => move |o| this.mode_selector.set_selected_mode(o.mode())
+                #[weak(rename_to = this)]
+                self,
+                move |o| this.mode_selector.set_selected_mode(o.mode())
             ))));
             self.primary_changed_handler.replace(Some(output.connect_primary_notify(clone!(
-                @weak self as this => move |o| this.cb_primary.set_active(o.primary())
+                #[weak(rename_to = this)]
+                self,
+                move |o| this.cb_primary.set_active(o.primary())
             ))));
             self.pos_changed_handlers.replace([
                 Some(output.connect_pos_x_notify(clone!(
-                    @weak self as this => move |o| {
-                        if let Some(sid) = this.pos_modify_sids.borrow_mut()[usize::from(Axis::X)].take() {
+                    #[weak(rename_to = this)]
+                    self,
+                    move |o| {
+                        if let Some(sid) =
+                            this.pos_modify_sids.borrow_mut()[usize::from(Axis::X)].take()
+                        {
                             sid.remove();
                         }
                         this.position_entry.set_x(&o.x().to_string());
                     }
                 ))),
                 Some(output.connect_pos_y_notify(clone!(
-                    @weak self as this => move |o| {
-                        if let Some(sid) = this.pos_modify_sids.borrow_mut()[usize::from(Axis::Y)].take() {
+                    #[weak(rename_to = this)]
+                    self,
+                    move |o| {
+                        if let Some(sid) =
+                            this.pos_modify_sids.borrow_mut()[usize::from(Axis::Y)].take()
+                        {
                             sid.remove();
                         }
                         this.position_entry.set_y(&o.y().to_string());
                     }
-                )))
+                ))),
             ]);
         }
 
@@ -303,7 +325,11 @@ mod imp {
                 let sid = timeout_add_local_once(
                     Duration::from_millis(POS_UPDATE_DELAY),
                     clone!(
-                        @weak self as this, @weak output => move || {
+                        #[weak(rename_to = this)]
+                        self,
+                        #[weak]
+                        output,
+                        move || {
                             this.pos_modify_sids.borrow_mut()[usize::from(axis)].take();
                             let cur_pos = match axis {
                                 Axis::X => output.x(),
@@ -316,7 +342,9 @@ mod imp {
                                         Axis::Y => output.set_y(coord),
                                     };
                                 };
-                                if let Some(handler_id) = &this.pos_changed_handlers.borrow()[usize::from(axis)] {
+                                if let Some(handler_id) =
+                                    &this.pos_changed_handlers.borrow()[usize::from(axis)]
+                                {
                                     output.block_signal(handler_id);
                                     set_coord();
                                     output.unblock_signal(handler_id);
