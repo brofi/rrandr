@@ -4,13 +4,13 @@ use std::error::Error;
 use std::thread::{self, JoinHandle};
 
 use async_channel::Sender;
-use gtk::prelude::ListModelExtManual;
+use gtk::prelude::{CastNone, ListModelExt, ListModelExtManual};
 use log::{debug, error, warn};
 use x11rb::connection::{Connection as XConnection, RequestConnection};
 use x11rb::cookie::{Cookie, VoidCookie};
 use x11rb::errors::{ConnectionError, ReplyError};
 use x11rb::protocol::randr::{
-    get_crtc_info, get_output_info, get_output_primary, get_output_property,
+    self, get_crtc_info, get_output_info, get_output_primary, get_output_property,
     get_screen_resources_current, get_screen_size_range, query_version, set_crtc_config,
     set_output_primary, set_screen_size, Connection, ConnectionExt, Crtc as CrtcId, CrtcChange,
     GetCrtcInfoReply, GetOutputInfoReply, GetOutputPrimaryReply, GetScreenResourcesCurrentReply,
@@ -197,14 +197,7 @@ impl Randr {
 
     fn handle_output_change(&self, data: &NotifyData) {
         let OutputChange {
-            timestamp,
-            window,
-            output,
-            crtc,
-            mode,
-            connection: conn,
-            subpixel_order: subp,
-            ..
+            window, output, crtc, mode, connection: conn, subpixel_order: subp, ..
         } = data.as_oc();
 
         debug!("OutputChangeNotify for output: {output}");
@@ -248,16 +241,15 @@ impl Randr {
         output_info.subpixel_order = subp;
 
         // Update modes (there can be new and/or deleted modes)
-        let modes = get_screen_resources_current(&self.conn, self.root)
+        let res = get_screen_resources_current(&self.conn, self.root)
             .expect("should send screen resources request")
             .reply()
-            .expect("should get screen resources reply")
-            .modes;
-        *self.modes.borrow_mut() = modes.iter().map(|m| (m.id, *m)).collect::<HashMap<_, _>>();
+            .expect("should get screen resources reply");
+        *self.modes.borrow_mut() = res.modes.iter().map(|m| (m.id, *m)).collect::<HashMap<_, _>>();
 
         // Update output modes
         if mode > 0 {
-            output_info.modes = get_output_info(&self.conn, output, timestamp)
+            output_info.modes = get_output_info(&self.conn, output, res.config_timestamp)
                 .expect("should request output info")
                 .reply()
                 .expect("should get output info reply")
@@ -445,15 +437,25 @@ impl Randr {
             .min_height
             .max(self.screen_size_range.max_height.min(bounds.height()));
 
-        let ppi = primary.map_or(f64::from(PPI_DEFAULT), Output::ppi);
-        debug!("Using PPI {ppi:.2}");
+        let mut mwidth = 0;
+        let mut mheight = 0;
 
-        ScreenSize {
-            width,
-            height,
-            mwidth: ((f64::from(MM_PER_INCH) * f64::from(width)) / ppi).round().max(1.) as u16,
-            mheight: ((f64::from(MM_PER_INCH) * f64::from(height)) / ppi).round().max(1.) as u16,
+        if outputs.n_items() == 1 {
+            let o = outputs.item(0).and_downcast::<Output>().unwrap();
+            if let (Ok(w), Ok(h)) = (u16::try_from(o.width()), u16::try_from(o.height())) {
+                mwidth = w;
+                mheight = h;
+            }
         }
+
+        if mwidth == 0 || mheight == 0 {
+            let ppi = primary.map_or(f64::from(PPI_DEFAULT), Output::ppi);
+            debug!("Using PPI {ppi:.2}");
+            mwidth = ((f64::from(MM_PER_INCH) * f64::from(width)) / ppi).round().max(1.) as u16;
+            mheight = ((f64::from(MM_PER_INCH) * f64::from(height)) / ppi).round().max(1.) as u16;
+        }
+
+        ScreenSize { width, height, mwidth, mheight }
     }
 
     fn get_valid_empty_crtc(&self, output_id: OutputId) -> Option<CrtcId> {
@@ -606,7 +608,7 @@ impl Randr {
 
 pub fn check() -> Result<(), Box<dyn Error>> {
     if let Ok((conn, _)) = x11rb::connect(DISPLAY) {
-        let extension = query_extension(&conn, "RANDR".as_bytes())?.reply()?;
+        let extension = query_extension(&conn, randr::X11_EXTENSION_NAME.as_bytes())?.reply()?;
         if extension.present {
             let Version { major_version: major, minor_version: minor, .. } =
                 query_version(&conn, CLIENT_VERSION[0], CLIENT_VERSION[1])?.reply()?;
@@ -628,10 +630,7 @@ pub fn run_event_loop(sender: Sender<Event>) -> Result<JoinHandle<()>, Box<dyn E
 
     conn.randr_select_input(
         root,
-        NotifyMask::SCREEN_CHANGE
-            | NotifyMask::RESOURCE_CHANGE
-            | NotifyMask::CRTC_CHANGE
-            | NotifyMask::OUTPUT_CHANGE,
+        NotifyMask::SCREEN_CHANGE | NotifyMask::CRTC_CHANGE | NotifyMask::OUTPUT_CHANGE,
     )?
     .check()?;
 
