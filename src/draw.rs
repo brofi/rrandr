@@ -20,7 +20,9 @@ pub struct DrawContext {
 }
 
 impl DrawContext {
-    pub fn new(cairo: Context, config: Config) -> Self { DrawContext { cairo, config } }
+    pub fn new(cairo: &Context, config: &Config) -> Self {
+        DrawContext { cairo: cairo.clone(), config: config.clone() }
+    }
 
     pub fn draw_screen(&self, rect: [f64; 4]) {
         self.cairo.rectangle(

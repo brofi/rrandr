@@ -3,18 +3,23 @@ use glib::{wrapper, ExitCode, Object};
 use gtk::prelude::ApplicationExtManual;
 use gtk::{gio, glib};
 
-const APP_ID: &str = "com.github.brofi.rrandr";
+pub const APP_ID: &str = "com.github.brofi.rrandr";
+pub const APP_NAME: &str = "rrandr";
 
 mod imp {
-    use glib::object_subclass;
+
+    use std::rc::Rc;
+
     use glib::subclass::object::ObjectImpl;
     use glib::subclass::types::{ObjectSubclass, ObjectSubclassExt};
+    use glib::{clone, object_subclass};
     use gtk::glib;
     use gtk::prelude::{GtkApplicationExt, GtkWindowExt};
     use gtk::subclass::application::GtkApplicationImpl;
     use gtk::subclass::prelude::{ApplicationImpl, ApplicationImplExt};
     use log::error;
 
+    use crate::config::Config;
     use crate::window::Window;
     use crate::x11::popup::show_popup_windows;
 
@@ -42,12 +47,18 @@ mod imp {
         }
 
         fn activate(&self) {
+            let cfg = Rc::new(Config::new());
             let window = Window::new(&*self.obj());
-            window.connect_identify(|_, btn| {
-                if let Err(e) = show_popup_windows(btn) {
-                    error!("Failed to identify outputs: {e:?}");
+            window.set_config(&cfg);
+            window.connect_identify(clone!(
+                #[strong]
+                cfg,
+                move |_, btn| {
+                    if let Err(e) = show_popup_windows(&cfg, btn) {
+                        error!("Failed to identify outputs: {e:?}");
+                    };
                 }
-            });
+            ));
             window.present();
         }
     }

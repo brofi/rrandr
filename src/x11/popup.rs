@@ -118,7 +118,7 @@ fn create_popup_windows(
             let surface =
                 create_popup_surface(conn, screen_num, wid, i32::from(width), i32::from(height))?;
             let cr = cairo::Context::new(&surface)?;
-            let context = DrawContext::new(cr, config.clone());
+            let context = DrawContext::new(&cr, config);
             context.draw_popup(&rect, &mut desc, &String::from_utf8_lossy(&output_info.name))?;
             surface.flush();
             windows.insert(wid, surface);
@@ -127,9 +127,9 @@ fn create_popup_windows(
     Ok(windows)
 }
 
-pub fn show_popup_windows(btn: &Button) -> Result<(), Box<dyn Error>> {
+pub fn show_popup_windows(cfg: &Config, btn: &Button) -> Result<(), Box<dyn Error>> {
     let (conn, screen_num) = XCBConnection::connect(None)?;
-    let popups = create_popup_windows(&Config::default(), &conn, screen_num)?;
+    let popups = create_popup_windows(cfg, &conn, screen_num)?;
     conn.flush()?;
 
     spawn_future_local({

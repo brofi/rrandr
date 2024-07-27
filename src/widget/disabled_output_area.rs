@@ -4,6 +4,7 @@ use gtk::prelude::{ObjectExt, WidgetExt};
 use gtk::{glib, Accessible, Buildable, ConstraintTarget, DrawingArea, Widget};
 
 use super::details_box::Update;
+use crate::config::Config;
 use crate::data::output::Output;
 use crate::data::outputs::Outputs;
 
@@ -40,9 +41,9 @@ mod imp {
     #[derive(Default, Properties)]
     #[properties(wrapper_type = super::DisabledOutputArea)]
     pub struct DisabledOutputArea {
+        pub(super) config: RefCell<Config>,
         #[property(get, set = Self::set_outputs)]
         outputs: RefCell<Outputs>,
-        config: Config,
         pub(super) selected_output: RefCell<Option<Output>>,
         is_dragging: Cell<bool>,
     }
@@ -142,7 +143,7 @@ mod imp {
         fn on_draw(&self, cr: &cairo::Context, width: i32, height: i32) {
             let outputs = self.outputs.borrow();
             let selected = self.selected_output.borrow();
-            let context = DrawContext::new(cr.clone(), self.config.clone());
+            let context = DrawContext::new(cr, &self.config.borrow());
             let [width, height] = Self::get_output_dim(width, height, outputs.n_items() as usize);
             let mut j: usize = 0; // separate index for closing the gaps
             for o in outputs.iter::<Output>().map(Result::unwrap) {
@@ -220,13 +221,9 @@ mod imp {
             if let Some(o) = self.get_output_at(x, y, width, height) {
                 let [width, height] =
                     Self::get_output_dim(width, height, outputs.n_items() as usize);
-                if let Ok(icon) = Self::create_drag_icon(
-                    &self.config,
-                    width,
-                    height,
-                    &o.name(),
-                    o.product_name().as_deref(),
-                ) {
+                if let Ok(icon) =
+                    self.create_drag_icon(width, height, &o.name(), o.product_name().as_deref())
+                {
                     let [_, oy] =
                         Self::get_output_pos(outputs.position(&o).unwrap() as usize, height);
                     ds.set_icon(Some(&icon), x as i32, (y - f64::from(oy)) as i32);
@@ -254,7 +251,7 @@ mod imp {
         }
 
         fn create_drag_icon(
-            config: &Config,
+            &self,
             width: u16,
             height: u16,
             name: &str,
@@ -267,7 +264,7 @@ mod imp {
             )?;
             let cr = cairo::Context::new(&surface)?;
             let rect = [0., 0., f64::from(width), f64::from(height)];
-            let context = DrawContext::new(cr, config.clone());
+            let context = DrawContext::new(&cr, &self.config.borrow());
             context.draw_output(rect);
             context.draw_output_label(rect, name, product_name);
             drop(context);
@@ -308,6 +305,8 @@ wrapper! {
 
 impl DisabledOutputArea {
     pub fn new(outputs: &Outputs) -> Self { Object::builder().property("outputs", outputs).build() }
+
+    pub fn set_config(&self, cfg: &Config) { self.imp().config.replace(cfg.clone()); }
 
     pub fn connect_output_selected(&self, callback: impl Fn(&Self, &Output) + 'static) {
         self.connect_closure(

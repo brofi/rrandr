@@ -8,6 +8,8 @@ use gtk::{
     Native, Root, ShortcutManager, Widget,
 };
 
+use crate::config::Config;
+
 pub const PADDING: u16 = 12;
 pub const SPACING: u16 = 6;
 
@@ -384,6 +386,12 @@ wrapper! {
 impl Window {
     pub fn new(app: &impl IsA<Application>) -> Self {
         Object::builder().property("application", app).build()
+    }
+
+    pub fn set_config(&self, cfg: &Config) {
+        let imp = self.imp();
+        imp.enabled_area.set_config(cfg);
+        imp.disabled_area.set_config(cfg);
     }
 
     pub fn connect_identify(&self, callback: impl Fn(&Self, &Button) + 'static) {

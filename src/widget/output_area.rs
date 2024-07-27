@@ -6,6 +6,7 @@ use gtk::subclass::drawing_area::DrawingAreaImpl;
 use gtk::{glib, Accessible, Buildable, ConstraintTarget, DrawingArea, Widget};
 
 use super::details_box::Update;
+use crate::config::Config;
 use crate::data::output::Output;
 
 mod imp {
@@ -42,9 +43,9 @@ mod imp {
     #[derive(Default, Properties)]
     #[properties(wrapper_type = super::OutputArea)]
     pub struct OutputArea {
+        pub(super) config: RefCell<Config>,
         #[property(get, set = Self::set_outputs)]
         outputs: RefCell<Outputs>,
-        config: Config,
         pub(super) screen_max_width: Cell<u16>,
         pub(super) screen_max_height: Cell<u16>,
         pub(super) selected_output: RefCell<Option<Output>>,
@@ -231,7 +232,7 @@ mod imp {
             let bounds = self.bounds.borrow();
             let scale = self.scale.get();
             let translate = self.translate.get();
-            let context = DrawContext::new(cr.clone(), self.config.clone());
+            let context = DrawContext::new(cr, &self.config.borrow());
 
             let screen_rect = bounds.transform(scale, translate);
             context.draw_screen(screen_rect);
@@ -636,6 +637,10 @@ wrapper! {
 
 impl OutputArea {
     pub fn new() -> Self { Object::new() }
+
+    pub fn set_config(&self, cfg: &Config) {
+        self.imp().config.replace(cfg.clone());
+    }
 
     pub fn set_screen_max_width(&self, screen_max_width: u16) {
         let imp = self.imp();
