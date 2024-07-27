@@ -786,3 +786,22 @@ fn handle_no_reply_error(
     }
     error
 }
+
+pub fn _gen_xrandr_command(outputs: &Outputs) -> String {
+    let mut cmd = "xrandr".to_owned();
+    for output in outputs.iter::<Output>().map(Result::unwrap) {
+        cmd += &format!(" --output {}", &output.name());
+        if let Some(mode) = output.mode() {
+            cmd += &format!(" --mode {}x{}", mode.width(), mode.height());
+            cmd += &format!(" --rate {:.2}", mode.refresh());
+            cmd += &format!(" --pos {}x{}", output.x(), output.y());
+            if output.primary() {
+                cmd += " --primary";
+                cmd += &format!(" --dpi {}", &output.name());
+            }
+        } else {
+            cmd += " --off";
+        }
+    }
+    cmd
+}
