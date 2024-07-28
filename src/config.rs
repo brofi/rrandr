@@ -15,6 +15,7 @@ use crate::color::Color;
 #[serde(default)]
 pub struct Config {
     pub colors: Colors,
+    pub snap_strength: Option<f64>,
     #[serde(skip)]
     settings: Option<Settings>,
 }
