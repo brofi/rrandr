@@ -1,14 +1,12 @@
 use gio::{ActionEntry, ActionGroup, ActionMap};
 use glib::object::IsA;
 use glib::subclass::types::ObjectSubclassIsExt;
-use glib::{closure_local, wrapper, Object};
-use gtk::prelude::{ActionMapExtManual, ObjectExt};
+use glib::{wrapper, Object};
+use gtk::prelude::ActionMapExtManual;
 use gtk::{
-    gio, glib, Accessible, Application, ApplicationWindow, Buildable, Button, ConstraintTarget,
-    Native, Root, ShortcutManager, Widget,
+    gio, glib, Accessible, Application, ApplicationWindow, Buildable, ConstraintTarget, Native,
+    Root, ShortcutManager, Widget,
 };
-
-use crate::config::Config;
 
 pub const PADDING: u16 = 12;
 pub const SPACING: u16 = 6;
@@ -16,19 +14,15 @@ pub const SPACING: u16 = 6;
 mod imp {
     use std::cell::{Cell, RefCell};
     use std::rc::Rc;
-    use std::sync::OnceLock;
 
     use gdk::{Key, ModifierType, Texture};
     use gettextrs::{gettext, ngettext};
     use glib::object::CastNone;
     use glib::subclass::object::{ObjectImpl, ObjectImplExt};
     use glib::subclass::types::{ObjectSubclass, ObjectSubclassExt};
-    use glib::subclass::{InitializingObject, Signal};
-    use glib::types::StaticType;
+    use glib::subclass::InitializingObject;
     use glib::{clone, object_subclass, spawn_future_local, timeout_future_seconds, Propagation};
-    use gtk::prelude::{
-        GtkWindowExt, ListModelExt, ListModelExtManual, ObjectExt, StaticTypeExt, WidgetExt,
-    };
+    use gtk::prelude::{GtkWindowExt, ListModelExt, ListModelExtManual, StaticTypeExt, WidgetExt};
     use gtk::subclass::application_window::ApplicationWindowImpl;
     use gtk::subclass::widget::{
         CompositeTemplateCallbacksClass, CompositeTemplateClass, CompositeTemplateInitializingExt,
@@ -39,8 +33,9 @@ mod imp {
         glib, template_callbacks, AboutDialog, ApplicationWindow, Button, CompositeTemplate,
         EventControllerKey, FlowBox, License, Paned, TemplateChild,
     };
-    use log::warn;
+    use log::{error, warn};
 
+    use crate::config::Config;
     use crate::data::output::Output;
     use crate::data::outputs::Outputs;
     use crate::widget::details_box::{DetailsBox, Update};
@@ -48,6 +43,7 @@ mod imp {
     use crate::widget::disabled_output_area::DisabledOutputArea;
     use crate::widget::icon_text::IconText;
     use crate::widget::output_area::OutputArea;
+    use crate::x11::popup::show_popup_windows;
     use crate::x11::randr::{self, Randr, ScreenSizeRange, Snapshot};
 
     const CONFIRM_DIALOG_SHOW_SECS: u8 = 15;
@@ -55,6 +51,7 @@ mod imp {
     #[derive(CompositeTemplate, Default)]
     #[template(resource = "/com/github/brofi/rrandr/window.ui")]
     pub struct Window {
+        config: RefCell<Config>,
         randr: Rc<Randr>,
         snapshot: RefCell<Option<Snapshot>>,
         #[template_child]
@@ -87,18 +84,12 @@ mod imp {
     }
 
     impl ObjectImpl for Window {
-        fn signals() -> &'static [Signal] {
-            static SIGNALS: OnceLock<Vec<Signal>> = OnceLock::new();
-            SIGNALS.get_or_init(|| {
-                vec![Signal::builder("identify").param_types([Button::static_type()]).build()]
-            })
-        }
-
         fn constructed(&self) {
             self.parent_constructed();
             let obj = self.obj();
             obj.setup_actions();
 
+            self.set_config();
             self.set_screen_max_size();
             self.set_outputs();
 
@@ -137,6 +128,13 @@ mod imp {
 
     #[template_callbacks]
     impl Window {
+        pub fn set_config(&self) {
+            let cfg = Config::new(Some(self.obj().settings()));
+            self.enabled_area.set_config(&cfg);
+            self.disabled_area.set_config(&cfg);
+            self.config.replace(cfg);
+        }
+
         fn set_screen_max_size(&self) {
             let ScreenSizeRange { max_width, max_height, .. } = self.randr.screen_size_range();
             self.enabled_area.set_screen_max_width(max_width);
@@ -310,7 +308,9 @@ mod imp {
 
         #[template_callback]
         fn on_identify_clicked(&self, btn: &Button) {
-            self.obj().emit_by_name::<()>("identify", &[&btn]);
+            if let Err(e) = show_popup_windows(&self.config.borrow(), btn) {
+                error!("Failed to identify outputs: {e:?}");
+            }
         }
 
         #[template_callback]
@@ -386,20 +386,6 @@ wrapper! {
 impl Window {
     pub fn new(app: &impl IsA<Application>) -> Self {
         Object::builder().property("application", app).build()
-    }
-
-    pub fn set_config(&self, cfg: &Config) {
-        let imp = self.imp();
-        imp.enabled_area.set_config(cfg);
-        imp.disabled_area.set_config(cfg);
-    }
-
-    pub fn connect_identify(&self, callback: impl Fn(&Self, &Button) + 'static) {
-        self.connect_closure(
-            "identify",
-            false,
-            closure_local!(|window, btn| callback(window, btn)),
-        );
     }
 
     fn setup_actions(&self) {

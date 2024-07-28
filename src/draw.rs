@@ -31,7 +31,7 @@ impl DrawContext {
             rect[2] + SCREEN_LINE_WIDTH,
             rect[3] + SCREEN_LINE_WIDTH,
         );
-        self.cairo.set_source_color(&self.config.colors.bounds.clone().into());
+        self.cairo.set_source_color(&self.config.bounds_color().into());
         self.cairo.set_line_width(SCREEN_LINE_WIDTH);
         self.cairo.set_dash(&[4.], 1.);
         self.cairo.stroke().unwrap();
@@ -39,7 +39,7 @@ impl DrawContext {
 
     pub fn draw_output(&self, rect: [f64; 4]) {
         self.cairo.rectangle(rect[0], rect[1], rect[2], rect[3]);
-        self.cairo.set_source_color(&self.config.colors.output.to_rgba(0.75));
+        self.cairo.set_source_color(&self.config.output_color().to_rgba(0.75));
         self.cairo.fill().unwrap();
     }
 
@@ -50,7 +50,7 @@ impl DrawContext {
             rect[2] - SELECTION_LINE_WIDTH,
             rect[3] - SELECTION_LINE_WIDTH,
         );
-        self.cairo.set_source_color(&self.config.colors.selection.clone().into());
+        self.cairo.set_source_color(&self.config.selection_color().into());
         self.cairo.set_line_width(SELECTION_LINE_WIDTH);
         self.cairo.set_dash(&[1., 0.], 0.);
         self.cairo.stroke().unwrap();
@@ -72,7 +72,7 @@ impl DrawContext {
         if f64::from(ps.0) <= rect[2] - f64::from(PADDING) * 2.
             && f64::from(ps.1) <= rect[3] - f64::from(PADDING) * 2.
         {
-            self.cairo.set_source_color(&self.config.colors.text.clone().into());
+            self.cairo.set_source_color(&self.config.text_color().into());
             self.cairo.move_to(rect[0] + rect[2] / 2., rect[1] + rect[3] / 2.);
             self.cairo.rel_move_to(f64::from(-ps.0) / 2., f64::from(-ps.1) / 2.);
             show_layout(&self.cairo, &layout);
@@ -86,11 +86,11 @@ impl DrawContext {
         desc: &mut FontDescription,
         text: &str,
     ) -> Result<(), cairo::Error> {
-        self.cairo.set_source_color(&self.config.colors.output.to_rgba(0.75));
+        self.cairo.set_source_color(&self.config.output_color().to_rgba(0.75));
         self.cairo.rectangle(0., 0., f64::from(rect.width()), f64::from(rect.height()));
         self.cairo.fill()?;
 
-        self.cairo.set_source_color(&self.config.colors.text.clone().into());
+        self.cairo.set_source_color(&self.config.text_color().into());
         let layout =
             self.pango_layout_popup(rect.width(), rect.height(), POPUP_WINDOW_PAD, desc, text);
         let (w, h) = layout.pixel_size();
