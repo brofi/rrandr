@@ -14,8 +14,10 @@ use crate::color::Color;
 #[derive(Clone, Default, Deserialize, Serialize)]
 #[serde(default)]
 pub struct Config {
-    pub colors: Colors,
     pub snap_strength: Option<f64>,
+    pub font: Font,
+    pub colors: Colors,
+    pub popup: Popup,
     #[serde(skip)]
     settings: Option<Settings>,
 }
@@ -73,6 +75,17 @@ impl Config {
     }
 }
 
+#[derive(Clone, Deserialize, Serialize)]
+#[serde(default)]
+pub struct Font {
+    pub family: String,
+    pub size: u16,
+}
+
+impl Default for Font {
+    fn default() -> Self { Self { family: "monospace".to_owned(), size: 12 } }
+}
+
 #[derive(Clone, Default, Deserialize, Serialize)]
 #[serde(default)]
 pub struct Colors {
@@ -118,4 +131,31 @@ impl Default for DarkColors {
             selection: Color::from_str("#1b68c6").unwrap_or_default(),
         }
     }
+}
+
+#[derive(Clone, Deserialize, Serialize)]
+#[serde(default)]
+pub struct Popup {
+    pub padding: u16,
+    pub spacing: u16,
+    pub ratio: f64,
+    pub show_secs: f32,
+    pub font: PopupFont,
+}
+
+impl Default for Popup {
+    fn default() -> Self {
+        Self { padding: 5, spacing: 10, ratio: 1. / 8., show_secs: 2.5, font: PopupFont::default() }
+    }
+}
+
+#[derive(Clone, Deserialize, Serialize)]
+#[serde(default)]
+pub struct PopupFont {
+    pub family: String,
+    pub size: Option<u16>,
+}
+
+impl Default for PopupFont {
+    fn default() -> Self { Self { family: "Sans".to_owned(), size: None } }
 }

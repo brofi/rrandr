@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::error::Error;
+use std::i16;
 use std::time::{Duration, Instant};
 
 use cairo::ffi::cairo_device_finish;
@@ -9,7 +10,6 @@ use glib::spawn_future_local;
 use gtk::prelude::WidgetExt;
 use gtk::{gio, glib, Button};
 use log::error;
-use pango::{FontDescription, Weight};
 use x11rb::connection::Connection as XConnection;
 use x11rb::errors::{ReplyError, ReplyOrIdError};
 use x11rb::protocol::randr::{
@@ -26,10 +26,6 @@ use super::x_error_to_string;
 use crate::config::Config;
 use crate::draw::DrawContext;
 use crate::math::Rect;
-
-pub const POPUP_WINDOW_PAD: f64 = 20.;
-const POPUP_OUTPUT_RATIO: f64 = 1. / 8.;
-const POPUP_SHOW_SECS: f32 = 2.5;
 
 fn create_popup_window(
     conn: &impl XConnection,
@@ -99,27 +95,47 @@ fn create_popup_windows(
     let screen = &conn.setup().roots[screen_num];
     let res = get_screen_resources_current(&conn, screen.root)?.reply()?;
     let rr_modes: HashMap<ModeId, &ModeInfo> = res.modes.iter().map(|m| (m.id, m)).collect();
-    let mut desc = FontDescription::new();
-    desc.set_family("Sans");
-    desc.set_weight(Weight::Bold);
+
     for output in &res.outputs {
         let output_info = get_output_info(conn, *output, res.timestamp)?.reply()?;
         if output_info.crtc > 0 {
+            let ratio = config.popup.ratio;
             let crtc_info = get_crtc_info(conn, output_info.crtc, res.timestamp)?.reply()?;
             let mode = rr_modes[&crtc_info.mode];
-            let width = (f64::from(mode.width) * POPUP_OUTPUT_RATIO).round() as u16;
-            let height = (f64::from(mode.height) * POPUP_OUTPUT_RATIO).round() as u16;
-            let x = (f64::from(crtc_info.x) + POPUP_WINDOW_PAD).round() as i16;
-            let y = (f64::from(crtc_info.y) - POPUP_WINDOW_PAD + f64::from(mode.height)
-                - f64::from(height))
-            .round() as i16;
+
+            let spacing_x = ((f64::from(config.popup.spacing) * f64::from(mode.width)
+                / f64::from(output_info.mm_width))
+            .round() as u16)
+                .min(mode.width / 2 - 1);
+            let spacing_y = ((f64::from(config.popup.spacing) * f64::from(mode.height)
+                / f64::from(output_info.mm_height))
+            .round() as u16)
+                .min(mode.height / 2 - 1);
+
+            let width = (f64::from(mode.width) * ratio)
+                .round()
+                .min(f64::from(mode.width - (2 * spacing_x)))
+                .max(1.) as u16;
+            let height = (f64::from(mode.height) * ratio)
+                .round()
+                .min(f64::from(mode.height - (2 * spacing_y)))
+                .max(1.) as u16;
+            let x = (i32::from(crtc_info.x) + i32::from(spacing_x)).try_into().unwrap_or(i16::MAX);
+            let y = (i32::from(crtc_info.y) + i32::from(mode.height)
+                - (i32::from(spacing_y) + i32::from(height)))
+            .try_into()
+            .unwrap_or(i16::MAX);
+
             let rect = Rect::new(x, y, width, height);
             let wid = create_popup_window(&conn, screen_num, &rect)?;
             let surface =
                 create_popup_surface(conn, screen_num, wid, i32::from(width), i32::from(height))?;
             let cr = cairo::Context::new(&surface)?;
             let context = DrawContext::new(&cr, config);
-            context.draw_popup(&rect, &mut desc, &String::from_utf8_lossy(&output_info.name))?;
+
+            let pad = f64::from(config.popup.padding) * f64::from(mode.height)
+                / f64::from(output_info.mm_height);
+            context.draw_popup(&rect, pad, &String::from_utf8_lossy(&output_info.name))?;
             surface.flush();
             windows.insert(wid, surface);
         }
@@ -132,11 +148,12 @@ pub fn show_popup_windows(cfg: &Config, btn: &Button) -> Result<(), Box<dyn Erro
     let popups = create_popup_windows(cfg, &conn, screen_num)?;
     conn.flush()?;
 
+    let show_secs = cfg.popup.show_secs;
     spawn_future_local({
         let btn = btn.clone();
         async move {
             btn.set_sensitive(false);
-            spawn_blocking(move || -> Result<(), ReplyError> { loop_x(&conn, POPUP_SHOW_SECS) })
+            spawn_blocking(move || -> Result<(), ReplyError> { loop_x(&conn, show_secs) })
                 .await
                 .expect("future awaited sucessfully")
                 .expect("show popups finished sucessfully");
