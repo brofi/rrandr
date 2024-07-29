@@ -15,6 +15,7 @@ mod imp {
     use std::cell::{Cell, RefCell};
     use std::rc::Rc;
 
+    use config::Config;
     use gdk::{Key, ModifierType, Texture};
     use gettextrs::{gettext, ngettext};
     use glib::object::CastNone;
@@ -35,7 +36,7 @@ mod imp {
     };
     use log::{error, warn};
 
-    use crate::config::Config;
+    use crate::app::APP_NAME;
     use crate::data::output::Output;
     use crate::data::outputs::Outputs;
     use crate::widget::details_box::{DetailsBox, Update};
@@ -129,7 +130,7 @@ mod imp {
     #[template_callbacks]
     impl Window {
         pub fn set_config(&self) {
-            let cfg = Config::new(Some(self.obj().settings()));
+            let cfg = Config::new(APP_NAME, Some(self.obj().settings()));
             self.enabled_area.set_config(&cfg);
             self.disabled_area.set_config(&cfg);
             self.config.replace(cfg);

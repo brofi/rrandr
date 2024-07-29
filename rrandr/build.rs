@@ -1,9 +1,11 @@
 use core::panic;
 use std::env::var;
-use std::fs::{create_dir_all, File};
+use std::fs::{self, create_dir_all, File};
 use std::io::{ErrorKind, Read};
 use std::path::Path;
 use std::process::Command;
+
+use config::Config;
 
 fn main() {
     glib_build_tools::compile_resources(
@@ -21,6 +23,7 @@ fn main() {
         }
     );
     gen_translations();
+    gen_config();
 }
 
 fn copyright_notice() -> String {
@@ -82,5 +85,11 @@ fn check_cmd(cmd: &mut Command) {
             ErrorKind::NotFound => panic!("{prog} not available"),
             _ => panic!("{prog} failed to run"),
         },
+    }
+}
+
+fn gen_config() {
+    if let Ok(contents) = toml::to_string(&Config::default()) {
+        fs::write(Path::new("src/res/rrandr.toml"), contents).expect("should write default config");
     }
 }

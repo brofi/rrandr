@@ -1,3 +1,5 @@
+mod color;
+
 use std::error::Error;
 use std::fs;
 use std::path::PathBuf;
@@ -8,7 +10,6 @@ use gtk::{glib, Settings};
 use log::{info, warn};
 use serde::{Deserialize, Serialize};
 
-use crate::app::APP_NAME;
 use crate::color::Color;
 
 #[derive(Clone, Deserialize, Serialize)]
@@ -59,9 +60,9 @@ impl Config {
 
     color!(selection_color, selection);
 
-    pub fn new(settings: Option<Settings>) -> Self {
+    pub fn new(app_name: &str, settings: Option<Settings>) -> Self {
         let mut config = Config::default();
-        if let Some(cfg) = Self::find_config() {
+        if let Some(cfg) = Self::find_config(app_name) {
             if let Ok(cfg) = Self::parse_config(cfg) {
                 config = cfg;
             } else {
@@ -78,10 +79,10 @@ impl Config {
         Ok(toml::from_str(&fs::read_to_string(cfg)?)?)
     }
 
-    fn find_config() -> Option<PathBuf> {
-        let cfg = format!("{APP_NAME}.toml");
+    fn find_config(app_name: &str) -> Option<PathBuf> {
+        let cfg = format!("{app_name}.toml");
         let cfgs = [
-            user_config_dir().join(APP_NAME).join(&cfg),
+            user_config_dir().join(app_name).join(&cfg),
             user_config_dir().join(&cfg),
             home_dir().join(&cfg),
         ];

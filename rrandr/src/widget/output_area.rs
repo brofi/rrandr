@@ -1,3 +1,4 @@
+use config::Config;
 use glib::object::ObjectExt;
 use glib::subclass::types::ObjectSubclassIsExt;
 use glib::{closure_local, wrapper, Object};
@@ -6,7 +7,6 @@ use gtk::subclass::drawing_area::DrawingAreaImpl;
 use gtk::{glib, Accessible, Buildable, ConstraintTarget, DrawingArea, Widget};
 
 use super::details_box::Update;
-use crate::config::Config;
 use crate::data::output::Output;
 
 mod imp {
@@ -14,6 +14,7 @@ mod imp {
     use std::collections::HashMap;
     use std::sync::OnceLock;
 
+    use config::Config;
     use gdk::{DragAction, Key, ModifierType};
     use glib::subclass::object::{ObjectImpl, ObjectImplExt};
     use glib::subclass::Signal;
@@ -30,7 +31,6 @@ mod imp {
         EventControllerScroll, EventControllerScrollFlags, GestureClick, GestureDrag,
     };
 
-    use crate::config::Config;
     use crate::data::output::Output;
     use crate::data::outputs::Outputs;
     use crate::draw::{DrawContext, SCREEN_LINE_WIDTH};

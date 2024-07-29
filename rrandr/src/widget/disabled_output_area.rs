@@ -1,10 +1,10 @@
+use config::Config;
 use glib::subclass::types::ObjectSubclassIsExt;
 use glib::{closure_local, wrapper, Object};
 use gtk::prelude::{ObjectExt, WidgetExt};
 use gtk::{glib, Accessible, Buildable, ConstraintTarget, DrawingArea, Widget};
 
 use super::details_box::Update;
-use crate::config::Config;
 use crate::data::output::Output;
 use crate::data::outputs::Outputs;
 
@@ -13,6 +13,7 @@ mod imp {
     use std::error::Error;
     use std::sync::OnceLock;
 
+    use config::Config;
     use gdk::{ContentProvider, Drag, DragAction, MemoryFormat, MemoryTexture, Paintable};
     use glib::object::IsA;
     use glib::subclass::object::{ObjectImpl, ObjectImplExt};
@@ -31,7 +32,6 @@ mod imp {
         glib, DragSource, DrawingArea, DropControllerMotion, EventControllerMotion, GestureClick,
     };
 
-    use crate::config::Config;
     use crate::data::output::Output;
     use crate::data::outputs::Outputs;
     use crate::draw::DrawContext;

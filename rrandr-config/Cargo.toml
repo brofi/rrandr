@@ -1,0 +1,16 @@
+[package]
+name = "rrandr-config"
+version = "0.1.0"
+authors = ["Andreas Becker <brofi.archlinux@gmail.com>"]
+edition = "2021"
+description = "RRandR configuration"
+documentation = "https://github.com/brofi/rrandr"
+repository = "https://github.com/brofi/rrandr"
+license = "GPL-3.0-or-later"
+
+[dependencies]
+gdk = { version = "0.9.0", package = "gdk4" }
+gtk = { version = "0.9.0", package = "gtk4" }
+log = "0.4.22"
+serde = { version = "1.0.203", features = ["derive"] }
+toml = "0.8.14"

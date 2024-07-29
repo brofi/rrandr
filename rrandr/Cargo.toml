@@ -1,0 +1,35 @@
+[package]
+name = "rrandr"
+version = "0.2.0"
+authors = ["Andreas Becker <brofi.archlinux@gmail.com>"]
+edition = "2021"
+description = "A graphical interface to the RandR X Window System extension."
+documentation = "https://github.com/brofi/rrandr"
+repository = "https://github.com/brofi/rrandr"
+license = "GPL-3.0-or-later"
+keywords = ["RandR", "X11", "X Window System"]
+categories = ["gui", "config"]
+
+[dependencies]
+async-channel = "2.3.1"
+cairo-rs = { version = "0.20.0", features = ["xcb"] }
+config = { path = "../rrandr-config", package = "rrandr-config" }
+env_logger = "0.11.3"
+gdk = { version = "0.9.0", package = "gdk4" }
+gettext-rs = { version = "0.7", features = ["gettext-system"] }
+gtk = { version = "0.9.0", package = "gtk4", features = ["v4_6"] }
+log = "0.4.22"
+pango = "0.20.0"
+pangocairo = "0.20.0"
+x11rb = { version = "0.13.1", features = [
+    "randr",
+    "render",
+    "allow-unsafe-code",
+] }
+
+[build-dependencies]
+config = { path = "../rrandr-config", package = "rrandr-config" }
+glib-build-tools = "0.20.0"
+home = "0.5.9"
+time = "0.3.36"
+toml = "0.8.14"

@@ -1,3 +1,4 @@
 /target
-po/rrandr.pot
+rrandr.pot
+rrandr.toml
 *.log

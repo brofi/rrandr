@@ -1,10 +1,10 @@
 use std::collections::HashMap;
 use std::error::Error;
-use std::i16;
 use std::time::{Duration, Instant};
 
 use cairo::ffi::cairo_device_finish;
 use cairo::{XCBDrawable, XCBSurface};
+use config::Config;
 use gio::spawn_blocking;
 use glib::spawn_future_local;
 use gtk::prelude::WidgetExt;
@@ -23,7 +23,6 @@ use x11rb::x11_utils::Serialize;
 use x11rb::xcb_ffi::XCBConnection;
 
 use super::x_error_to_string;
-use crate::config::Config;
 use crate::draw::DrawContext;
 use crate::math::Rect;
 

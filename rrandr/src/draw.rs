@@ -1,14 +1,12 @@
 #![allow(clippy::module_name_repetitions)]
 
-use std::u16;
-
 use cairo::Context;
+use config::Config;
 use gdk::prelude::GdkCairoContextExt;
 use pango::ffi::PANGO_SCALE;
 use pango::{Alignment, FontDescription, Layout, Weight};
 use pangocairo::functions::{create_layout, show_layout};
 
-use crate::config::Config;
 use crate::math::Rect;
 use crate::window::PADDING;
 

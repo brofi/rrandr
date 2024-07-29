@@ -2,8 +2,6 @@
 // #![warn(clippy::restriction)]
 
 mod app;
-mod color;
-mod config;
 mod data;
 mod draw;
 mod math;
