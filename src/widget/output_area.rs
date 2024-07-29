@@ -38,8 +38,6 @@ mod imp {
     use crate::widget::details_box::Update;
     use crate::window::PADDING;
 
-    const MOVE_DISTANCE: i16 = 10;
-
     #[derive(Default, Properties)]
     #[properties(wrapper_type = super::OutputArea)]
     pub struct OutputArea {
@@ -586,21 +584,22 @@ mod imp {
         ) -> Propagation {
             if let Some(selected) = self.selected_output.borrow().as_ref() {
                 let [x, y] = [selected.x(), selected.y()];
+                let move_dist = self.config.borrow().pos_move_dist;
                 let update_pos = match keyval {
                     Key::Up | Key::k => {
-                        selected.set_y(y - MOVE_DISTANCE);
+                        selected.set_y(y - move_dist);
                         true
                     }
                     Key::Down | Key::j => {
-                        selected.set_y(y + MOVE_DISTANCE);
+                        selected.set_y(y + move_dist);
                         true
                     }
                     Key::Left | Key::h => {
-                        selected.set_x(x - MOVE_DISTANCE);
+                        selected.set_x(x - move_dist);
                         true
                     }
                     Key::Right | Key::l => {
-                        selected.set_x(x + MOVE_DISTANCE);
+                        selected.set_x(x + move_dist);
                         true
                     }
                     _ => false,

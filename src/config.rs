@@ -11,15 +11,29 @@ use serde::{Deserialize, Serialize};
 use crate::app::APP_NAME;
 use crate::color::Color;
 
-#[derive(Clone, Default, Deserialize, Serialize)]
+#[derive(Clone, Deserialize, Serialize)]
 #[serde(default)]
 pub struct Config {
     pub snap_strength: Option<f64>,
+    pub pos_move_dist: i16,
     pub font: Font,
     pub colors: Colors,
     pub popup: Popup,
     #[serde(skip)]
     settings: Option<Settings>,
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            snap_strength: None,
+            pos_move_dist: 10,
+            font: Font::default(),
+            colors: Colors::default(),
+            popup: Popup::default(),
+            settings: None,
+        }
+    }
 }
 
 macro_rules! color {
