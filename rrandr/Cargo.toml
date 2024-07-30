@@ -13,7 +13,7 @@ categories = ["gui", "config"]
 [dependencies]
 async-channel = "2.3.1"
 cairo-rs = { version = "0.20.0", features = ["xcb"] }
-config = { path = "../rrandr-config", package = "rrandr-config" }
+config = { path = "../rrandr_config", package = "rrandr_config" }
 env_logger = "0.11.3"
 gdk = { version = "0.9.0", package = "gdk4" }
 gettext-rs = { version = "0.7", features = ["gettext-system"] }
@@ -28,7 +28,7 @@ x11rb = { version = "0.13.1", features = [
 ] }
 
 [build-dependencies]
-config = { path = "../rrandr-config", package = "rrandr-config" }
+config = { path = "../rrandr_config", package = "rrandr_config" }
 glib-build-tools = "0.20.0"
 home = "0.5.9"
 time = "0.3.36"

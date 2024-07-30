@@ -1,5 +1,5 @@
 [package]
-name = "rrandr-config"
+name = "rrandr_config"
 version = "0.1.0"
 authors = ["Andreas Becker <brofi.archlinux@gmail.com>"]
 edition = "2021"

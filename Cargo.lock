@@ -878,14 +878,14 @@ dependencies = [
  "log",
  "pango",
  "pangocairo",
- "rrandr-config",
+ "rrandr_config",
  "time",
  "toml",
  "x11rb",
 ]
 
 [[package]]
-name = "rrandr-config"
+name = "rrandr_config"
 version = "0.1.0"
 dependencies = [
  "gdk4",
