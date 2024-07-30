@@ -108,7 +108,7 @@ impl DrawContext {
         desc.set_family(&self.config.popup.font.family);
         desc.set_weight(Weight::Bold);
 
-        if self.config.popup.font.size.is_some_and(|size| {
+        if self.config.popup.font.size.is_value_and(|size| {
             desc.set_size(i32::from(size) * PANGO_SCALE);
             layout.set_font_description(Some(&desc));
             let (w, h) = layout.pixel_size();

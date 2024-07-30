@@ -1,10 +1,11 @@
-mod color;
+pub mod auto;
+pub mod color;
 
-use std::error::Error;
 use std::fs;
 use std::path::PathBuf;
 use std::str::FromStr;
 
+use auto::Auto;
 use glib::{home_dir, user_config_dir};
 use gtk::{glib, Settings};
 use log::{info, warn};
@@ -15,7 +16,7 @@ use crate::color::Color;
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(default)]
 pub struct Config {
-    pub snap_strength: Option<f64>,
+    pub snap_strength: Auto<f64>,
     pub pos_move_dist: i16,
     pub font: Font,
     pub colors: Colors,
@@ -27,7 +28,7 @@ pub struct Config {
 impl Default for Config {
     fn default() -> Self {
         Self {
-            snap_strength: None,
+            snap_strength: Auto::default(),
             pos_move_dist: 10,
             font: Font::default(),
             colors: Colors::default(),
@@ -37,7 +38,7 @@ impl Default for Config {
     }
 }
 
-macro_rules! color {
+macro_rules! impl_color {
     ($name:ident, $attr:ident) => {
         pub fn $name(&self) -> Color {
             self.settings.as_ref().map_or(self.colors.dark.$attr.clone(), |s| {
@@ -52,31 +53,30 @@ macro_rules! color {
 }
 
 impl Config {
-    color!(text_color, text);
+    impl_color!(text_color, text);
 
-    color!(output_color, output);
+    impl_color!(output_color, output);
 
-    color!(bounds_color, bounds);
+    impl_color!(bounds_color, bounds);
 
-    color!(selection_color, selection);
+    impl_color!(selection_color, selection);
 
     pub fn new(app_name: &str, settings: Option<Settings>) -> Self {
         let mut config = Config::default();
         if let Some(cfg) = Self::find_config(app_name) {
-            if let Ok(cfg) = Self::parse_config(cfg) {
-                config = cfg;
+            if let Ok(cfg) = fs::read_to_string(cfg) {
+                match toml::from_str(&cfg) {
+                    Ok(cfg) => config = cfg,
+                    Err(e) => warn!("Failed to parse config\n{e}"),
+                }
             } else {
-                warn!("Failed to parse config - using default");
+                warn!("Failed to read config");
             }
         } else {
             info!("No config found - using default");
         }
         config.settings = settings;
         config
-    }
-
-    fn parse_config(cfg: PathBuf) -> Result<Config, Box<dyn Error>> {
-        Ok(toml::from_str(&fs::read_to_string(cfg)?)?)
     }
 
     fn find_config(app_name: &str) -> Option<PathBuf> {
@@ -168,9 +168,9 @@ impl Default for Popup {
 #[serde(default)]
 pub struct PopupFont {
     pub family: String,
-    pub size: Option<u16>,
+    pub size: Auto<u16>,
 }
 
 impl Default for PopupFont {
-    fn default() -> Self { Self { family: "Sans".to_owned(), size: None } }
+    fn default() -> Self { Self { family: "Sans".to_owned(), size: Auto::default() } }
 }
