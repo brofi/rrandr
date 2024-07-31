@@ -4,7 +4,7 @@ use cairo::Context;
 use config::Config;
 use gdk::prelude::GdkCairoContextExt;
 use pango::ffi::PANGO_SCALE;
-use pango::{Alignment, FontDescription, Layout, Weight};
+use pango::{Alignment, FontDescription, Layout};
 use pangocairo::functions::{create_layout, show_layout};
 
 use crate::math::Rect;
@@ -64,7 +64,7 @@ impl DrawContext {
 
         let mut desc = FontDescription::new();
         desc.set_family(&self.config.font.family);
-        desc.set_weight(Weight::Bold);
+        desc.set_weight(self.config.font.weight.into());
         desc.set_size(i32::from(self.config.font.size) * PANGO_SCALE);
 
         layout.set_font_description(Some(&desc));
@@ -106,7 +106,7 @@ impl DrawContext {
 
         let mut desc = FontDescription::new();
         desc.set_family(&self.config.popup.font.family);
-        desc.set_weight(Weight::Bold);
+        desc.set_weight(self.config.popup.font.weight.into());
 
         if self.config.popup.font.size.is_value_and(|size| {
             desc.set_size(i32::from(size) * PANGO_SCALE);

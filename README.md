@@ -21,6 +21,7 @@ A graphical interface to the RandR X Window System extension.
 |-|-|-|-|
 | `family` | `String` | `monospace` | Font family |
 | `size` | `Integer` | `12` | Font size in pt |
+| `weight` | `Weight` | `bold` | Font weight |
 
 
 ### `[colors.light]` Output area light theme colors
@@ -56,5 +57,6 @@ A graphical interface to the RandR X Window System extension.
 |-|-|-|-|
 | `family` | `String` | `Sans` | Font family |
 | `size` | `Integer or "auto"` | `auto` | Font size in pt or "auto" |
+| `weight` | `Weight` | `bold` | Font weight |
 
 [//]: # (</mark_config>)

@@ -1,11 +1,13 @@
 pub mod auto;
 pub mod color;
+pub mod font;
 
 use std::fs;
 use std::path::PathBuf;
 use std::str::FromStr;
 
 use auto::Auto;
+use font::{Font, PopupFont};
 use glib::{home_dir, user_config_dir};
 use gtk::{glib, Settings};
 use log::{info, warn};
@@ -101,20 +103,6 @@ impl Config {
     }
 }
 
-#[derive(Clone, Deserialize, Serialize, MarkdownTable)]
-#[serde(default)]
-/// Output area font configuration
-pub struct Font {
-    /// Font family
-    pub family: String,
-    /// Font size in pt
-    pub size: u16,
-}
-
-impl Default for Font {
-    fn default() -> Self { Self { family: "monospace".to_owned(), size: 12 } }
-}
-
 #[derive(Clone, Default, Deserialize, Serialize, MarkdownTable)]
 #[serde(default)]
 /// Output area colors
@@ -195,20 +183,6 @@ impl Default for Popup {
     fn default() -> Self {
         Self { padding: 5, spacing: 10, ratio: 1. / 8., show_secs: 2.5, font: PopupFont::default() }
     }
-}
-
-#[derive(Clone, Deserialize, Serialize, MarkdownTable)]
-#[serde(default)]
-/// Identify popup font configuration
-pub struct PopupFont {
-    /// Font family
-    pub family: String,
-    /// Font size in pt or "auto"
-    pub size: Auto<u16>,
-}
-
-impl Default for PopupFont {
-    fn default() -> Self { Self { family: "Sans".to_owned(), size: Auto::default() } }
 }
 
 pub trait MarkdownTable {
