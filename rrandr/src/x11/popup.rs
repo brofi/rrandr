@@ -9,7 +9,7 @@ use gio::spawn_blocking;
 use glib::spawn_future_local;
 use gtk::prelude::WidgetExt;
 use gtk::{gio, glib, Button};
-use log::error;
+use log::{error, warn};
 use x11rb::connection::Connection as XConnection;
 use x11rb::errors::{ReplyError, ReplyOrIdError};
 use x11rb::protocol::randr::{
@@ -143,19 +143,34 @@ fn create_popup_windows(
 }
 
 pub fn show_popup_windows(cfg: &Config, btn: &Button) -> Result<(), Box<dyn Error>> {
+    let show_secs = cfg.popup.show_secs;
+    if show_secs < 0. {
+        warn!("Negative show duration: {}", show_secs);
+        return Ok(());
+    }
+
     let (conn, screen_num) = XCBConnection::connect(None)?;
     let popups = create_popup_windows(cfg, &conn, screen_num)?;
     conn.flush()?;
 
-    let show_secs = cfg.popup.show_secs;
     spawn_future_local({
         let btn = btn.clone();
         async move {
             btn.set_sensitive(false);
-            spawn_blocking(move || -> Result<(), ReplyError> { loop_x(&conn, show_secs) })
-                .await
-                .expect("future awaited sucessfully")
-                .expect("show popups finished sucessfully");
+            if let Ok(res) =
+                spawn_blocking(move || -> Result<(), ReplyError> { loop_x(&conn, show_secs) }).await
+            {
+                if let Err(e) = res {
+                    error!("Failed to show popups:");
+                    if let ReplyError::X11Error(e) = e {
+                        error!("{}", x_error_to_string(&e));
+                    } else {
+                        error!("Cause: {e:?}");
+                    }
+                }
+            } else {
+                error!("Failed to await future");
+            }
             btn.set_sensitive(true);
             for surface in popups.values() {
                 unsafe { cairo_device_finish(surface.device().unwrap().to_raw_none()) };
@@ -178,7 +193,6 @@ fn loop_x(conn: &XCBConnection, secs: f32) -> Result<(), ReplyError> {
                 }
             }
             Some(Event::Error(e)) => {
-                error!("{}", x_error_to_string(&e));
                 return Err(e.into());
             }
             _ => (),
