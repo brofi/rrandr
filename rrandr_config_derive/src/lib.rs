@@ -1,7 +1,8 @@
 use proc_macro::TokenStream;
 use quote::quote;
 use syn::{
-    parse_macro_input, Attribute, Data, DataStruct, DeriveInput, Expr, Field, Fields, Lit, Meta,
+    parse_macro_input, AngleBracketedGenericArguments, Attribute, Data, DataStruct, DeriveInput,
+    Expr, Field, Fields, GenericArgument, Lit, Meta, PathArguments, PathSegment, Type,
 };
 
 #[proc_macro_derive(MarkdownTable, attributes(table))]
@@ -18,17 +19,31 @@ fn impl_markdown_table(ast: DeriveInput) -> TokenStream {
     let header = String::from("| ") + &header.join(" | ") + " |\n";
     match ast.data {
         Data::Struct(DataStruct { fields: Fields::Named(fields), .. }) => {
-            let rows = fields.named.iter().filter(|&f| !is_skip(f) && !is_table(f)).map(|f| {
-                let attr_name = &f.ident;
-                let ty = &f.ty;
-                let desc = get_doc(&f.attrs).trim().to_owned();
-                quote! { "| `" + stringify!(#attr_name) + "` | `" + stringify!(#ty) + "` | `" + &#name::default().#attr_name.to_string() + "` | " + #desc + " |\n" }
-            }).collect::<Vec<_>>();
+            let rows = fields
+                .named
+                .iter()
+                .filter(|&f| !is_skip(f) && !is_table(f))
+                .map(|f| {
+                    let attr_name = &f.ident;
+                    let ty = ty_to_toml(&f.ty);
+                    let desc = get_doc(&f.attrs).trim().to_owned();
+                    quote! {
+                        "| `" + stringify!(#attr_name)
+                        + "` | `" + #ty
+                        + "` | `" + &#name::default().#attr_name.to_string()
+                        + "` | " + #desc + " |\n"
+                    }
+                })
+                .collect::<Vec<_>>();
 
             let tables = fields.named.iter().filter(|&f| !is_skip(f) && is_table(f)).map(|f| {
                 let attr_name = &f.ident;
                 let ty = &f.ty;
-                quote! { "\n" + #ty::to_markdown_table(&(String::from(key) + if key.is_empty() {""} else {"."} + stringify!(#attr_name)), lvl).as_str() }
+                quote! {
+                    "\n" + #ty::to_markdown_table(&(String::from(key)
+                    + if key.is_empty() {""} else {"."}
+                    + stringify!(#attr_name)), lvl).as_str()
+                }
             });
 
             let body = if rows.len() > 0 {
@@ -87,4 +102,35 @@ fn get_doc(attrs: &[Attribute]) -> String {
         }
     }
     desc
+}
+
+fn ty_to_toml(ty: &Type) -> String {
+    if let Type::Path(ty) = ty {
+        let ty = ty.path.segments.last().expect("should have path segment");
+        if let PathArguments::AngleBracketed(AngleBracketedGenericArguments { args, .. }) =
+            &ty.arguments
+        {
+            if let Some(GenericArgument::Type(gty)) = args.first() {
+                if let Type::Path(gty) = gty {
+                    let gty = gty.path.segments.last().expect("should have path segment");
+                    let ident = ty.ident.to_string();
+                    if ident == "Auto" {
+                        return ty_path_seg_to_toml(gty) + " or \"auto\"";
+                    }
+                }
+            }
+        }
+        return ty_path_seg_to_toml(ty);
+    }
+    String::from("unknown")
+}
+
+fn ty_path_seg_to_toml(seg: &PathSegment) -> String {
+    let ident = seg.ident.to_string();
+    String::from(match ident.as_str() {
+        "i8" | "i16" | "i32" | "i64" | "u8" | "u16" | "u32" | "u64" => "Integer",
+        "f32" | "f64" => "Float",
+        "bool" => "Boolean",
+        _ => &ident,
+    })
 }

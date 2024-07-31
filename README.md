@@ -12,15 +12,15 @@ A graphical interface to the RandR X Window System extension.
 
 | Attribute | Type | Default | Description |
 |-|-|-|-|
-| `snap_strength` | `Auto < f64 >` | `auto` | Snapping strength when dragging outputs or `auto`. High values make it more "sticky", while 0 means no snapping. If left to default `snap_strength = min_size / 6` where `min_side` is the smallest side of any enabled output in px. E.g. when smallest screen resolution is Full HD => `snap_strength = 180`. |
-| `pos_move_dist` | `i16` | `10` | Move distance when moving an output via keybindings |
+| `snap_strength` | `Float or "auto"` | `auto` | Snapping strength when dragging outputs or `auto`. High values make it more "sticky", while 0 means no snapping. If left to default `snap_strength = min_size / 6` where `min_side` is the smallest side of any enabled output in px. E.g. when smallest screen resolution is Full HD => `snap_strength = 180`. |
+| `pos_move_dist` | `Integer` | `10` | Move distance when moving an output via keybindings |
 
 ### `[font]` Output area font configuration
 
 | Attribute | Type | Default | Description |
 |-|-|-|-|
 | `family` | `String` | `monospace` | Font family |
-| `size` | `u16` | `12` | Font size in pt |
+| `size` | `Integer` | `12` | Font size in pt |
 
 
 ### `[colors.light]` Output area light theme colors
@@ -45,16 +45,16 @@ A graphical interface to the RandR X Window System extension.
 
 | Attribute | Type | Default | Description |
 |-|-|-|-|
-| `padding` | `u16` | `5` | Padding in mm |
-| `spacing` | `u16` | `10` | Margin from screen edge in mm |
-| `ratio` | `f64` | `0.125` | Resolution to popup size ratio |
-| `show_secs` | `f32` | `2.5` | Show duration in seconds |
+| `padding` | `Integer` | `5` | Padding in mm |
+| `spacing` | `Integer` | `10` | Margin from screen edge in mm |
+| `ratio` | `Float` | `0.125` | Resolution to popup size ratio |
+| `show_secs` | `Float` | `2.5` | Show duration in seconds |
 
 ### `[popup.font]` Identify popup font configuration
 
 | Attribute | Type | Default | Description |
 |-|-|-|-|
 | `family` | `String` | `Sans` | Font family |
-| `size` | `Auto < u16 >` | `auto` | Font size in pt or "auto" |
+| `size` | `Integer or "auto"` | `auto` | Font size in pt or "auto" |
 
 [//]: # (</mark_config>)
