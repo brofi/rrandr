@@ -3,7 +3,6 @@ use core::fmt;
 use gtk::pango;
 use serde::{Deserialize, Serialize};
 
-use crate::auto::Auto;
 use crate::MarkdownTable;
 
 #[derive(Clone, Deserialize, Serialize, MarkdownTable)]
@@ -20,24 +19,6 @@ pub struct Font {
 
 impl Default for Font {
     fn default() -> Self { Self { family: "monospace".to_owned(), size: 12, weight: Weight::Bold } }
-}
-
-#[derive(Clone, Deserialize, Serialize, MarkdownTable)]
-#[serde(default)]
-/// Identify popup font configuration
-pub struct PopupFont {
-    /// Font family
-    pub family: String,
-    /// Font size in pt or "auto"
-    pub size: Auto<u16>,
-    /// Font weight
-    pub weight: Weight,
-}
-
-impl Default for PopupFont {
-    fn default() -> Self {
-        Self { family: "Sans".to_owned(), size: Auto::default(), weight: Weight::Bold }
-    }
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]

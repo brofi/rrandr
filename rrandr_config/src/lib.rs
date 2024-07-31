@@ -1,16 +1,18 @@
 pub mod auto;
 pub mod color;
 pub mod font;
+pub mod popup;
 
 use std::fs;
 use std::path::PathBuf;
-use std::str::FromStr;
 
 use auto::Auto;
-use font::{Font, PopupFont};
+use color::Colors;
+use font::Font;
 use glib::{home_dir, user_config_dir};
 use gtk::{glib, Settings};
 use log::{info, warn};
+use popup::Popup;
 use rrandr_config_derive::MarkdownTable;
 use serde::{Deserialize, Serialize};
 
@@ -100,88 +102,6 @@ impl Config {
             home_dir().join(&cfg),
         ];
         cfgs.iter().find(|&cfg| cfg.exists()).cloned()
-    }
-}
-
-#[derive(Clone, Default, Deserialize, Serialize, MarkdownTable)]
-#[serde(default)]
-/// Output area colors
-pub struct Colors {
-    #[table]
-    light: LightColors,
-    #[table]
-    dark: DarkColors,
-}
-
-#[derive(Clone, Deserialize, Serialize, MarkdownTable)]
-#[serde(default)]
-/// Output area light theme colors
-pub struct LightColors {
-    /// Output name text color
-    pub text: Color,
-    /// Output background color
-    pub output: Color,
-    /// Screen rectangle color
-    pub bounds: Color,
-    /// Output selection color
-    pub selection: Color,
-}
-
-impl Default for LightColors {
-    fn default() -> Self {
-        Self {
-            text: Color::from_str("#fff").unwrap_or_default(),
-            output: Color::from_str("#3c3c3c").unwrap_or_default(),
-            bounds: Color::from_str("#3c3c3c").unwrap_or_default(),
-            selection: Color::from_str("#3584e4").unwrap_or_default(),
-        }
-    }
-}
-
-#[derive(Clone, Deserialize, Serialize, MarkdownTable)]
-#[serde(default)]
-/// Output area dark theme colors
-pub struct DarkColors {
-    /// Output name text color
-    pub text: Color,
-    /// Output background color
-    pub output: Color,
-    /// Screen rectangle color
-    pub bounds: Color,
-    /// Output selection color
-    pub selection: Color,
-}
-
-impl Default for DarkColors {
-    fn default() -> Self {
-        Self {
-            text: Color::from_str("#000").unwrap_or_default(),
-            output: Color::from_str("#f6f5f4").unwrap_or_default(),
-            bounds: Color::from_str("#f6f5f4").unwrap_or_default(),
-            selection: Color::from_str("#1b68c6").unwrap_or_default(),
-        }
-    }
-}
-
-#[derive(Clone, Deserialize, Serialize, MarkdownTable)]
-#[serde(default)]
-/// Identify popup configuration
-pub struct Popup {
-    /// Padding in mm
-    pub padding: u16,
-    /// Margin from screen edge in mm
-    pub spacing: u16,
-    /// Resolution to popup size ratio
-    pub ratio: f64,
-    /// Show duration in seconds
-    pub show_secs: f32,
-    #[table]
-    pub font: PopupFont,
-}
-
-impl Default for Popup {
-    fn default() -> Self {
-        Self { padding: 5, spacing: 10, ratio: 1. / 8., show_secs: 2.5, font: PopupFont::default() }
     }
 }
 
