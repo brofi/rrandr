@@ -1,4 +1,4 @@
-use std::fmt;
+use std::fmt::{self, Display};
 use std::marker::PhantomData;
 
 use serde::de::{self, Unexpected, Visitor};
@@ -32,6 +32,15 @@ impl<T> Default for Auto<T> {
 
 impl<T> From<T> for Auto<T> {
     fn from(val: T) -> Auto<T> { Auto::Value(val) }
+}
+
+impl<T: Display> fmt::Display for Auto<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Auto => write!(f, "auto"),
+            Self::Value(v) => v.fmt(f),
+        }
+    }
 }
 
 impl<T: Serialize> Serialize for Auto<T> {

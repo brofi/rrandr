@@ -891,8 +891,17 @@ dependencies = [
  "gdk4",
  "gtk4",
  "log",
+ "rrandr_config_derive",
  "serde",
  "toml",
+]
+
+[[package]]
+name = "rrandr_config_derive"
+version = "0.1.0"
+dependencies = [
+ "quote",
+ "syn",
 ]
 
 [[package]]

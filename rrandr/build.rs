@@ -2,10 +2,11 @@ use core::panic;
 use std::env::var;
 use std::fs::{self, create_dir_all, File};
 use std::io::{ErrorKind, Read};
+use std::ops::Range;
 use std::path::Path;
 use std::process::Command;
 
-use config::Config;
+use config::{Config, MarkdownTable};
 
 fn main() {
     glib_build_tools::compile_resources(
@@ -24,6 +25,7 @@ fn main() {
     );
     gen_translations();
     gen_config();
+    gen_readme();
 }
 
 fn copyright_notice() -> String {
@@ -93,3 +95,29 @@ fn gen_config() {
         fs::write(Path::new("src/res/rrandr.toml"), contents).expect("should write default config");
     }
 }
+
+fn gen_readme() {
+    let readme = Path::new("../README.md");
+    if let Ok(mut contents) = fs::read_to_string(readme) {
+        replace_mark("mark_config", &mut contents, &Config::to_markdown_table("", 3));
+        fs::write(readme, contents).expect(&format!("should write {:#?}", readme));
+    }
+}
+
+fn replace_mark(name: &str, contents: &mut String, replace_with: &str) {
+    if let Some(range) = md_mark_range(name, &contents) {
+        let replace_with = String::from("\n\n") + replace_with + "\n";
+        contents.replace_range(range, &replace_with);
+    }
+}
+
+fn md_mark_range(name: &str, contents: &str) -> Option<Range<usize>> {
+    let start_mark = md_mark(name);
+    let end_mark = md_mark(&(String::from("/") + name));
+    if let (Some(start), Some(end)) = (contents.find(&start_mark), contents.find(&end_mark)) {
+        return Some(start + start_mark.len()..end);
+    }
+    None
+}
+
+fn md_mark(name: &str) -> String { format!("[//]: # (<{}>)", name) }

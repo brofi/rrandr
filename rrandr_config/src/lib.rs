@@ -9,17 +9,28 @@ use auto::Auto;
 use glib::{home_dir, user_config_dir};
 use gtk::{glib, Settings};
 use log::{info, warn};
+use rrandr_config_derive::MarkdownTable;
 use serde::{Deserialize, Serialize};
 
 use crate::color::Color;
 
-#[derive(Clone, Deserialize, Serialize)]
+#[derive(Clone, Deserialize, Serialize, MarkdownTable)]
 #[serde(default)]
+/// Root level configuration
 pub struct Config {
+    /// Snapping strength when dragging outputs or `auto`. High values make it
+    /// more "sticky", while 0 means no snapping. If left to default
+    /// `snap_strength = min_size / 6` where `min_side` is the smallest side of
+    /// any enabled output in px. E.g. when smallest screen resolution is Full
+    /// HD => `snap_strength = 180`.
     pub snap_strength: Auto<f64>,
+    /// Move distance when moving an output via keybindings
     pub pos_move_dist: i16,
+    #[table]
     pub font: Font,
+    #[table]
     pub colors: Colors,
+    #[table]
     pub popup: Popup,
     #[serde(skip)]
     settings: Option<Settings>,
@@ -90,10 +101,13 @@ impl Config {
     }
 }
 
-#[derive(Clone, Deserialize, Serialize)]
+#[derive(Clone, Deserialize, Serialize, MarkdownTable)]
 #[serde(default)]
+/// Output area font configuration
 pub struct Font {
+    /// Font family
     pub family: String,
+    /// Font size in pt
     pub size: u16,
 }
 
@@ -101,19 +115,27 @@ impl Default for Font {
     fn default() -> Self { Self { family: "monospace".to_owned(), size: 12 } }
 }
 
-#[derive(Clone, Default, Deserialize, Serialize)]
+#[derive(Clone, Default, Deserialize, Serialize, MarkdownTable)]
 #[serde(default)]
+/// Output area colors
 pub struct Colors {
+    #[table]
     light: LightColors,
+    #[table]
     dark: DarkColors,
 }
 
-#[derive(Clone, Deserialize, Serialize)]
+#[derive(Clone, Deserialize, Serialize, MarkdownTable)]
 #[serde(default)]
+/// Output area light theme colors
 pub struct LightColors {
+    /// Output name text color
     pub text: Color,
+    /// Output background color
     pub output: Color,
+    /// Screen rectangle color
     pub bounds: Color,
+    /// Output selection color
     pub selection: Color,
 }
 
@@ -128,12 +150,17 @@ impl Default for LightColors {
     }
 }
 
-#[derive(Clone, Deserialize, Serialize)]
+#[derive(Clone, Deserialize, Serialize, MarkdownTable)]
 #[serde(default)]
+/// Output area dark theme colors
 pub struct DarkColors {
+    /// Output name text color
     pub text: Color,
+    /// Output background color
     pub output: Color,
+    /// Screen rectangle color
     pub bounds: Color,
+    /// Output selection color
     pub selection: Color,
 }
 
@@ -148,13 +175,19 @@ impl Default for DarkColors {
     }
 }
 
-#[derive(Clone, Deserialize, Serialize)]
+#[derive(Clone, Deserialize, Serialize, MarkdownTable)]
 #[serde(default)]
+/// Identify popup configuration
 pub struct Popup {
+    /// Padding in mm
     pub padding: u16,
+    /// Margin from screen edge in mm
     pub spacing: u16,
+    /// Resolution to popup size ratio
     pub ratio: f64,
+    /// Show duration in seconds
     pub show_secs: f32,
+    #[table]
     pub font: PopupFont,
 }
 
@@ -164,13 +197,20 @@ impl Default for Popup {
     }
 }
 
-#[derive(Clone, Deserialize, Serialize)]
+#[derive(Clone, Deserialize, Serialize, MarkdownTable)]
 #[serde(default)]
+/// Identify popup font configuration
 pub struct PopupFont {
+    /// Font family
     pub family: String,
+    /// Font size in pt or "auto"
     pub size: Auto<u16>,
 }
 
 impl Default for PopupFont {
     fn default() -> Self { Self { family: "Sans".to_owned(), size: Auto::default() } }
+}
+
+pub trait MarkdownTable {
+    fn to_markdown_table(key: &str, lvl: u8) -> String;
 }

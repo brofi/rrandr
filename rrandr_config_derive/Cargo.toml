@@ -1,0 +1,16 @@
+[package]
+name = "rrandr_config_derive"
+version = "0.1.0"
+authors = ["Andreas Becker <brofi.archlinux@gmail.com>"]
+edition = "2021"
+description = "Markdown table derive macro for RRandR configuration"
+documentation = "https://github.com/brofi/rrandr"
+repository = "https://github.com/brofi/rrandr"
+license = "GPL-3.0-or-later"
+
+[lib]
+proc-macro = true
+
+[dependencies]
+quote = "1.0.36"
+syn = "2.0.72"
