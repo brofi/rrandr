@@ -38,6 +38,7 @@ fn main() {
         Err(_) => panic!("Invalid environment variable 'DEBUG'"),
     }
     compile_translations();
+    gen_desktop_entry();
 }
 
 fn compile_translations() {
@@ -54,6 +55,18 @@ fn compile_translations() {
             .arg(format!("po/{lang}.po"));
         check_cmd(&mut compile_po);
     }
+}
+
+fn gen_desktop_entry() {
+    let mut entry = Path::new("src/res").join(env!("CARGO_PKG_NAME"));
+    let mut gen_desktop = Command::new("msgfmt");
+    gen_desktop.arg("--desktop");
+    entry.set_extension("desktop");
+    gen_desktop.arg(format!("--output-file={}", entry.to_str().unwrap()));
+    entry.set_extension("desktop.in");
+    gen_desktop.arg(format!("--template={}", entry.to_str().unwrap()));
+    gen_desktop.args(["-d", "po"]);
+    check_cmd(&mut gen_desktop);
 }
 
 fn copyright_notice() -> String {
@@ -93,7 +106,7 @@ fn check_cmd(cmd: &mut Command) {
     match cmd.status() {
         Ok(status) => {
             if !status.success() {
-                panic!("{prog} failed to run, exit: {status}")
+                panic!("{prog} failed to run, {status}")
             }
         }
         Err(error) => match error.kind() {
