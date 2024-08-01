@@ -99,8 +99,8 @@ impl DrawContext {
 
     fn pango_layout_popup(&self, width: u16, height: u16, pad: f64, text: &str) -> Layout {
         let pscale = f64::from(PANGO_SCALE);
-        let height = (f64::from(height) - (2. * pad)).round().max(0.);
-        let width = (f64::from(width) - (2. * pad)).round().max(0.);
+        let height = (f64::from(height) - (2. * pad)).round().max(1.);
+        let width = (f64::from(width) - (2. * pad)).round().max(1.);
         let layout = create_layout(&self.cairo);
         layout.set_text(text);
 
