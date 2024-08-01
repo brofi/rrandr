@@ -104,12 +104,12 @@ impl Rect {
         self.height = (f64::from(self.height) * scale).round() as u16;
     }
 
-    pub fn transform(&self, scale: f64, translate: [i16; 2]) -> [f64; 4] {
-        [
-            f64::from(self.x) * scale + f64::from(translate[0]),
-            f64::from(self.y) * scale + f64::from(translate[1]),
+    pub fn transform(&self, scale: f64, [dx, dy]: [i16; 2]) -> cairo::Rectangle {
+        cairo::Rectangle::new(
+            f64::from(self.x) * scale + f64::from(dx),
+            f64::from(self.y) * scale + f64::from(dy),
             f64::from(self.width) * scale,
             f64::from(self.height) * scale,
-        ]
+        )
     }
 }

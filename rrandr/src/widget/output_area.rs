@@ -233,14 +233,14 @@ mod imp {
             let context = DrawContext::new(cr, &self.config.borrow());
 
             let screen_rect = bounds.transform(scale, translate);
-            context.draw_screen(screen_rect);
+            context.draw_screen(&screen_rect);
 
             for o in self.outputs.borrow().iter::<Output>().map(Result::unwrap) {
                 let output_rect = o.rect().transform(scale, translate);
-                context.draw_output(output_rect);
+                context.draw_output(&output_rect);
                 if let Some(selected) = self.selected_output.borrow().as_ref() {
                     if o == *selected {
-                        context.draw_selected_output(output_rect);
+                        context.draw_selected_output(&output_rect);
                     }
                 }
                 let mut name = o.name();
@@ -249,7 +249,7 @@ mod imp {
                     name = format!("[{name}]");
                     product_name = product_name.map(|s| format!("[{s}]"));
                 }
-                context.draw_output_label(output_rect, &name, product_name.as_deref());
+                context.draw_output_label(&output_rect, &name, product_name.as_deref());
             }
         }
 

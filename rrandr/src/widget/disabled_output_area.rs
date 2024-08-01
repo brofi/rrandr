@@ -154,12 +154,17 @@ mod imp {
                         .is_some_and(|s| !self.is_dragging.get() || s.id() != o.id())
                 {
                     let [x, y] = Self::get_output_pos(j, height);
-                    let rect = [f64::from(x), f64::from(y), f64::from(width), f64::from(height)];
-                    context.draw_output(rect);
-                    context.draw_output_label(rect, &o.name(), o.product_name().as_deref());
+                    let rect = cairo::Rectangle::new(
+                        f64::from(x),
+                        f64::from(y),
+                        f64::from(width),
+                        f64::from(height),
+                    );
+                    context.draw_output(&rect);
+                    context.draw_output_label(&rect, &o.name(), o.product_name().as_deref());
                     if let Some(s) = selected.as_ref() {
                         if s.id() == o.id() {
-                            context.draw_selected_output(rect);
+                            context.draw_selected_output(&rect);
                         }
                     }
                     j += 1;
@@ -268,10 +273,10 @@ mod imp {
                 // Use separate scope for cairo and draw context since exclusive
                 // access is needed to get data from surface
                 let cr = cairo::Context::new(&surface)?;
-                let rect = [0., 0., f64::from(width), f64::from(height)];
+                let rect = cairo::Rectangle::new(0., 0., f64::from(width), f64::from(height));
                 let context = DrawContext::new(&cr, &self.config.borrow());
-                context.draw_output(rect);
-                context.draw_output_label(rect, name, product_name);
+                context.draw_output(&rect);
+                context.draw_output_label(&rect, name, product_name);
             }
             surface.flush();
             let stride = surface.stride().try_into()?;

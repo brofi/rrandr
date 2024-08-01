@@ -1,6 +1,6 @@
 #![allow(clippy::module_name_repetitions)]
 
-use cairo::Context;
+use cairo::{Context, Rectangle};
 use config::Config;
 use gdk::prelude::GdkCairoContextExt;
 use pango::ffi::PANGO_SCALE;
@@ -23,12 +23,12 @@ impl DrawContext {
         DrawContext { cairo: cairo.clone(), config: config.clone() }
     }
 
-    pub fn draw_screen(&self, rect: [f64; 4]) {
+    pub fn draw_screen(&self, rect: &Rectangle) {
         self.cairo.rectangle(
-            rect[0] - SCREEN_LINE_WIDTH / 2.,
-            rect[1] - SCREEN_LINE_WIDTH / 2.,
-            rect[2] + SCREEN_LINE_WIDTH,
-            rect[3] + SCREEN_LINE_WIDTH,
+            rect.x() - SCREEN_LINE_WIDTH / 2.,
+            rect.y() - SCREEN_LINE_WIDTH / 2.,
+            rect.width() + SCREEN_LINE_WIDTH,
+            rect.height() + SCREEN_LINE_WIDTH,
         );
         self.cairo.set_source_color(&self.config.bounds_color().into());
         self.cairo.set_line_width(SCREEN_LINE_WIDTH);
@@ -36,18 +36,18 @@ impl DrawContext {
         self.cairo.stroke().unwrap();
     }
 
-    pub fn draw_output(&self, rect: [f64; 4]) {
-        self.cairo.rectangle(rect[0], rect[1], rect[2], rect[3]);
+    pub fn draw_output(&self, rect: &Rectangle) {
+        self.cairo.rectangle(rect.x(), rect.y(), rect.width(), rect.height());
         self.cairo.set_source_color(&self.config.output_color().to_rgba(0.75));
         self.cairo.fill().unwrap();
     }
 
-    pub fn draw_selected_output(&self, rect: [f64; 4]) {
+    pub fn draw_selected_output(&self, rect: &Rectangle) {
         self.cairo.rectangle(
-            rect[0] + SELECTION_LINE_WIDTH / 2.,
-            rect[1] + SELECTION_LINE_WIDTH / 2.,
-            rect[2] - SELECTION_LINE_WIDTH,
-            rect[3] - SELECTION_LINE_WIDTH,
+            rect.x() + SELECTION_LINE_WIDTH / 2.,
+            rect.y() + SELECTION_LINE_WIDTH / 2.,
+            rect.width() - SELECTION_LINE_WIDTH,
+            rect.height() - SELECTION_LINE_WIDTH,
         );
         self.cairo.set_source_color(&self.config.selection_color().into());
         self.cairo.set_line_width(SELECTION_LINE_WIDTH);
@@ -55,7 +55,7 @@ impl DrawContext {
         self.cairo.stroke().unwrap();
     }
 
-    pub fn draw_output_label(&self, rect: [f64; 4], name: &str, product_name: Option<&str>) {
+    pub fn draw_output_label(&self, rect: &Rectangle, name: &str, product_name: Option<&str>) {
         self.cairo.save().unwrap();
 
         let layout = create_layout(&self.cairo);
@@ -69,13 +69,13 @@ impl DrawContext {
 
         layout.set_font_description(Some(&desc));
 
-        let ps = layout.pixel_size();
-        if f64::from(ps.0) <= rect[2] - f64::from(PADDING) * 2.
-            && f64::from(ps.1) <= rect[3] - f64::from(PADDING) * 2.
+        let (w, h) = layout.pixel_size();
+        if f64::from(w) <= rect.width() - f64::from(PADDING) * 2.
+            && f64::from(h) <= rect.height() - f64::from(PADDING) * 2.
         {
             self.cairo.set_source_color(&self.config.text_color().into());
-            self.cairo.move_to(rect[0] + rect[2] / 2., rect[1] + rect[3] / 2.);
-            self.cairo.rel_move_to(f64::from(-ps.0) / 2., f64::from(-ps.1) / 2.);
+            self.cairo.move_to(rect.x() + rect.width() / 2., rect.y() + rect.height() / 2.);
+            self.cairo.rel_move_to(f64::from(-w) / 2., f64::from(-h) / 2.);
             show_layout(&self.cairo, &layout);
         }
         self.cairo.restore().unwrap();
