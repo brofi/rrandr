@@ -37,6 +37,7 @@ mod imp {
     use crate::window::SPACING;
 
     const POS_UPDATE_DELAY: u64 = 500;
+    const SW_ENABLED_NAME: &'static str = "sw_enabled";
 
     #[derive(Properties)]
     #[properties(wrapper_type = super::DetailsBox)]
@@ -113,11 +114,13 @@ mod imp {
             obj.set_halign(Align::Fill);
             obj.set_hexpand(true);
 
-            self.root.append(&DetailsChild::new(
+            let fbc_sw_enabled = DetailsChild::new(
                 // Output status
                 &gettext("Enabled"),
                 &self.sw_enabled,
-            ));
+            );
+            fbc_sw_enabled.set_widget_name(SW_ENABLED_NAME);
+            self.root.append(&fbc_sw_enabled);
             self.root.append(&DetailsChild::new(
                 // Output mode consisting of resolution and refresh rate
                 &gettext("Mode"),
@@ -279,7 +282,7 @@ mod imp {
                     .output
                     .borrow()
                     .as_ref()
-                    .is_some_and(|o| o.enabled() || c.widget_name() == "fbc_enabled");
+                    .is_some_and(|o| o.enabled() || c.widget_name() == SW_ENABLED_NAME);
                 c.set_visible(visible);
                 child = c.next_sibling();
             }

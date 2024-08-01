@@ -7,7 +7,7 @@ mod imp {
 
     use glib::subclass::object::{ObjectImpl, ObjectImplExt};
     use glib::subclass::types::{ObjectSubclass, ObjectSubclassExt};
-    use glib::{derived_properties, object_subclass, GString, Properties, Value};
+    use glib::{derived_properties, object_subclass, GString, Properties};
     use gtk::prelude::{BoxExt, FlowBoxChildExt, ObjectExt, WidgetExt};
     use gtk::subclass::flow_box_child::FlowBoxChildImpl;
     use gtk::subclass::prelude::DerivedObjectProperties;
@@ -59,11 +59,6 @@ mod imp {
             obj.set_vexpand(false);
             obj.set_focusable(false);
             obj.set_visible(false);
-            obj.bind_property("label", &*obj, "name")
-                .transform_to(|_, label: &str| {
-                    Some(Value::from(&("fbc_".to_owned() + &label.replace('_', "").to_lowercase())))
-                })
-                .build();
             self.hbox.append(&self.label);
             obj.set_child(Some(&self.hbox));
         }
