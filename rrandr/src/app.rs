@@ -5,6 +5,7 @@ use gtk::{gio, glib};
 
 pub const APP_ID: &str = "com.github.brofi.rrandr";
 pub const APP_NAME: &str = "rrandr";
+pub const APP_NAME_LOC: &str = "RRandR";
 
 mod imp {
     use glib::object_subclass;
@@ -15,6 +16,7 @@ mod imp {
     use gtk::subclass::application::GtkApplicationImpl;
     use gtk::subclass::prelude::{ApplicationImpl, ApplicationImplExt};
 
+    use super::{APP_NAME, APP_NAME_LOC};
     use crate::window::Window;
 
     #[derive(Default)]
@@ -33,6 +35,10 @@ mod imp {
     impl ApplicationImpl for Application {
         fn startup(&self) {
             self.parent_startup();
+
+            glib::set_application_name(APP_NAME_LOC);
+            gtk::Window::set_default_icon_name(APP_NAME);
+
             let obj = self.obj();
             obj.set_accels_for_action("win.apply", &["<Ctrl>S"]);
             obj.set_accels_for_action("win.reset", &["<Ctrl>BackSpace"]);

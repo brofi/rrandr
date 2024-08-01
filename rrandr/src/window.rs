@@ -36,7 +36,7 @@ mod imp {
     };
     use log::{error, warn};
 
-    use crate::app::APP_NAME;
+    use crate::app::{APP_NAME, APP_NAME_LOC};
     use crate::data::output::Output;
     use crate::data::outputs::Outputs;
     use crate::widget::details_box::{DetailsBox, Update};
@@ -87,7 +87,9 @@ mod imp {
     impl ObjectImpl for Window {
         fn constructed(&self) {
             self.parent_constructed();
+
             let obj = self.obj();
+            obj.set_title(Some(APP_NAME_LOC));
             obj.setup_actions();
 
             self.set_config();
