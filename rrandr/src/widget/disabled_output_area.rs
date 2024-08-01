@@ -31,6 +31,7 @@ mod imp {
     use gtk::{
         glib, DragSource, DrawingArea, DropControllerMotion, EventControllerMotion, GestureClick,
     };
+    use log::error;
 
     use crate::data::output::Output;
     use crate::data::outputs::Outputs;
@@ -221,12 +222,13 @@ mod imp {
             if let Some(o) = self.get_output_at(x, y, width, height) {
                 let [width, height] =
                     Self::get_output_dim(width, height, outputs.n_items() as usize);
-                if let Ok(icon) =
-                    self.create_drag_icon(width, height, &o.name(), o.product_name().as_deref())
-                {
-                    let [_, oy] =
-                        Self::get_output_pos(outputs.position(&o).unwrap() as usize, height);
-                    ds.set_icon(Some(&icon), x as i32, (y - f64::from(oy)) as i32);
+                match self.create_drag_icon(width, height, &o.name(), o.product_name().as_deref()) {
+                    Ok(icon) => {
+                        let [_, oy] =
+                            Self::get_output_pos(outputs.position(&o).unwrap() as usize, height);
+                        ds.set_icon(Some(&icon), x as i32, (y - f64::from(oy)) as i32);
+                    }
+                    Err(e) => error!("Failed to create drag icon: {e}"),
                 }
                 return Some(ContentProvider::for_value(&o.to_value()));
             }
@@ -262,12 +264,15 @@ mod imp {
                 i32::from(width),
                 i32::from(height),
             )?;
-            let cr = cairo::Context::new(&surface)?;
-            let rect = [0., 0., f64::from(width), f64::from(height)];
-            let context = DrawContext::new(&cr, &self.config.borrow());
-            context.draw_output(rect);
-            context.draw_output_label(rect, name, product_name);
-            drop(context);
+            {
+                // Use separate scope for cairo and draw context since exclusive
+                // access is needed to get data from surface
+                let cr = cairo::Context::new(&surface)?;
+                let rect = [0., 0., f64::from(width), f64::from(height)];
+                let context = DrawContext::new(&cr, &self.config.borrow());
+                context.draw_output(rect);
+                context.draw_output_label(rect, name, product_name);
+            }
             surface.flush();
             let stride = surface.stride().try_into()?;
             Ok(MemoryTexture::new(
