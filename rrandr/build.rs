@@ -24,12 +24,14 @@ fn main() {
                 gen_readme();
                 println!(
                     "cargo::rustc-env=RRANDR_LOCALE_DIR={}",
-                    Path::new(&var("OUT_DIR").unwrap()).join("po").to_str().unwrap().to_owned()
+                    Path::new("../target/po").to_str().unwrap()
                 );
             } else {
                 println!(
                     "cargo::rustc-env=RRANDR_LOCALE_DIR={}",
-                    var("LOCALEDIR").unwrap_or("/usr/share/locale".to_owned())
+                    Path::new(&var("LOCALEDIR").unwrap_or("/usr/share/locale".to_owned()))
+                        .to_str()
+                        .unwrap()
                 );
             }
         }
@@ -44,7 +46,7 @@ fn compile_translations() {
     let mut buf = String::new();
     linguas.read_to_string(&mut buf).expect("LINGUAS file is valid UTF-8");
     for lang in buf.lines() {
-        let out_dir = Path::new(&var("OUT_DIR").unwrap()).join("po").join(lang).join("LC_MESSAGES");
+        let out_dir = Path::new("../target/po").join(lang).join("LC_MESSAGES");
         create_dir_all(&out_dir).expect("create output directories");
         let mut compile_po = Command::new("msgfmt");
         compile_po
