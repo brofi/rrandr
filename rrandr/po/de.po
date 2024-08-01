@@ -7,8 +7,8 @@ msgid ""
 msgstr ""
 "Project-Id-Version: rrandr 0.2.0\n"
 "Report-Msgid-Bugs-To: https://github.com/brofi/rrandr/issues\n"
-"POT-Creation-Date: 2024-07-23 01:04+0200\n"
-"PO-Revision-Date: 2024-07-23 01:12+0200\n"
+"POT-Creation-Date: 2024-08-01 21:03+0200\n"
+"PO-Revision-Date: 2024-08-01 21:03+0200\n"
 "Last-Translator: Andreas Becker <brofi.archlinux@gmail.com>\n"
 "Language-Team: German\n"
 "Language: de\n"
@@ -22,15 +22,35 @@ msgstr ""
 msgid "Hz"
 msgstr "Hz"
 
+#: src/res/rrandr.desktop:5
+msgid "RRandR"
+msgstr "RRandR"
+
+#: src/res/rrandr.desktop:6
+msgid "Display Settings"
+msgstr "Anzeigeeinstellungen"
+
+#: src/res/rrandr.desktop:7 src/window.rs:327
+msgid "A graphical interface to the RandR X Window System extension."
+msgstr ""
+"Eine grafische Schnittstelle zur RandR Erweiterung des X Window Systems."
+
+#. Translators: Keep semicolons and end with semicolon
+#: src/res/rrandr.desktop:14
+msgid "settings;configuration;display;screen;monitor;resolution;refresh rate;"
+msgstr ""
+"Einstellungen;Konfiguration;Anzeige;Bildschirm;Monitor;Auflösung;"
+"Bildwiederholfrequenz;"
+
 #: src/res/shortcuts.ui:11
 msgid "General"
 msgstr "Allgemein"
 
-#: src/res/shortcuts.ui:14 src/res/window.ui:90
+#: src/res/shortcuts.ui:14 src/res/window.ui:89
 msgid "Apply changes"
 msgstr "Änderungen übernehmen"
 
-#: src/res/shortcuts.ui:20 src/res/window.ui:102
+#: src/res/shortcuts.ui:20 src/res/window.ui:101
 msgid "Reset changes"
 msgstr "Änderungen verwerfen"
 
@@ -110,27 +130,27 @@ msgstr "Ausgewählten Bildschirm aktivieren"
 msgid "Toggle view"
 msgstr "Ansicht umschalten"
 
-#: src/res/window.ui:57
+#: src/res/window.ui:56
 msgid "About"
 msgstr "Über"
 
-#: src/res/window.ui:61
+#: src/res/window.ui:60
 msgid "_About"
 msgstr "Ü_ber"
 
-#: src/res/window.ui:71
+#: src/res/window.ui:70
 msgid "Identify outputs"
 msgstr "Bildschirme identifizieren"
 
-#: src/res/window.ui:75
+#: src/res/window.ui:74
 msgid "_Identify"
 msgstr "_Identifizieren"
 
-#: src/res/window.ui:94
+#: src/res/window.ui:93
 msgid "_Apply"
 msgstr "Ü_bernehmen"
 
-#: src/res/window.ui:106
+#: src/res/window.ui:105
 msgid "_Reset"
 msgstr "_Verwerfen"
 
@@ -158,7 +178,7 @@ msgstr "Position"
 msgid "Primary"
 msgstr "Primär"
 
-#: src/widget/dialog.rs:132
+#: src/widget/dialog.rs:136
 msgid "_Close"
 msgstr "_Schließen"
 
@@ -178,55 +198,51 @@ msgstr "Horizontale Position"
 msgid "Vertical position"
 msgstr "Vertikale Position"
 
-#: src/window.rs:242
+#: src/window.rs:247
 msgid "Confirm changes"
 msgstr "Änderungen bestätigen"
 
-#: src/window.rs:243
+#: src/window.rs:248
 msgid "Keep changes?"
 msgstr "Änderungen behalten?"
 
 #. Translators: '{}' gets replaced with the number of seconds left.
-#: src/window.rs:245 src/window.rs:258
+#: src/window.rs:250 src/window.rs:268
 msgid "Reverting in {} second"
 msgid_plural "Reverting in {} seconds"
 msgstr[0] "Zurücksetzen in {} Sekunde"
 msgstr[1] "Zurücksetzen in {} Sekunden"
 
-#: src/window.rs:250
+#: src/window.rs:255
 msgid "_Keep"
 msgstr "_Behalten"
 
-#: src/window.rs:250
+#: src/window.rs:255
 msgid "_Revert"
 msgstr "_Zurücksetzen"
 
-#: src/window.rs:251
+#: src/window.rs:256
 msgid "Keep changes"
 msgstr "Änderungen behalten"
 
-#: src/window.rs:251
+#: src/window.rs:256
 msgid "Revert changes"
 msgstr "Änderungen zurücksetzen"
 
-#: src/window.rs:281 src/window.rs:282
+#: src/window.rs:297 src/window.rs:298
 msgid "Failure"
 msgstr "Fehler"
 
-#: src/window.rs:283
+#: src/window.rs:299
 msgid "Changes have been reverted."
 msgstr "Änderungen wurden zurückgesetzt."
 
-#: src/window.rs:309
-msgid "A graphical interface to the RandR X Window System extension."
-msgstr "Eine grafische Schnittstelle zur RandR Erweiterung des X Window Systems."
-
-#: src/window.rs:310
+#: src/window.rs:328
 msgid "Repository"
 msgstr "Projektarchiv"
 
 #. Translators: Add your name and email address to the translation (one translator
 #. per line).
-#: src/window.rs:317
+#: src/window.rs:335
 msgid "translator-credits"
 msgstr "Andreas Becker <brofi.archlinux@gmail.com>"
