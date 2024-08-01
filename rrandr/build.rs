@@ -80,7 +80,7 @@ fn gen_translation_template() {
     gen_pot_ui
         .arg("--files-from=po/POTFILES.in")
         .arg(format!("--output={}", out.to_str().unwrap()))
-        .args(["--join-existing", "--sort-by-file"])
+        .args(["--join-existing", "--add-comments", "--sort-by-file"])
         .args(["--copyright-holder", &copyright_holder()])
         .args(["--package-name", pkg_name])
         .args(["--package-version", env!("CARGO_PKG_VERSION")])

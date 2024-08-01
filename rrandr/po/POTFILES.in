@@ -2,3 +2,4 @@
 # Translatable strings from Rust files are extracted by xtr.
 src/res/shortcuts.ui
 src/res/window.ui
+src/res/rrandr.desktop
