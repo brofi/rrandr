@@ -15,17 +15,43 @@ fn main() {
         "rrandr.gresource",
     );
     println!("cargo::rustc-env=RRANDR_COPYRIGHT_NOTICE={}", copyright_notice());
-    println!(
-        "cargo::rustc-env=RRANDR_LOCALE_DIR={}",
-        if cfg!(debug_assertions) {
-            Path::new(&var("OUT_DIR").unwrap()).join("po").to_str().unwrap().to_owned()
-        } else {
-            var("LOCALEDIR").unwrap_or("/usr/share/locale".to_owned())
+
+    match var("DEBUG") {
+        Ok(v) => {
+            if v.parse::<bool>().is_ok_and(|b| b) {
+                gen_translation_template();
+                gen_config();
+                gen_readme();
+                println!(
+                    "cargo::rustc-env=RRANDR_LOCALE_DIR={}",
+                    Path::new(&var("OUT_DIR").unwrap()).join("po").to_str().unwrap().to_owned()
+                );
+            } else {
+                println!(
+                    "cargo::rustc-env=RRANDR_LOCALE_DIR={}",
+                    var("LOCALEDIR").unwrap_or("/usr/share/locale".to_owned())
+                );
+            }
         }
-    );
-    gen_translations();
-    gen_config();
-    gen_readme();
+        Err(_) => panic!("Invalid environment variable 'DEBUG'"),
+    }
+    compile_translations();
+}
+
+fn compile_translations() {
+    let pkg_name = env!("CARGO_PKG_NAME");
+    let mut linguas = File::open("po/LINGUAS").expect("LINGUAS file exists");
+    let mut buf = String::new();
+    linguas.read_to_string(&mut buf).expect("LINGUAS file is valid UTF-8");
+    for lang in buf.lines() {
+        let out_dir = Path::new(&var("OUT_DIR").unwrap()).join("po").join(lang).join("LC_MESSAGES");
+        create_dir_all(&out_dir).expect("create output directories");
+        let mut compile_po = Command::new("msgfmt");
+        compile_po
+            .arg(format!("--output-file={}/{}.mo", out_dir.to_str().unwrap(), pkg_name))
+            .arg(format!("po/{lang}.po"));
+        check_cmd(&mut compile_po);
+    }
 }
 
 fn copyright_notice() -> String {
@@ -40,14 +66,14 @@ fn copyright_holder() -> String {
     authors[0].split("<").collect::<Vec<_>>()[0].trim().to_owned()
 }
 
-fn gen_translations() {
+fn gen_translation_template() {
     let pkg_name = env!("CARGO_PKG_NAME");
     let out = Path::new("po").join(env!("CARGO_PKG_NAME").to_owned() + ".pot");
 
-    // Generate PO template file
     let mut gen_pot_rs = Command::new(home::cargo_home().expect("cargo home").join("bin/xtr"));
     gen_pot_rs.arg("--output").arg(&out).arg("--omit-header").arg("src/main.rs");
     check_cmd(&mut gen_pot_rs);
+
     let mut gen_pot_ui = Command::new("xgettext");
     gen_pot_ui
         .arg("--files-from=po/POTFILES.in")
@@ -58,21 +84,6 @@ fn gen_translations() {
         .args(["--package-version", env!("CARGO_PKG_VERSION")])
         .args(["--msgid-bugs-address", &(env!("CARGO_PKG_REPOSITORY").to_owned() + "/issues")]);
     check_cmd(&mut gen_pot_ui);
-
-    // Compile POs
-    let mut linguas = File::open("po/LINGUAS").expect("LINGUAS file exists");
-    let mut buf = String::new();
-    linguas.read_to_string(&mut buf).expect("LINGUAS file is valid UTF-8");
-    for lang in buf.lines() {
-        println!("cargo::rerun-if-changed=po/{lang}.po");
-        let out_dir = Path::new(&var("OUT_DIR").unwrap()).join("po").join(lang).join("LC_MESSAGES");
-        create_dir_all(&out_dir).expect("create output directories");
-        let mut compile_po = Command::new("msgfmt");
-        compile_po
-            .arg(format!("--output-file={}/{}.mo", out_dir.to_str().unwrap(), pkg_name))
-            .arg(format!("po/{lang}.po"));
-        check_cmd(&mut compile_po);
-    }
 }
 
 fn check_cmd(cmd: &mut Command) {
