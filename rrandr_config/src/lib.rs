@@ -1,66 +1,40 @@
-pub mod auto;
-pub mod color;
-pub mod font;
+mod data;
 pub mod popup;
+pub mod display;
 
 use std::fs;
 use std::path::PathBuf;
 
-use auto::Auto;
-use color::Colors;
-use font::Font;
 use glib::{home_dir, user_config_dir};
 use gtk::{glib, Settings};
 use log::{info, warn};
 use popup::Popup;
 use rrandr_config_derive::MarkdownTable;
+use display::Display;
 use serde::{Deserialize, Serialize};
 
-use crate::color::Color;
+use crate::data::color::Color;
 
-#[derive(Clone, Deserialize, Serialize, MarkdownTable)]
+#[derive(Default, Clone, Deserialize, Serialize, MarkdownTable)]
 #[serde(default)]
 /// Root level configuration
 pub struct Config {
-    /// Snapping strength when dragging outputs or `auto`. High values make it
-    /// more "sticky", while 0 means no snapping. If left to default
-    /// `snap_strength = min_size / 6` where `min_side` is the smallest side of
-    /// any enabled output in px. E.g. when smallest screen resolution is Full
-    /// HD => `snap_strength = 180`.
-    pub snap_strength: Auto<f64>,
-    /// Move distance when moving an output via keybindings
-    pub pos_move_dist: i16,
     #[table]
-    pub font: Font,
-    #[table]
-    pub colors: Colors,
+    pub display: Display,
     #[table]
     pub popup: Popup,
     #[serde(skip)]
     settings: Option<Settings>,
 }
 
-impl Default for Config {
-    fn default() -> Self {
-        Self {
-            snap_strength: Auto::default(),
-            pos_move_dist: 10,
-            font: Font::default(),
-            colors: Colors::default(),
-            popup: Popup::default(),
-            settings: None,
-        }
-    }
-}
-
 macro_rules! impl_color {
-    ($name:ident, $attr:ident) => {
-        pub fn $name(&self) -> Color {
-            self.settings.as_ref().map_or(self.colors.dark.$attr.clone(), |s| {
+    ($table:ident, $fn:ident, $attr:ident) => {
+        pub fn $fn(&self) -> Color {
+            self.settings.as_ref().map_or(self.$table.colors.dark.$attr.clone(), |s| {
                 if s.is_gtk_application_prefer_dark_theme() {
-                    self.colors.dark.$attr.clone()
+                    self.$table.colors.dark.$attr.clone()
                 } else {
-                    self.colors.light.$attr.clone()
+                    self.$table.colors.light.$attr.clone()
                 }
             })
         }
@@ -68,13 +42,17 @@ macro_rules! impl_color {
 }
 
 impl Config {
-    impl_color!(text_color, text);
+    impl_color!(display, display_text_color, text);
 
-    impl_color!(output_color, output);
+    impl_color!(display, display_output_color, output);
 
-    impl_color!(bounds_color, bounds);
+    impl_color!(display, display_screen_color, screen);
 
-    impl_color!(selection_color, selection);
+    impl_color!(display, display_selection_color, selection);
+
+    impl_color!(popup, popup_text_color, text);
+
+    impl_color!(popup, popup_background_color, background);
 
     pub fn new(app_name: &str, settings: Option<Settings>) -> Self {
         let mut config = Config::default();

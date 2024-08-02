@@ -284,17 +284,18 @@ mod imp {
             if let Some(output) = self.selected_output.borrow().as_ref() {
                 let outputs = self.outputs.borrow();
 
-                let snap_strength = self.config.borrow().snap_strength.unwrap_or_else(|| {
-                    let mut min_side = f64::MAX;
-                    for output in outputs.iter::<Output>().map(Result::unwrap) {
-                        let mode = output.mode().expect("dragged output has mode");
-                        min_side = min_side.min(f64::from(mode.height()));
-                        min_side = min_side.min(f64::from(mode.width()));
-                    }
-                    // Snap to all snap values should be possible on all scaled sizes.
-                    // Give some leeway so it doesn't have to be pixel perfect.
-                    (min_side / 4.) - (min_side / 12.)
-                });
+                let snap_strength =
+                    self.config.borrow().display.snap_strength.unwrap_or_else(|| {
+                        let mut min_side = f64::MAX;
+                        for output in outputs.iter::<Output>().map(Result::unwrap) {
+                            let mode = output.mode().expect("dragged output has mode");
+                            min_side = min_side.min(f64::from(mode.height()));
+                            min_side = min_side.min(f64::from(mode.width()));
+                        }
+                        // Snap to all snap values should be possible on all scaled sizes.
+                        // Give some leeway so it doesn't have to be pixel perfect.
+                        (min_side / 4.) - (min_side / 12.)
+                    });
 
                 // Calculate snap
                 let snap = Self::calculate_snap(&outputs, output);
@@ -584,7 +585,7 @@ mod imp {
         ) -> Propagation {
             if let Some(selected) = self.selected_output.borrow().as_ref() {
                 let [x, y] = [selected.x(), selected.y()];
-                let move_dist = self.config.borrow().pos_move_dist;
+                let move_dist = self.config.borrow().display.pos_move_dist;
                 let update_pos = match keyval {
                     Key::Up | Key::k => {
                         selected.set_y(y - move_dist);

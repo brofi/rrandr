@@ -30,7 +30,7 @@ impl DrawContext {
             rect.width() + SCREEN_LINE_WIDTH,
             rect.height() + SCREEN_LINE_WIDTH,
         );
-        self.cairo.set_source_color(&self.config.bounds_color().into());
+        self.cairo.set_source_color(&self.config.display_screen_color().into());
         self.cairo.set_line_width(SCREEN_LINE_WIDTH);
         self.cairo.set_dash(&[4.], 1.);
         self.cairo.stroke().unwrap();
@@ -38,7 +38,7 @@ impl DrawContext {
 
     pub fn draw_output(&self, rect: &Rectangle) {
         self.cairo.rectangle(rect.x(), rect.y(), rect.width(), rect.height());
-        self.cairo.set_source_color(&self.config.output_color().to_rgba(0.75));
+        self.cairo.set_source_color(&self.config.display_output_color().to_rgba(0.75));
         self.cairo.fill().unwrap();
     }
 
@@ -49,7 +49,7 @@ impl DrawContext {
             rect.width() - SELECTION_LINE_WIDTH,
             rect.height() - SELECTION_LINE_WIDTH,
         );
-        self.cairo.set_source_color(&self.config.selection_color().into());
+        self.cairo.set_source_color(&self.config.display_selection_color().into());
         self.cairo.set_line_width(SELECTION_LINE_WIDTH);
         self.cairo.set_dash(&[1., 0.], 0.);
         self.cairo.stroke().unwrap();
@@ -63,9 +63,9 @@ impl DrawContext {
         layout.set_text(product_name.unwrap_or(name));
 
         let mut desc = FontDescription::new();
-        desc.set_family(&self.config.font.family);
-        desc.set_weight(self.config.font.weight.into());
-        desc.set_size(i32::from(self.config.font.size) * PANGO_SCALE);
+        desc.set_family(&self.config.display.font.family);
+        desc.set_weight(self.config.display.font.weight.into());
+        desc.set_size(i32::from(self.config.display.font.size) * PANGO_SCALE);
 
         layout.set_font_description(Some(&desc));
 
@@ -73,7 +73,7 @@ impl DrawContext {
         if f64::from(w) <= rect.width() - f64::from(PADDING) * 2.
             && f64::from(h) <= rect.height() - f64::from(PADDING) * 2.
         {
-            self.cairo.set_source_color(&self.config.text_color().into());
+            self.cairo.set_source_color(&self.config.display_text_color().into());
             self.cairo.move_to(rect.x() + rect.width() / 2., rect.y() + rect.height() / 2.);
             self.cairo.rel_move_to(f64::from(-w) / 2., f64::from(-h) / 2.);
             show_layout(&self.cairo, &layout);
@@ -82,11 +82,11 @@ impl DrawContext {
     }
 
     pub fn draw_popup(&self, rect: &Rect, pad: f64, text: &str) -> Result<(), cairo::Error> {
-        self.cairo.set_source_color(&self.config.output_color().to_rgba(0.75));
+        self.cairo.set_source_color(&self.config.popup_background_color().to_rgba(0.75));
         self.cairo.rectangle(0., 0., f64::from(rect.width()), f64::from(rect.height()));
         self.cairo.fill()?;
 
-        self.cairo.set_source_color(&self.config.text_color().into());
+        self.cairo.set_source_color(&self.config.popup_text_color().into());
         let layout = self.pango_layout_popup(rect.width(), rect.height(), pad, text);
         let (w, h) = layout.pixel_size();
         self.cairo.move_to(

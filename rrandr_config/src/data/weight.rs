@@ -1,25 +1,7 @@
-use core::fmt;
+use std::fmt;
 
 use gtk::pango;
 use serde::{Deserialize, Serialize};
-
-use crate::MarkdownTable;
-
-#[derive(Clone, Deserialize, Serialize, MarkdownTable)]
-#[serde(default)]
-/// Output area font configuration
-pub struct Font {
-    /// Font family
-    pub family: String,
-    /// Font size in pt
-    pub size: u16,
-    /// Font weight
-    pub weight: Weight,
-}
-
-impl Default for Font {
-    fn default() -> Self { Self { family: "monospace".to_owned(), size: 12, weight: Weight::Bold } }
-}
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]

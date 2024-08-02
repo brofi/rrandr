@@ -8,14 +8,15 @@ A graphical interface to the RandR X Window System extension.
 
 [//]: # (<mark_config>)
 
-### `[]` Root level configuration
+
+### `[display]` Output area configuration
 
 | Attribute | Type | Default | Description |
 |-|-|-|-|
 | `snap_strength` | `Float or "auto"` | `auto` | Snapping strength when dragging outputs or `auto`. High values make it more "sticky", while 0 means no snapping. If left to default `snap_strength = min_size / 6` where `min_side` is the smallest side of any enabled output in px. E.g. when smallest screen resolution is Full HD => `snap_strength = 180`. |
 | `pos_move_dist` | `Integer` | `10` | Move distance when moving an output via keybindings |
 
-### `[font]` Output area font configuration
+### `[display.font]` Output area font configuration
 
 | Attribute | Type | Default | Description |
 |-|-|-|-|
@@ -24,22 +25,22 @@ A graphical interface to the RandR X Window System extension.
 | `weight` | `Weight` | `bold` | Font weight |
 
 
-### `[colors.light]` Output area light theme colors
+### `[display.colors.light]` Output area light theme colors
 
 | Attribute | Type | Default | Description |
 |-|-|-|-|
 | `text` | `Color` | `#ffffff` | Output name text color |
 | `output` | `Color` | `#3c3c3c` | Output background color |
-| `bounds` | `Color` | `#3c3c3c` | Screen rectangle color |
+| `screen` | `Color` | `#3c3c3c` | Screen rectangle color |
 | `selection` | `Color` | `#3584e4` | Output selection color |
 
-### `[colors.dark]` Output area dark theme colors
+### `[display.colors.dark]` Output area dark theme colors
 
 | Attribute | Type | Default | Description |
 |-|-|-|-|
 | `text` | `Color` | `#000000` | Output name text color |
 | `output` | `Color` | `#f6f5f4` | Output background color |
-| `bounds` | `Color` | `#f6f5f4` | Screen rectangle color |
+| `screen` | `Color` | `#f6f5f4` | Screen rectangle color |
 | `selection` | `Color` | `#1b68c6` | Output selection color |
 
 ### `[popup]` Identify popup configuration
@@ -58,5 +59,20 @@ A graphical interface to the RandR X Window System extension.
 | `family` | `String` | `Sans` | Font family |
 | `size` | `Integer or "auto"` | `auto` | Font size in pt or "auto" |
 | `weight` | `Weight` | `bold` | Font weight |
+
+
+### `[popup.colors.light]` Identify popup light theme colors
+
+| Attribute | Type | Default | Description |
+|-|-|-|-|
+| `text` | `Color` | `#000000` | Text color |
+| `background` | `Color` | `#f6f5f4` | Background color |
+
+### `[popup.colors.dark]` Identify popup dark theme colors
+
+| Attribute | Type | Default | Description |
+|-|-|-|-|
+| `text` | `Color` | `#ffffff` | Text color |
+| `background` | `Color` | `#3c3c3c` | Background color |
 
 [//]: # (</mark_config>)
