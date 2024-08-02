@@ -9,6 +9,7 @@ use crate::data::values::I16;
 use crate::math::{Rect, MM_PER_INCH};
 
 pub const PPI_DEFAULT: [f64; 2] = [96., 96.];
+pub const PPMM_DEFAULT: [f64; 2] = [PPI_DEFAULT[0] / MM_PER_INCH, PPI_DEFAULT[1] / MM_PER_INCH];
 
 mod imp {
     use std::cell::{Cell, RefCell};

@@ -23,6 +23,7 @@ use x11rb::x11_utils::Serialize;
 use x11rb::xcb_ffi::XCBConnection;
 
 use super::x_error_to_string;
+use crate::data::output::PPMM_DEFAULT;
 use crate::draw::DrawContext;
 use crate::math::Rect;
 
@@ -105,47 +106,57 @@ fn create_popup_windows(
 
     for output in &res.outputs {
         let output_info = get_output_info(conn, *output, res.timestamp)?.reply()?;
-        if output_info.crtc > 0 {
-            let ratio = config.popup.ratio;
-            let crtc_info = get_crtc_info(conn, output_info.crtc, res.timestamp)?.reply()?;
-            let mode = rr_modes[&crtc_info.mode];
-
-            let spacing_x = ((f64::from(config.popup.spacing) * f64::from(mode.width)
-                / f64::from(output_info.mm_width))
-            .round() as u16)
-                .min(mode.width / 2 - 1);
-            let spacing_y = ((f64::from(config.popup.spacing) * f64::from(mode.height)
-                / f64::from(output_info.mm_height))
-            .round() as u16)
-                .min(mode.height / 2 - 1);
-
-            let width = (f64::from(mode.width) * ratio)
-                .round()
-                .min(f64::from(mode.width - (2 * spacing_x)))
-                .max(1.) as u16;
-            let height = (f64::from(mode.height) * ratio)
-                .round()
-                .min(f64::from(mode.height - (2 * spacing_y)))
-                .max(1.) as u16;
-            let x = (i32::from(crtc_info.x) + i32::from(spacing_x)).try_into().unwrap_or(i16::MAX);
-            let y = (i32::from(crtc_info.y) + i32::from(mode.height)
-                - (i32::from(spacing_y) + i32::from(height)))
-            .try_into()
-            .unwrap_or(i16::MAX);
-
-            let rect = Rect::new(x, y, width, height);
-            let wid = create_popup_window(&conn, screen_num, &rect)?;
-            let surface =
-                create_popup_surface(conn, visual_type, wid, i32::from(width), i32::from(height))?;
-            let cr = cairo::Context::new(&surface)?;
-            let context = DrawContext::new(&cr, config);
-
-            let pad = f64::from(config.popup.padding) * f64::from(mode.height)
-                / f64::from(output_info.mm_height);
-            context.draw_popup(&rect, pad, &String::from_utf8_lossy(&output_info.name))?;
-            surface.flush();
-            windows.insert(wid, surface);
+        if output_info.crtc == 0 {
+            continue;
         }
+
+        let crtc_info = get_crtc_info(conn, output_info.crtc, res.timestamp)?.reply()?;
+        if crtc_info.mode == 0 {
+            continue;
+        }
+
+        let mode = rr_modes[&crtc_info.mode];
+        let ppmm = if output_info.mm_width > 0 && output_info.mm_height > 0 {
+            [
+                f64::from(mode.width) / f64::from(output_info.mm_width),
+                f64::from(mode.height) / f64::from(output_info.mm_height),
+            ]
+        } else {
+            PPMM_DEFAULT
+        };
+
+        let ratio = config.popup.ratio;
+        let spacing = f64::from(config.popup.spacing);
+
+        let spacing_x = ((spacing * ppmm[0]).round() as u16).min(mode.width / 2 - 1);
+        let spacing_y = ((spacing * ppmm[1]).round() as u16).min(mode.height / 2 - 1);
+
+        let width = (f64::from(mode.width) * ratio)
+            .round()
+            .min(f64::from(mode.width - (2 * spacing_x)))
+            .max(1.) as u16;
+        let height = (f64::from(mode.height) * ratio)
+            .round()
+            .min(f64::from(mode.height - (2 * spacing_y)))
+            .max(1.) as u16;
+
+        let x = (i32::from(crtc_info.x) + i32::from(spacing_x)).try_into().unwrap_or(i16::MAX);
+        let y = (i32::from(crtc_info.y) + i32::from(mode.height)
+            - (i32::from(spacing_y) + i32::from(height)))
+        .try_into()
+        .unwrap_or(i16::MAX);
+
+        let rect = Rect::new(x, y, width, height);
+        let wid = create_popup_window(&conn, screen_num, &rect)?;
+        let surface =
+            create_popup_surface(conn, visual_type, wid, i32::from(width), i32::from(height))?;
+        let cr = cairo::Context::new(&surface)?;
+        let context = DrawContext::new(&cr, config);
+        let pad = f64::from(config.popup.padding) * ppmm[1];
+        context.draw_popup(&rect, pad, &String::from_utf8_lossy(&output_info.name))?;
+
+        surface.flush();
+        windows.insert(wid, surface);
     }
     Ok(windows)
 }
