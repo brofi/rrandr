@@ -1,9 +1,10 @@
 use std::collections::HashMap;
 use std::error::Error;
+use std::ptr;
 use std::time::{Duration, Instant};
 
 use cairo::ffi::cairo_device_finish;
-use cairo::{XCBDrawable, XCBSurface};
+use cairo::{XCBDrawable, XCBSurface, XCBVisualType};
 use config::Config;
 use gio::spawn_blocking;
 use glib::spawn_future_local;
@@ -61,14 +62,25 @@ fn create_popup_surface(
     width: i32,
     height: i32,
 ) -> Result<XCBSurface, cairo::Error> {
-    let cairo_conn =
-        unsafe { cairo::XCBConnection::from_raw_none(conn.get_raw_xcb_connection().cast()) };
-    let cairo_visual = unsafe {
-        cairo::XCBVisualType::from_raw_none(
-            get_root_visual_type(&conn, screen_num).unwrap().serialize().as_mut_ptr().cast(),
-        )
+    let Some(conn_ptr) = ptr::NonNull::new(conn.get_raw_xcb_connection().cast()) else {
+        return Err(cairo::Error::NullPointer);
     };
-    XCBSurface::create(&cairo_conn, &XCBDrawable(wid), &cairo_visual, width, height)
+
+    let Some(visual_type) = get_root_visual_type(&conn, screen_num) else {
+        return Err(cairo::Error::InvalidVisual);
+    };
+
+    let Some(visual_ptr) = ptr::NonNull::new(visual_type.serialize().as_mut_ptr().cast()) else {
+        return Err(cairo::Error::NullPointer);
+    };
+
+    XCBSurface::create(
+        &cairo::XCBConnection(conn_ptr),
+        &XCBDrawable(wid),
+        &XCBVisualType(visual_ptr),
+        width,
+        height,
+    )
 }
 
 fn get_root_visual_type(conn: &impl XConnection, screen_num: usize) -> Option<Visualtype> {
