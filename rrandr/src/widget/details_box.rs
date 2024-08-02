@@ -37,7 +37,7 @@ mod imp {
     use crate::window::SPACING;
 
     const POS_UPDATE_DELAY: u64 = 500;
-    const SW_ENABLED_NAME: &'static str = "sw_enabled";
+    const SW_ENABLED_NAME: &str = "sw_enabled";
 
     #[derive(Properties)]
     #[properties(wrapper_type = super::DetailsBox)]

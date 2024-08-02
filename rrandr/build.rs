@@ -126,12 +126,12 @@ fn gen_readme() {
     let readme = Path::new("../README.md");
     if let Ok(mut contents) = fs::read_to_string(readme) {
         replace_mark("mark_config", &mut contents, &Config::to_markdown_table("", 3));
-        fs::write(readme, contents).expect(&format!("should write {:#?}", readme));
+        fs::write(readme, contents).unwrap_or_else(|_| panic!("should write {:#?}", readme));
     }
 }
 
 fn replace_mark(name: &str, contents: &mut String, replace_with: &str) {
-    if let Some(range) = md_mark_range(name, &contents) {
+    if let Some(range) = md_mark_range(name, contents) {
         let replace_with = String::from("\n\n") + replace_with + "\n";
         contents.replace_range(range, &replace_with);
     }

@@ -46,7 +46,7 @@ fn impl_markdown_table(ast: DeriveInput) -> TokenStream {
                 }
             });
 
-            let body = if rows.len() > 0 {
+            let body = if !rows.is_empty() {
                 quote! { "#".repeat(lvl.into()) + " `[" + key + "]`" + #desc + #header + #align #(+ #rows)* }
             } else {
                 quote! { String::new() }
@@ -110,13 +110,11 @@ fn ty_to_toml(ty: &Type) -> String {
         if let PathArguments::AngleBracketed(AngleBracketedGenericArguments { args, .. }) =
             &ty.arguments
         {
-            if let Some(GenericArgument::Type(gty)) = args.first() {
-                if let Type::Path(gty) = gty {
-                    let gty = gty.path.segments.last().expect("should have path segment");
-                    let ident = ty.ident.to_string();
-                    if ident == "Auto" {
-                        return ty_path_seg_to_toml(gty) + " or \"auto\"";
-                    }
+            if let Some(GenericArgument::Type(Type::Path(gty))) = args.first() {
+                let gty = gty.path.segments.last().expect("should have path segment");
+                let ident = ty.ident.to_string();
+                if ident == "Auto" {
+                    return ty_path_seg_to_toml(gty) + " or \"auto\"";
                 }
             }
         }
