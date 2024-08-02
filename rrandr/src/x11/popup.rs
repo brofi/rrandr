@@ -3,7 +3,6 @@ use std::error::Error;
 use std::ptr;
 use std::time::{Duration, Instant};
 
-use cairo::ffi::cairo_device_finish;
 use cairo::{XCBDrawable, XCBSurface, XCBVisualType};
 use config::Config;
 use gio::spawn_blocking;
@@ -57,7 +56,7 @@ fn create_popup_window(
 
 fn create_popup_surface(
     conn: &XCBConnection,
-    screen_num: usize,
+    visual_type: &mut [u8; 24],
     wid: WindowId,
     width: i32,
     height: i32,
@@ -66,11 +65,7 @@ fn create_popup_surface(
         return Err(cairo::Error::NullPointer);
     };
 
-    let Some(visual_type) = get_root_visual_type(&conn, screen_num) else {
-        return Err(cairo::Error::InvalidVisual);
-    };
-
-    let Some(visual_ptr) = ptr::NonNull::new(visual_type.serialize().as_mut_ptr().cast()) else {
+    let Some(visual_ptr) = ptr::NonNull::new(visual_type.as_mut_ptr().cast()) else {
         return Err(cairo::Error::NullPointer);
     };
 
@@ -101,6 +96,7 @@ fn create_popup_windows(
     config: &Config,
     conn: &XCBConnection,
     screen_num: usize,
+    visual_type: &mut [u8; 24],
 ) -> Result<HashMap<WindowId, XCBSurface>, Box<dyn Error>> {
     let mut windows = HashMap::new();
     let screen = &conn.setup().roots[screen_num];
@@ -140,7 +136,7 @@ fn create_popup_windows(
             let rect = Rect::new(x, y, width, height);
             let wid = create_popup_window(&conn, screen_num, &rect)?;
             let surface =
-                create_popup_surface(conn, screen_num, wid, i32::from(width), i32::from(height))?;
+                create_popup_surface(conn, visual_type, wid, i32::from(width), i32::from(height))?;
             let cr = cairo::Context::new(&surface)?;
             let context = DrawContext::new(&cr, config);
 
@@ -162,7 +158,12 @@ pub fn show_popup_windows(cfg: &Config, btn: &Button) -> Result<(), Box<dyn Erro
     }
 
     let (conn, screen_num) = XCBConnection::connect(None)?;
-    let popups = create_popup_windows(cfg, &conn, screen_num)?;
+    let Some(visual_type) = get_root_visual_type(&conn, screen_num) else {
+        return Err("Failed to get root visual type".into());
+    };
+    // must outlive visual pointer
+    let mut visual_type = visual_type.serialize();
+    let popups = create_popup_windows(cfg, &conn, screen_num, &mut visual_type)?;
     conn.flush()?;
 
     spawn_future_local({
@@ -185,7 +186,9 @@ pub fn show_popup_windows(cfg: &Config, btn: &Button) -> Result<(), Box<dyn Erro
             }
             btn.set_sensitive(true);
             for surface in popups.values() {
-                unsafe { cairo_device_finish(surface.device().unwrap().to_raw_none()) };
+                if let Some(device) = surface.device() {
+                    device.finish();
+                }
                 surface.finish();
             }
         }
