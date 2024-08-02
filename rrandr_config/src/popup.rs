@@ -11,12 +11,14 @@ use crate::MarkdownTable;
 #[serde(default)]
 /// Identify popup configuration
 pub struct Popup {
+    /// Resolution to popup size ratio
+    pub ratio: f64,
     /// Padding in mm
     pub padding: u16,
     /// Margin from screen edge in mm
     pub spacing: u16,
-    /// Resolution to popup size ratio
-    pub ratio: f64,
+    /// Border width in mm
+    pub border_width: u16,
     /// Show duration in seconds
     pub show_secs: f32,
     #[table]
@@ -28,9 +30,10 @@ pub struct Popup {
 impl Default for Popup {
     fn default() -> Self {
         Self {
+            ratio: 1. / 8.,
             padding: 5,
             spacing: 10,
-            ratio: 1. / 8.,
+            border_width: 1,
             show_secs: 2.5,
             font: Font::default(),
             colors: Colors::default(),
@@ -74,6 +77,8 @@ pub struct LightColors {
     pub text: Color,
     /// Background color
     pub background: Color,
+    /// Border color
+    pub border: Color,
 }
 
 impl Default for LightColors {
@@ -81,6 +86,7 @@ impl Default for LightColors {
         Self {
             text: Color::from_str("#000").unwrap_or_default(),
             background: Color::from_str("#f6f5f4").unwrap_or_default(),
+            border: Color::from_str("#3c3c3c").unwrap_or_default(),
         }
     }
 }
@@ -93,6 +99,8 @@ pub struct DarkColors {
     pub text: Color,
     /// Background color
     pub background: Color,
+    /// Border color
+    pub border: Color,
 }
 
 impl Default for DarkColors {
@@ -100,6 +108,7 @@ impl Default for DarkColors {
         Self {
             text: Color::from_str("#fff").unwrap_or_default(),
             background: Color::from_str("#3c3c3c").unwrap_or_default(),
+            border: Color::from_str("#f6f5f4").unwrap_or_default(),
         }
     }
 }

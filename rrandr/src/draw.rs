@@ -81,13 +81,30 @@ impl DrawContext {
         self.cairo.restore().unwrap();
     }
 
-    pub fn draw_popup(&self, rect: &Rect, pad: f64, text: &str) -> Result<(), cairo::Error> {
+    pub fn draw_popup(
+        &self,
+        rect: &Rect,
+        border: f64,
+        pad: f64,
+        text: &str,
+    ) -> Result<(), cairo::Error> {
         self.cairo.set_source_color(&self.config.popup_background_color().to_rgba(0.75));
         self.cairo.rectangle(0., 0., f64::from(rect.width()), f64::from(rect.height()));
         self.cairo.fill()?;
 
+        self.cairo.set_source_color(&self.config.popup_border_color().into());
+        self.cairo.rectangle(
+            border / 2.,
+            border / 2.,
+            f64::from(rect.width()) - border,
+            f64::from(rect.height()) - border,
+        );
+        self.cairo.set_line_width(border);
+        self.cairo.set_dash(&[1., 0.], 0.);
+        self.cairo.stroke()?;
+
         self.cairo.set_source_color(&self.config.popup_text_color().into());
-        let layout = self.pango_layout_popup(rect.width(), rect.height(), pad, text);
+        let layout = self.pango_layout_popup(rect.width(), rect.height(), border, pad, text);
         let (w, h) = layout.pixel_size();
         self.cairo.move_to(
             f64::from(i32::from(rect.width()) - w) / 2.,
@@ -97,10 +114,17 @@ impl DrawContext {
         Ok(())
     }
 
-    fn pango_layout_popup(&self, width: u16, height: u16, pad: f64, text: &str) -> Layout {
+    fn pango_layout_popup(
+        &self,
+        width: u16,
+        height: u16,
+        border: f64,
+        pad: f64,
+        text: &str,
+    ) -> Layout {
         let pscale = f64::from(PANGO_SCALE);
-        let height = (f64::from(height) - (2. * pad)).round().max(1.);
-        let width = (f64::from(width) - (2. * pad)).round().max(1.);
+        let height = (f64::from(height) - (2. * pad) - (2. * border)).round().max(1.);
+        let width = (f64::from(width) - (2. * pad) - (2. * border)).round().max(1.);
         let layout = create_layout(&self.cairo);
         layout.set_text(text);
 

@@ -54,6 +54,8 @@ impl Config {
 
     impl_color!(popup, popup_background_color, background);
 
+    impl_color!(popup, popup_border_color, border);
+
     pub fn new(app_name: &str, settings: Option<Settings>) -> Self {
         let mut config = Config::default();
         if let Some(cfg) = Self::find_config(app_name) {

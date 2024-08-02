@@ -47,9 +47,10 @@ A graphical interface to the RandR X Window System extension.
 
 | Attribute | Type | Default | Description |
 |-|-|-|-|
+| `ratio` | `Float` | `0.125` | Resolution to popup size ratio |
 | `padding` | `Integer` | `5` | Padding in mm |
 | `spacing` | `Integer` | `10` | Margin from screen edge in mm |
-| `ratio` | `Float` | `0.125` | Resolution to popup size ratio |
+| `border_width` | `Integer` | `1` | Border width in mm |
 | `show_secs` | `Float` | `2.5` | Show duration in seconds |
 
 ### `[popup.font]` Identify popup font configuration
@@ -67,6 +68,7 @@ A graphical interface to the RandR X Window System extension.
 |-|-|-|-|
 | `text` | `Color` | `#000000` | Text color |
 | `background` | `Color` | `#f6f5f4` | Background color |
+| `border` | `Color` | `#3c3c3c` | Border color |
 
 ### `[popup.colors.dark]` Identify popup dark theme colors
 
@@ -74,5 +76,6 @@ A graphical interface to the RandR X Window System extension.
 |-|-|-|-|
 | `text` | `Color` | `#ffffff` | Text color |
 | `background` | `Color` | `#3c3c3c` | Background color |
+| `border` | `Color` | `#f6f5f4` | Border color |
 
 [//]: # (</mark_config>)

@@ -153,7 +153,8 @@ fn create_popup_windows(
         let cr = cairo::Context::new(&surface)?;
         let context = DrawContext::new(&cr, config);
         let pad = f64::from(config.popup.padding) * ppmm[1];
-        context.draw_popup(&rect, pad, &String::from_utf8_lossy(&output_info.name))?;
+        let border = f64::from(config.popup.border_width) * ppmm[1];
+        context.draw_popup(&rect, border, pad, &String::from_utf8_lossy(&output_info.name))?;
 
         surface.flush();
         windows.insert(wid, surface);
