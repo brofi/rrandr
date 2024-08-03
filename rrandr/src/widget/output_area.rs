@@ -222,8 +222,12 @@ mod imp {
         pub(super) fn deselect(&self) { self.selected_output.replace(None); }
 
         fn get_screen_line_width(&self, w: i32, h: i32) -> f64 {
-            let max = 0_f64.max((f64::from(w.min(h)) - 2. * f64::from(PADDING)) / 2.);
-            self.config.borrow().display.screen_line_width.clamp(0., max)
+            if self.outputs.borrow().n_items() > 1 {
+                let max = 0_f64.max((f64::from(w.min(h)) - 2. * f64::from(PADDING)) / 2.);
+                self.config.borrow().display.screen_line_width.clamp(0., max)
+            } else {
+                0.
+            }
         }
 
         fn get_bounds(outputs: &Outputs) -> Rect {
