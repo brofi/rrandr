@@ -184,11 +184,14 @@ mod imp {
             *bounds = Self::get_bounds(&outputs);
 
             let scr_line_width = self.get_screen_line_width(w, h);
-            let margin = (f64::from(PADDING) + scr_line_width) * 2.;
-            let width = 0_f64.max(f64::from(w) - margin);
-            let height = 0_f64.max(f64::from(h) - margin);
-            self.scale
-                .set((width / f64::from(bounds.width())).min(height / f64::from(bounds.height())));
+            self.scale.set(if bounds.width() > 0 && bounds.height() > 0 {
+                let margin = (f64::from(PADDING) + scr_line_width) * 2.;
+                let width = 0_f64.max(f64::from(w) - margin);
+                let height = 0_f64.max(f64::from(h) - margin);
+                (width / f64::from(bounds.width())).min(height / f64::from(bounds.height()))
+            } else {
+                0.
+            });
             let dxy = i16::try_from(PADDING).unwrap() + scr_line_width.round() as i16;
             self.translate.set([dxy, dxy]);
         }
