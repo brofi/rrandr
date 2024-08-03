@@ -163,7 +163,7 @@ fn create_popup_windows(
 }
 
 pub fn show_popup_windows(cfg: &Config, btn: &Button) -> Result<(), Box<dyn Error>> {
-    let show_secs = cfg.popup.show_secs;
+    let show_secs = cfg.popup.timeout;
     if show_secs < 0. {
         warn!("Negative show duration: {}", show_secs);
         return Ok(());

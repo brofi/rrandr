@@ -50,8 +50,6 @@ mod imp {
     use crate::x11::popup::show_popup_windows;
     use crate::x11::randr::{self, Randr, ScreenSizeRange, Snapshot};
 
-    const CONFIRM_DIALOG_SHOW_SECS: u8 = 15;
-
     #[derive(CompositeTemplate, Default)]
     #[template(resource = "/com/github/brofi/rrandr/window.ui")]
     pub struct Window {
@@ -279,37 +277,45 @@ mod imp {
                 let dialog = Dialog::builder(&*obj)
                     .title(&gettext("Confirm changes"))
                     .heading(&gettext("Keep changes?"))
-                    .message(&ngettext!(
-                        "Reverting in {} second",
-                        "Reverting in {} seconds",
-                        CONFIRM_DIALOG_SHOW_SECS.into(),
-                        CONFIRM_DIALOG_SHOW_SECS
-                    ))
                     .actions(&[&gettext("_Keep"), &gettext("_Revert")])
                     .tooltips(&[&gettext("Keep changes"), &gettext("Revert changes")])
                     .build();
 
-                let countdown = spawn_future_local(clone!(
-                    #[weak(rename_to = window)]
-                    self,
-                    #[strong]
-                    dialog,
-                    async move {
-                        for i in (1..=CONFIRM_DIALOG_SHOW_SECS).rev() {
-                            // Translators: '{}' gets replaced with the number of seconds left.
-                            let msg = ngettext!(
-                                "Reverting in {} second",
-                                "Reverting in {} seconds",
-                                i.into(),
-                                i
-                            );
-                            dialog.set_message(msg);
-                            timeout_future_seconds(1).await;
+                let timeout = self.config.borrow().revert_timeout;
+                if timeout > 0 {
+                    dialog.set_message(ngettext!(
+                        "Reverting in {} second",
+                        "Reverting in {} seconds",
+                        timeout.into(),
+                        timeout
+                    ));
+                    let countdown = spawn_future_local(clone!(
+                        #[weak(rename_to = window)]
+                        self,
+                        #[strong]
+                        dialog,
+                        async move {
+                            for i in (1..=timeout).rev() {
+                                // Translators: '{}' gets replaced with the number of seconds left.
+                                let msg = ngettext!(
+                                    "Reverting in {} second",
+                                    "Reverting in {} seconds",
+                                    i.into(),
+                                    i
+                                );
+                                dialog.set_message(msg);
+                                timeout_future_seconds(1).await;
+                            }
+                            dialog.close();
+                            window.revert();
                         }
-                        dialog.close();
-                        window.revert();
-                    }
-                ));
+                    ));
+
+                    dialog.connect_close_request(move |_| {
+                        countdown.abort();
+                        Propagation::Proceed
+                    });
+                }
 
                 dialog.connect_action(clone!(
                     #[weak(rename_to = window)]
@@ -318,10 +324,6 @@ mod imp {
                         window.revert();
                     }
                 ));
-                dialog.connect_close_request(move |_| {
-                    countdown.abort();
-                    Propagation::Proceed
-                });
 
                 dialog.show();
             } else {

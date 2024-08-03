@@ -19,8 +19,8 @@ pub struct Popup {
     pub spacing: u16,
     /// Border width in mm
     pub border_width: u16,
-    /// Show duration in seconds
-    pub show_secs: f32,
+    /// Time in seconds the identify popup stays on screen
+    pub timeout: f32,
     #[table]
     pub font: Font,
     #[table]
@@ -34,7 +34,7 @@ impl Default for Popup {
             padding: 5,
             spacing: 10,
             border_width: 1,
-            show_secs: 2.5,
+            timeout: 2.5,
             font: Font::default(),
             colors: Colors::default(),
         }

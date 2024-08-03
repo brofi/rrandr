@@ -15,18 +15,32 @@ use serde::{Deserialize, Serialize};
 
 use crate::data::color::Color;
 
-#[derive(Default, Clone, Deserialize, Serialize, MarkdownTable)]
+#[derive(Clone, Deserialize, Serialize, MarkdownTable)]
 #[serde(default)]
 /// Root level configuration
 pub struct Config {
     /// Show an additional xrandr command for the current configuration
     pub show_xrandr: bool,
+    /// Time in seconds until applied changes are being reverted
+    pub revert_timeout: u8,
     #[table]
     pub display: Display,
     #[table]
     pub popup: Popup,
     #[serde(skip)]
     settings: Option<Settings>,
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            show_xrandr: false,
+            revert_timeout: 15,
+            display: Display::default(),
+            popup: Popup::default(),
+            settings: None,
+        }
+    }
 }
 
 macro_rules! impl_color {

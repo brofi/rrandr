@@ -13,6 +13,7 @@ A graphical interface to the RandR X Window System extension.
 | Attribute | Type | Default | Description |
 |-|-|-|-|
 | `show_xrandr` | `Boolean` | `false` | Show an additional xrandr command for the current configuration |
+| `revert_timeout` | `Integer` | `15` | Time in seconds until applied changes are being reverted |
 
 ### `[display]` Output area configuration
 
@@ -60,7 +61,7 @@ A graphical interface to the RandR X Window System extension.
 | `padding` | `Integer` | `5` | Padding in mm |
 | `spacing` | `Integer` | `10` | Margin from screen edge in mm |
 | `border_width` | `Integer` | `1` | Border width in mm |
-| `show_secs` | `Float` | `2.5` | Show duration in seconds |
+| `timeout` | `Float` | `2.5` | Time in seconds the identify popup stays on screen |
 
 ### `[popup.font]` Identify popup font configuration
 
