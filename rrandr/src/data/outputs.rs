@@ -53,6 +53,8 @@ wrapper! {
 impl Outputs {
     pub fn new() -> Outputs { Object::new() }
 
+    pub fn first(&self) -> Option<Output> { self.imp().0.borrow().first().cloned() }
+
     pub fn append(&self, output: &Output) {
         let index = {
             let mut outputs = self.imp().0.borrow_mut();

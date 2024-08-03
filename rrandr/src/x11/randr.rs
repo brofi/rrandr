@@ -4,7 +4,7 @@ use std::error::Error;
 use std::thread::{self, JoinHandle};
 
 use async_channel::Sender;
-use gtk::prelude::{CastNone, ListModelExt, ListModelExtManual};
+use gtk::prelude::{ListModelExt, ListModelExtManual};
 use log::{debug, error, warn};
 use x11rb::connection::{Connection as XConnection, RequestConnection};
 use x11rb::cookie::{Cookie, VoidCookie};
@@ -441,7 +441,7 @@ impl Randr {
         let mut mheight = 0;
 
         if outputs.n_items() == 1 {
-            let o = outputs.item(0).and_downcast::<Output>().unwrap();
+            let o = outputs.first().unwrap();
             if let (Ok(w), Ok(h)) = (u16::try_from(o.width()), u16::try_from(o.height())) {
                 mwidth = w;
                 mheight = h;

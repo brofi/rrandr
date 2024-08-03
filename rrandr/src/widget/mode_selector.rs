@@ -13,9 +13,7 @@ mod imp {
     use glib::subclass::types::{ObjectSubclass, ObjectSubclassExt, ObjectSubclassIsExt};
     use glib::subclass::{Signal, SignalClassHandlerToken};
     use glib::{clone, derived_properties, object_subclass, Properties, SignalHandlerId, Value};
-    use gtk::prelude::{
-        BoxExt, ListItemExt, ListModelExt, ListModelExtManual, ObjectExt, WidgetExt,
-    };
+    use gtk::prelude::{BoxExt, ListItemExt, ListModelExtManual, ObjectExt, WidgetExt};
     use gtk::subclass::prelude::DerivedObjectProperties;
     use gtk::subclass::widget::{WidgetClassExt, WidgetImpl};
     use gtk::{
@@ -143,10 +141,8 @@ mod imp {
             if let Some(modes) = modes {
                 let resolutions = modes.resolutions();
 
-                if resolutions.n_items() > 0 {
-                    rr_model = Some(
-                        modes.refresh_rates(&resolutions.item(0).and_downcast::<Mode>().unwrap()),
-                    );
+                if let Some(first) = resolutions.first() {
+                    rr_model = Some(modes.refresh_rates(&first));
                 }
 
                 let format_width = resolutions

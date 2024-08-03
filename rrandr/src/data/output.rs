@@ -1,6 +1,5 @@
 use glib::{wrapper, Object};
 use gtk::glib;
-use gtk::prelude::{CastNone, ListModelExt};
 use x11rb::protocol::randr::Output as OutputId;
 
 use crate::data::mode::Mode;
@@ -127,7 +126,7 @@ impl Output {
 
     pub fn enable_at(&self, x: i16, y: i16) {
         self.set_enabled(true);
-        self.set_mode(Some(self.modes().item(0).and_downcast::<Mode>().expect("has mode")));
+        self.set_mode(Some(self.modes().first().expect("has mode")));
         self.set_x(x);
         self.set_y(y);
     }

@@ -53,6 +53,8 @@ wrapper! {
 impl Modes {
     pub fn new() -> Modes { Object::new() }
 
+    pub fn first(&self) -> Option<Mode> { self.imp().0.borrow().first().cloned() }
+
     pub fn append(&self, mode: &Mode) {
         let index = {
             let mut modes = self.imp().0.borrow_mut();
