@@ -1,16 +1,16 @@
 mod data;
-pub mod popup;
 pub mod display;
+pub mod popup;
 
 use std::fs;
 use std::path::PathBuf;
 
+use display::Display;
 use glib::{home_dir, user_config_dir};
 use gtk::{glib, Settings};
 use log::{info, warn};
 use popup::Popup;
 use rrandr_config_derive::MarkdownTable;
-use display::Display;
 use serde::{Deserialize, Serialize};
 
 use crate::data::color::Color;
@@ -19,6 +19,8 @@ use crate::data::color::Color;
 #[serde(default)]
 /// Root level configuration
 pub struct Config {
+    /// Show an additional xrandr command for the current configuration
+    pub show_xrandr: bool,
     #[table]
     pub display: Display,
     #[table]

@@ -8,6 +8,11 @@ A graphical interface to the RandR X Window System extension.
 
 [//]: # (<mark_config>)
 
+### `[]` Root level configuration
+
+| Attribute | Type | Default | Description |
+|-|-|-|-|
+| `show_xrandr` | `Boolean` | `false` | Show an additional xrandr command for the current configuration |
 
 ### `[display]` Output area configuration
 

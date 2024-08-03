@@ -23,7 +23,9 @@ mod imp {
     use glib::subclass::types::{ObjectSubclass, ObjectSubclassExt};
     use glib::subclass::InitializingObject;
     use glib::{clone, object_subclass, spawn_future_local, timeout_future_seconds, Propagation};
-    use gtk::prelude::{GtkWindowExt, ListModelExt, ListModelExtManual, StaticTypeExt, WidgetExt};
+    use gtk::prelude::{
+        GtkWindowExt, ListModelExt, ListModelExtManual, ObjectExt, StaticTypeExt, WidgetExt,
+    };
     use gtk::subclass::application_window::ApplicationWindowImpl;
     use gtk::subclass::widget::{
         CompositeTemplateCallbacksClass, CompositeTemplateClass, CompositeTemplateInitializingExt,
@@ -32,10 +34,11 @@ mod imp {
     use gtk::subclass::window::WindowImpl;
     use gtk::{
         glib, template_callbacks, AboutDialog, ApplicationWindow, Button, CompositeTemplate,
-        EventControllerKey, FlowBox, License, Paned, TemplateChild,
+        EventControllerKey, FlowBox, GestureClick, Label, License, Overlay, Paned, TemplateChild,
     };
     use log::{error, warn};
 
+    use super::PADDING;
     use crate::app::{APP_NAME, APP_NAME_LOC};
     use crate::data::output::Output;
     use crate::data::outputs::Outputs;
@@ -65,6 +68,12 @@ mod imp {
         pub(super) details: TemplateChild<DetailsBox>,
         #[template_child]
         actions: TemplateChild<FlowBox>,
+        #[template_child]
+        overlay_container: TemplateChild<Overlay>,
+        #[template_child]
+        overlay: TemplateChild<Label>,
+        #[template_child]
+        xrandr: TemplateChild<Label>,
         last_handle_pos: Cell<i32>,
     }
 
@@ -121,6 +130,17 @@ mod imp {
                 }
             ));
 
+            if self.config.borrow().show_xrandr {
+                self.overlay_container.set_visible(true);
+                let gc = GestureClick::new();
+                gc.connect_pressed(clone!(
+                    #[weak(rename_to = this)]
+                    self,
+                    move |_, n_press, _, _| this.on_xrandr_clicked(n_press)
+                ));
+                self.xrandr.add_controller(gc);
+            }
+
             self.setup_randr_notify();
         }
     }
@@ -151,6 +171,16 @@ mod imp {
             let enabled = Outputs::new();
             let disabled = Outputs::new();
             for output in outputs.iter::<Output>().map(Result::unwrap) {
+                output.connect_notify_local(
+                    None,
+                    clone!(
+                        #[weak(rename_to = this)]
+                        self,
+                        move |_, _| this
+                            .xrandr
+                            .set_text(&randr::gen_xrandr_command(&this.get_outputs()))
+                    ),
+                );
                 if output.enabled() { enabled.append(&output) } else { disabled.append(&output) }
             }
             // Keep selection when outputs move from enabled to disabled and vice versa
@@ -168,6 +198,7 @@ mod imp {
             }
             self.enabled_area.set_outputs(&enabled);
             self.disabled_area.set_outputs(&disabled);
+            self.xrandr.set_text(&randr::gen_xrandr_command(&outputs));
         }
 
         fn on_key_pressed(
@@ -338,6 +369,29 @@ mod imp {
                 warn!("About dialog description differs from crate description");
             }
             about.show();
+        }
+
+        fn on_xrandr_clicked(&self, n_press: i32) {
+            if n_press == 2 {
+                self.xrandr.clipboard().set_text(&self.xrandr.text());
+                self.overlay.set_margin_bottom(
+                    self.overlay_container.height()
+                        + self.details.height()
+                        // xrandr/details spacing + details/paned spacing + 1 spacing
+                        + 3 * i32::from(PADDING)
+                        // hsep
+                        + 1,
+                );
+                spawn_future_local(clone!(
+                    #[weak(rename_to = overlay)]
+                    self.overlay,
+                    async move {
+                        overlay.set_visible(true);
+                        timeout_future_seconds(2).await;
+                        overlay.set_visible(false);
+                    }
+                ));
+            }
         }
 
         fn get_outputs(&self) -> Outputs {

@@ -45,6 +45,13 @@
                 <property name="action-name">win.show-help-overlay</property>
               </object>
             </child>
+            <child>
+              <object class="GtkShortcutsShortcut">
+                <property name="title" translatable="yes">Copy xrandr command</property>
+                <property name="subtitle" translatable="yes">Double-click</property>
+                <property name="shortcut-type">gesture</property>
+              </object>
+            </child>
           </object>
         </child>
         <child>

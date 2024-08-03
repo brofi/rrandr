@@ -787,7 +787,7 @@ fn handle_no_reply_error(
     error
 }
 
-pub fn _gen_xrandr_command(outputs: &Outputs) -> String {
+pub fn gen_xrandr_command(outputs: &Outputs) -> String {
     let mut cmd = "xrandr".to_owned();
     for output in outputs.iter::<Output>().map(Result::unwrap) {
         cmd += &format!(" --output {}", &output.name());
