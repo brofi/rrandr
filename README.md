@@ -4,7 +4,59 @@ A graphical interface to the RandR X Window System extension.
 
 ## Installation
 
+For Arch Linux users an upstream version of _RRandR_ is available in the _Arch Linux User Repository ([AUR](https://aur.archlinux.org/))_: [rrandr-git](https://aur.archlinux.org/packages/rrandr-git).
+
+### Manual Build & Installation
+
+#### Build
+
+* Install build dependencies:
+    * [`rustup`](https://rustup.rs/), [`gettext`](https://www.gnu.org/software/gettext/)
+    * Arch Linux: `pacman -S rustup gettext`
+* Install dependencies:
+    * `gtk4`, `pango`, `cairo`, `libxcb`, `glib2`, `glibc`, `gcc-libs`
+    * Dependency names might differ depending on your distribution
+    * Arch Linux: `pacman -S gtk4`
+* Get, build & run:
+    * `git clone https://github.com/brofi/rrandr`
+    * `cd rrandr`
+    * `cargo build --release`
+    * `target/release/rrandr`
+
+#### Install (optional)
+
+```sh
+#!/bin/bash
+# Run as superuser from project root
+
+# Install binary
+install -Dm755 target/release/rrandr -t /usr/bin
+# Install license
+install -Dm644 COPYING -t /usr/share/licenses/rrandr
+# Install logo
+install -Dm644 rrandr/src/res/rrandr.svg -t /usr/share/pixmaps
+# Install desktop file
+desktop-file-install rrandr/src/res/rrandr.desktop
+update-desktop-database
+# Install translations
+mapfile -t linguas < rrandr/po/LINGUAS
+for lang in "${linguas[@]}"; do
+    install -Dm644 "target/po/$lang/LC_MESSAGES/rrandr.mo" -t \
+        "/usr/share/locale/$lang/LC_MESSAGES"
+done
+```
+
 ## Configuration
+
+_RRandR_ is configured via a [TOML](https://toml.io/en/) configuration file. A configuration can be put in the following locations:
+
+1. `$XDG_CONFIG_HOME/rrandr/rrandr.toml`
+2. `$XDG_CONFIG_HOME/rrandr.toml`
+3. `$HOME/.rrandr.toml`
+
+Where `$XDG_CONFIG_HOME` if unset defaults to `$HOME/.config`.
+
+The following sections describe all available configuration attributes grouped by TOML table.
 
 [//]: # (<mark_config>)
 
