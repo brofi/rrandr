@@ -21,7 +21,9 @@ A graphical interface to the RandR X Window System extension.
 | `snap_strength` | `Float or "auto"` | `auto` | Snapping strength when dragging outputs or `auto`. High values make it more "sticky", while 0 means no snapping. If left to default `snap_strength = min_size / 6` where `min_side` is the smallest side of any enabled output in px. E.g. when smallest screen resolution is Full HD => `snap_strength = 180`. |
 | `pos_move_dist` | `Integer` | `10` | Move distance when moving an output via keybindings |
 | `selection_line_width` | `Float` | `4` | Thickness of the selection outline in px |
+| `selection_line_style` | `BorderStyle` | `solid` | Style of the selection outline |
 | `screen_line_width` | `Float` | `2` | Thickness of the screen outline in px |
+| `screen_line_style` | `BorderStyle` | `dashed` | Style of the screen outline |
 
 ### `[display.font]` Output area font configuration
 

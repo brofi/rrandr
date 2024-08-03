@@ -44,3 +44,18 @@ impl fmt::Display for Weight {
         write!(f, "{}", format!("{:?}", self).to_lowercase())
     }
 }
+
+#[derive(Debug, Clone, Copy, Deserialize, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum BorderStyle {
+    Solid,
+    Dotted,
+    Dashed,
+    None,
+}
+
+impl fmt::Display for BorderStyle {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", format!("{:?}", self).to_lowercase())
+    }
+}

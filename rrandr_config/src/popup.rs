@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::data::auto::Auto;
 use crate::data::color::Color;
-use crate::data::weight::Weight;
+use crate::data::enums::Weight;
 use crate::MarkdownTable;
 
 #[derive(Clone, Deserialize, Serialize, MarkdownTable)]

@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::data::auto::Auto;
 use crate::data::color::Color;
-use crate::data::weight::Weight;
+use crate::data::enums::{BorderStyle, Weight};
 use crate::MarkdownTable;
 
 #[derive(Clone, Deserialize, Serialize, MarkdownTable)]
@@ -21,8 +21,12 @@ pub struct Display {
     pub pos_move_dist: i16,
     /// Thickness of the selection outline in px
     pub selection_line_width: f64,
+    /// Style of the selection outline
+    pub selection_line_style: BorderStyle,
     /// Thickness of the screen outline in px
     pub screen_line_width: f64,
+    /// Style of the screen outline
+    pub screen_line_style: BorderStyle,
     #[table]
     pub font: Font,
     #[table]
@@ -35,7 +39,9 @@ impl Default for Display {
             snap_strength: Auto::default(),
             pos_move_dist: 10,
             selection_line_width: 4.,
+            selection_line_style: BorderStyle::Solid,
             screen_line_width: 2.,
+            screen_line_style: BorderStyle::Dashed,
             font: Default::default(),
             colors: Default::default(),
         }

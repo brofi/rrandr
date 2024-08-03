@@ -1,8 +1,9 @@
 #![allow(clippy::module_name_repetitions)]
 
-use cairo::{Context, Rectangle};
+use cairo::{Context, LineCap, LineJoin, Rectangle};
+use config::data::enums::BorderStyle;
 use config::Config;
-use gdk::prelude::GdkCairoContextExt;
+use gtk::prelude::GdkCairoContextExt;
 use pango::ffi::PANGO_SCALE;
 use pango::{Alignment, FontDescription, Layout};
 use pangocairo::functions::{create_layout, show_layout};
@@ -28,8 +29,7 @@ impl DrawContext {
             rect.height() + line_width,
         );
         self.cairo.set_source_color(&self.config.display_screen_color().into());
-        self.cairo.set_line_width(line_width);
-        self.cairo.set_dash(&[4.], 1.);
+        self.set_stroke_style(self.config.display.screen_line_style, line_width);
         self.cairo.stroke().unwrap();
     }
 
@@ -52,8 +52,7 @@ impl DrawContext {
             rect.height() - line_width,
         );
         self.cairo.set_source_color(&self.config.display_selection_color().into());
-        self.cairo.set_line_width(line_width);
-        self.cairo.set_dash(&[1., 0.], 0.);
+        self.set_stroke_style(self.config.display.selection_line_style, line_width);
         self.cairo.stroke().unwrap();
     }
 
@@ -163,5 +162,33 @@ impl DrawContext {
         }
 
         layout
+    }
+
+    fn set_stroke_style(&self, style: BorderStyle, line_width: f64) {
+        let line_width = line_width.max(0.);
+        self.cairo.set_line_width(line_width);
+        self.cairo.set_dash(&[], 0.);
+        self.cairo.set_line_cap(LineCap::Butt);
+        self.cairo.set_line_join(LineJoin::Miter);
+
+        match style {
+            BorderStyle::Solid => {
+                self.cairo.set_dash(&[1., 0.], 0.);
+            }
+            BorderStyle::Dashed => {
+                let dashes = if line_width > 0. { [line_width, 2. * line_width] } else { [1., 2.] };
+                self.cairo.set_dash(&dashes, 0.);
+                self.cairo.set_line_cap(LineCap::Square);
+            }
+            BorderStyle::Dotted => {
+                let dashes = if line_width > 0. { [0., 2. * line_width] } else { [0., 2.] };
+                self.cairo.set_dash(&dashes, 0.);
+                self.cairo.set_line_cap(LineCap::Round);
+                self.cairo.set_line_join(LineJoin::Round);
+            }
+            BorderStyle::None => {
+                self.cairo.set_line_width(0.);
+            }
+        }
     }
 }
