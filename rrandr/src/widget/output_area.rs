@@ -33,7 +33,7 @@ mod imp {
 
     use crate::data::output::Output;
     use crate::data::outputs::Outputs;
-    use crate::draw::{DrawContext, SCREEN_LINE_WIDTH};
+    use crate::draw::DrawContext;
     use crate::math::{Point, Rect};
     use crate::widget::details_box::Update;
     use crate::window::PADDING;
@@ -156,8 +156,8 @@ mod imp {
 
     impl DrawingAreaImpl for OutputArea {
         #[allow(clippy::cast_possible_truncation)]
-        fn resize(&self, width: i32, height: i32) {
-            self.parent_resize(width, height);
+        fn resize(&self, w: i32, h: i32) {
+            self.parent_resize(w, h);
 
             let outputs = self.outputs.borrow();
             let mut bounds = self.bounds.borrow_mut();
@@ -182,15 +182,14 @@ mod imp {
                 }
             }
             *bounds = Self::get_bounds(&outputs);
-            self.scale.set(
-                ((f64::from(width) - (f64::from(PADDING) + SCREEN_LINE_WIDTH) * 2.)
-                    / f64::from(bounds.width()))
-                .min(
-                    (f64::from(height) - (f64::from(PADDING) + SCREEN_LINE_WIDTH) * 2.)
-                        / f64::from(bounds.height()),
-                ),
-            );
-            let dxy = i16::try_from(PADDING).unwrap() + SCREEN_LINE_WIDTH.round() as i16;
+
+            let scr_line_width = self.get_screen_line_width(w, h);
+            let margin = (f64::from(PADDING) + scr_line_width) * 2.;
+            let width = 0_f64.max(f64::from(w) - margin);
+            let height = 0_f64.max(f64::from(h) - margin);
+            self.scale
+                .set((width / f64::from(bounds.width())).min(height / f64::from(bounds.height())));
+            let dxy = i16::try_from(PADDING).unwrap() + scr_line_width.round() as i16;
             self.translate.set([dxy, dxy]);
         }
     }
@@ -222,18 +221,23 @@ mod imp {
 
         pub(super) fn deselect(&self) { self.selected_output.replace(None); }
 
+        fn get_screen_line_width(&self, w: i32, h: i32) -> f64 {
+            let max = 0_f64.max((f64::from(w.min(h)) - 2. * f64::from(PADDING)) / 2.);
+            self.config.borrow().display.screen_line_width.clamp(0., max)
+        }
+
         fn get_bounds(outputs: &Outputs) -> Rect {
             Rect::bounds(outputs.iter::<Output>().map(Result::unwrap).map(|o| o.rect()).collect())
         }
 
-        fn on_draw(&self, cr: &cairo::Context, _w: i32, _h: i32) {
+        fn on_draw(&self, cr: &cairo::Context, w: i32, h: i32) {
             let bounds = self.bounds.borrow();
             let scale = self.scale.get();
             let translate = self.translate.get();
             let context = DrawContext::new(cr, &self.config.borrow());
 
             let screen_rect = bounds.transform(scale, translate);
-            context.draw_screen(&screen_rect);
+            context.draw_screen(&screen_rect, self.get_screen_line_width(w, h));
 
             for o in self.outputs.borrow().iter::<Output>().map(Result::unwrap) {
                 let output_rect = o.rect().transform(scale, translate);

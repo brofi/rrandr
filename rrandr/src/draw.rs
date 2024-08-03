@@ -10,9 +10,6 @@ use pangocairo::functions::{create_layout, show_layout};
 use crate::math::Rect;
 use crate::window::PADDING;
 
-pub const SCREEN_LINE_WIDTH: f64 = 2.;
-const SELECTION_LINE_WIDTH: f64 = 4.;
-
 pub struct DrawContext {
     cairo: Context,
     config: Config,
@@ -23,15 +20,15 @@ impl DrawContext {
         DrawContext { cairo: cairo.clone(), config: config.clone() }
     }
 
-    pub fn draw_screen(&self, rect: &Rectangle) {
+    pub fn draw_screen(&self, rect: &Rectangle, line_width: f64) {
         self.cairo.rectangle(
-            rect.x() - SCREEN_LINE_WIDTH / 2.,
-            rect.y() - SCREEN_LINE_WIDTH / 2.,
-            rect.width() + SCREEN_LINE_WIDTH,
-            rect.height() + SCREEN_LINE_WIDTH,
+            rect.x() - line_width / 2.,
+            rect.y() - line_width / 2.,
+            rect.width() + line_width,
+            rect.height() + line_width,
         );
         self.cairo.set_source_color(&self.config.display_screen_color().into());
-        self.cairo.set_line_width(SCREEN_LINE_WIDTH);
+        self.cairo.set_line_width(line_width);
         self.cairo.set_dash(&[4.], 1.);
         self.cairo.stroke().unwrap();
     }
@@ -43,14 +40,19 @@ impl DrawContext {
     }
 
     pub fn draw_selected_output(&self, rect: &Rectangle) {
+        let line_width = self
+            .config
+            .display
+            .selection_line_width
+            .clamp(0., rect.width().min(rect.height()) / 2.);
         self.cairo.rectangle(
-            rect.x() + SELECTION_LINE_WIDTH / 2.,
-            rect.y() + SELECTION_LINE_WIDTH / 2.,
-            rect.width() - SELECTION_LINE_WIDTH,
-            rect.height() - SELECTION_LINE_WIDTH,
+            rect.x() + line_width / 2.,
+            rect.y() + line_width / 2.,
+            rect.width() - line_width,
+            rect.height() - line_width,
         );
         self.cairo.set_source_color(&self.config.display_selection_color().into());
-        self.cairo.set_line_width(SELECTION_LINE_WIDTH);
+        self.cairo.set_line_width(line_width);
         self.cairo.set_dash(&[1., 0.], 0.);
         self.cairo.stroke().unwrap();
     }

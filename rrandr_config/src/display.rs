@@ -19,6 +19,10 @@ pub struct Display {
     pub snap_strength: Auto<f64>,
     /// Move distance when moving an output via keybindings
     pub pos_move_dist: i16,
+    /// Thickness of the selection outline in px
+    pub selection_line_width: f64,
+    /// Thickness of the screen outline in px
+    pub screen_line_width: f64,
     #[table]
     pub font: Font,
     #[table]
@@ -30,6 +34,8 @@ impl Default for Display {
         Self {
             snap_strength: Auto::default(),
             pos_move_dist: 10,
+            selection_line_width: 4.,
+            screen_line_width: 2.,
             font: Default::default(),
             colors: Default::default(),
         }
