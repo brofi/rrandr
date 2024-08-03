@@ -171,16 +171,18 @@ mod imp {
             let enabled = Outputs::new();
             let disabled = Outputs::new();
             for output in outputs.iter::<Output>().map(Result::unwrap) {
-                output.connect_notify_local(
-                    None,
-                    clone!(
-                        #[weak(rename_to = this)]
-                        self,
-                        move |_, _| this
-                            .xrandr
-                            .set_text(&randr::gen_xrandr_command(&this.get_outputs()))
-                    ),
-                );
+                if self.config.borrow().show_xrandr {
+                    output.connect_notify_local(
+                        None,
+                        clone!(
+                            #[weak(rename_to = this)]
+                            self,
+                            move |_, _| this
+                                .xrandr
+                                .set_text(&randr::gen_xrandr_command(&this.get_outputs()))
+                        ),
+                    );
+                }
                 if output.enabled() { enabled.append(&output) } else { disabled.append(&output) }
             }
             // Keep selection when outputs move from enabled to disabled and vice versa
