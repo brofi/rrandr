@@ -66,7 +66,7 @@ The following sections describe all available configuration attributes grouped b
 |-|-|-|-|
 | `show_xrandr` | `Boolean` | `false` | Show an additional xrandr command for the current configuration |
 | `revert_timeout` | `Integer` | `15` | Time in seconds until applied changes are being reverted |
-| `apply_hook` | `String` | `` | Execute this child program when the screen configuration has been applied successfully. Useful for example to reset a wallpaper when not using a desktop environment. |
+| `apply_hook` | `String` | `` | Execute this child program when the screen configuration has been applied successfully. Useful for example to reset a wallpaper when not using a desktop environment. Variable expansion, globs, operators, filename expansion, etc. are not supported. |
 | `revert_hook` | `String` | `` | Execute this child program when the screen configuration has been reverted. |
 
 ### `[display]` Output area configuration

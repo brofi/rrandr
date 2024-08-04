@@ -25,7 +25,8 @@ pub struct Config {
     pub revert_timeout: u8,
     /// Execute this child program when the screen configuration has been
     /// applied successfully. Useful for example to reset a wallpaper when not
-    /// using a desktop environment.
+    /// using a desktop environment. Variable expansion, globs, operators,
+    /// filename expansion, etc. are not supported.
     pub apply_hook: String,
     /// Execute this child program when the screen configuration has been
     /// reverted.

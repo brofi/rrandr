@@ -42,7 +42,7 @@ mod imp {
     use crate::app::{APP_NAME, APP_NAME_LOC};
     use crate::data::output::Output;
     use crate::data::outputs::Outputs;
-    use crate::hook::spawn_hook;
+    use crate::hook::{self};
     use crate::widget::details_box::{DetailsBox, Update};
     use crate::widget::dialog::Dialog;
     use crate::widget::disabled_output_area::DisabledOutputArea;
@@ -276,7 +276,7 @@ mod imp {
             self.snapshot.replace(Some(self.randr.snapshot()));
             if self.randr.apply(&self.get_outputs()) {
                 let cfg = self.config.borrow();
-                if let Err(e) = spawn_hook(&cfg.apply_hook) {
+                if let Err(e) = hook::spawn(&cfg.apply_hook) {
                     warn!("{e}");
                 }
                 let dialog = Dialog::builder(&*obj)
@@ -333,7 +333,7 @@ mod imp {
                 dialog.show();
             } else {
                 self.revert();
-                if let Err(e) = spawn_hook(&self.config.borrow().revert_hook) {
+                if let Err(e) = hook::spawn(&self.config.borrow().revert_hook) {
                     warn!("{e}");
                 }
                 Dialog::builder(&*obj)

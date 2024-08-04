@@ -9,7 +9,7 @@ use glib::{
 use gtk::glib;
 use log::{error, log, warn, Level};
 
-pub fn spawn_hook(hook: &str) -> Result<SourceId, Error> {
+pub fn spawn(hook: &str) -> Result<SourceId, Error> {
     let args = shell_parse_argv(hook)?;
     let args = args.iter().map(Path::new).collect::<Vec<_>>();
     let env = environ();
