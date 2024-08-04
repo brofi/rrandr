@@ -23,6 +23,13 @@ pub struct Config {
     pub show_xrandr: bool,
     /// Time in seconds until applied changes are being reverted
     pub revert_timeout: u8,
+    /// Execute this child program when the screen configuration has been
+    /// applied successfully. Useful for example to reset a wallpaper when not
+    /// using a desktop environment.
+    pub apply_hook: String,
+    /// Execute this child program when the screen configuration has been
+    /// reverted.
+    pub revert_hook: String,
     #[table]
     pub display: Display,
     #[table]
@@ -36,6 +43,8 @@ impl Default for Config {
         Self {
             show_xrandr: false,
             revert_timeout: 15,
+            apply_hook: Default::default(),
+            revert_hook: Default::default(),
             display: Display::default(),
             popup: Popup::default(),
             settings: None,
