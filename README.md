@@ -134,14 +134,14 @@ The following sections describe all available configuration attributes grouped b
 |-|-|-|-|
 | `text` | `Color` | `#000000` | Text color |
 | `background` | `Color` | `#f6f5f4` | Background color |
-| `border` | `Color` | `#3c3c3c` | Border color |
+| `border` | `Color` | `#cdc7c2` | Border color |
 
 ### `[popup.colors.dark]` Identify popup dark theme colors
 
 | Attribute | Type | Default | Description |
 |-|-|-|-|
 | `text` | `Color` | `#ffffff` | Text color |
-| `background` | `Color` | `#3c3c3c` | Background color |
-| `border` | `Color` | `#f6f5f4` | Border color |
+| `background` | `Color` | `#353535` | Background color |
+| `border` | `Color` | `#1b1b1b` | Border color |
 
 [//]: # (</mark_config>)

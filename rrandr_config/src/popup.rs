@@ -86,7 +86,7 @@ impl Default for LightColors {
         Self {
             text: Color::from_str("#000").unwrap_or_default(),
             background: Color::from_str("#f6f5f4").unwrap_or_default(),
-            border: Color::from_str("#3c3c3c").unwrap_or_default(),
+            border: Color::from_str("#cdc7c2").unwrap_or_default(),
         }
     }
 }
@@ -107,8 +107,8 @@ impl Default for DarkColors {
     fn default() -> Self {
         Self {
             text: Color::from_str("#fff").unwrap_or_default(),
-            background: Color::from_str("#3c3c3c").unwrap_or_default(),
-            border: Color::from_str("#f6f5f4").unwrap_or_default(),
+            background: Color::from_str("#353535").unwrap_or_default(),
+            border: Color::from_str("#1b1b1b").unwrap_or_default(),
         }
     }
 }
