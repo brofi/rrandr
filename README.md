@@ -73,9 +73,11 @@ The following sections describe all available configuration attributes grouped b
 |-|-|-|-|
 | `snap_strength` | `Float or "auto"` | `auto` | Snapping strength when dragging outputs or `auto`. High values make it more "sticky", while 0 means no snapping. If left to default `snap_strength = min_size / 6` where `min_side` is the smallest side of any enabled output in px. E.g. when smallest screen resolution is Full HD => `snap_strength = 180`. |
 | `pos_move_dist` | `Integer` | `10` | Move distance when moving an output via keybindings |
-| `selection_line_width` | `Float` | `4` | Thickness of the selection outline in px |
+| `output_line_width` | `Float` | `3.5` | Thickness of the output outline in px |
+| `output_line_style` | `BorderStyle` | `solid` | Style of the output outline |
+| `selection_line_width` | `Float` | `3.5` | Thickness of the selection outline in px |
 | `selection_line_style` | `BorderStyle` | `solid` | Style of the selection outline |
-| `screen_line_width` | `Float` | `2` | Thickness of the screen outline in px |
+| `screen_line_width` | `Float` | `2.5` | Thickness of the screen outline in px |
 | `screen_line_style` | `BorderStyle` | `dashed` | Style of the screen outline |
 
 ### `[display.font]` Output area font configuration
@@ -91,18 +93,20 @@ The following sections describe all available configuration attributes grouped b
 
 | Attribute | Type | Default | Description |
 |-|-|-|-|
-| `text` | `Color` | `#ffffff` | Output name text color |
-| `output` | `Color` | `#3c3c3c` | Output background color |
-| `screen` | `Color` | `#3c3c3c` | Screen rectangle color |
+| `text` | `Color` | `#000000` | Output name text color |
+| `output` | `Color` | `#e8e6e3` | Output background color |
+| `border` | `Color` | `#d8d4d0` | Output border color |
+| `screen` | `Color` | `#cdc7c2` | Screen rectangle color |
 | `selection` | `Color` | `#3584e4` | Output selection color |
 
 ### `[display.colors.dark]` Output area dark theme colors
 
 | Attribute | Type | Default | Description |
 |-|-|-|-|
-| `text` | `Color` | `#000000` | Output name text color |
-| `output` | `Color` | `#f6f5f4` | Output background color |
-| `screen` | `Color` | `#f6f5f4` | Screen rectangle color |
+| `text` | `Color` | `#ffffff` | Output name text color |
+| `output` | `Color` | `#202020` | Output background color |
+| `border` | `Color` | `#282828` | Output border color |
+| `screen` | `Color` | `#1b1b1b` | Screen rectangle color |
 | `selection` | `Color` | `#1b68c6` | Output selection color |
 
 ### `[popup]` Identify popup configuration

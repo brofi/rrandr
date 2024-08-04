@@ -19,6 +19,10 @@ pub struct Display {
     pub snap_strength: Auto<f64>,
     /// Move distance when moving an output via keybindings
     pub pos_move_dist: i16,
+    /// Thickness of the output outline in px
+    pub output_line_width: f64,
+    /// Style of the output outline
+    pub output_line_style: BorderStyle,
     /// Thickness of the selection outline in px
     pub selection_line_width: f64,
     /// Style of the selection outline
@@ -38,9 +42,11 @@ impl Default for Display {
         Self {
             snap_strength: Auto::default(),
             pos_move_dist: 10,
-            selection_line_width: 4.,
+            output_line_width: 3.5,
+            output_line_style: BorderStyle::Solid,
+            selection_line_width: 3.5,
             selection_line_style: BorderStyle::Solid,
-            screen_line_width: 2.,
+            screen_line_width: 2.5,
             screen_line_style: BorderStyle::Dashed,
             font: Default::default(),
             colors: Default::default(),
@@ -82,6 +88,8 @@ pub struct LightColors {
     pub text: Color,
     /// Output background color
     pub output: Color,
+    /// Output border color
+    pub border: Color,
     /// Screen rectangle color
     pub screen: Color,
     /// Output selection color
@@ -93,6 +101,7 @@ impl Default for LightColors {
         Self {
             text: Color::from_str("#000").unwrap_or_default(),
             output: Color::from_str("#e8e6e3").unwrap_or_default(),
+            border: Color::from_str("#d8d4d0").unwrap_or_default(),
             screen: Color::from_str("#cdc7c2").unwrap_or_default(),
             selection: Color::from_str("#3584e4").unwrap_or_default(),
         }
@@ -107,6 +116,8 @@ pub struct DarkColors {
     pub text: Color,
     /// Output background color
     pub output: Color,
+    /// Output border color
+    pub border: Color,
     /// Screen rectangle color
     pub screen: Color,
     /// Output selection color
@@ -118,6 +129,7 @@ impl Default for DarkColors {
         Self {
             text: Color::from_str("#fff").unwrap_or_default(),
             output: Color::from_str("#202020").unwrap_or_default(),
+            border: Color::from_str("#282828").unwrap_or_default(),
             screen: Color::from_str("#1b1b1b").unwrap_or_default(),
             selection: Color::from_str("#1b68c6").unwrap_or_default(),
         }

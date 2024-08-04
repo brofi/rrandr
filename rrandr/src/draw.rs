@@ -40,6 +40,18 @@ impl DrawContext {
         self.cairo.set_operator(Operator::SoftLight);
         self.cairo.fill().unwrap();
         self.cairo.restore().unwrap();
+
+        let line_width =
+            self.config.display.output_line_width.clamp(0., rect.width().min(rect.height()) / 2.);
+        self.cairo.rectangle(
+            rect.x() + line_width / 2.,
+            rect.y() + line_width / 2.,
+            rect.width() - line_width,
+            rect.height() - line_width,
+        );
+        self.cairo.set_source_color(&self.config.display_border_color().into());
+        self.set_stroke_style(self.config.display.output_line_style, line_width);
+        self.cairo.stroke().unwrap();
     }
 
     pub fn draw_selected_output(&self, rect: &Rectangle) {

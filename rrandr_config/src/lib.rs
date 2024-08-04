@@ -62,6 +62,8 @@ impl Config {
 
     impl_color!(display, display_output_color, output);
 
+    impl_color!(display, display_border_color, border);
+
     impl_color!(display, display_screen_color, screen);
 
     impl_color!(display, display_selection_color, selection);
