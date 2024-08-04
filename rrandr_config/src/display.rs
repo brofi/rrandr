@@ -91,9 +91,9 @@ pub struct LightColors {
 impl Default for LightColors {
     fn default() -> Self {
         Self {
-            text: Color::from_str("#fff").unwrap_or_default(),
-            output: Color::from_str("#3c3c3c").unwrap_or_default(),
-            screen: Color::from_str("#3c3c3c").unwrap_or_default(),
+            text: Color::from_str("#000").unwrap_or_default(),
+            output: Color::from_str("#e8e6e3").unwrap_or_default(),
+            screen: Color::from_str("#cdc7c2").unwrap_or_default(),
             selection: Color::from_str("#3584e4").unwrap_or_default(),
         }
     }
@@ -116,9 +116,9 @@ pub struct DarkColors {
 impl Default for DarkColors {
     fn default() -> Self {
         Self {
-            text: Color::from_str("#000").unwrap_or_default(),
-            output: Color::from_str("#f6f5f4").unwrap_or_default(),
-            screen: Color::from_str("#f6f5f4").unwrap_or_default(),
+            text: Color::from_str("#fff").unwrap_or_default(),
+            output: Color::from_str("#202020").unwrap_or_default(),
+            screen: Color::from_str("#1b1b1b").unwrap_or_default(),
             selection: Color::from_str("#1b68c6").unwrap_or_default(),
         }
     }
