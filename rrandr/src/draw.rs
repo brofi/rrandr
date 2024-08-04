@@ -1,6 +1,6 @@
 #![allow(clippy::module_name_repetitions)]
 
-use cairo::{Context, LineCap, LineJoin, Rectangle};
+use cairo::{Context, LineCap, LineJoin, Operator, Rectangle};
 use config::data::enums::BorderStyle;
 use config::Config;
 use gtk::prelude::GdkCairoContextExt;
@@ -34,9 +34,12 @@ impl DrawContext {
     }
 
     pub fn draw_output(&self, rect: &Rectangle) {
+        self.cairo.save().unwrap();
         self.cairo.rectangle(rect.x(), rect.y(), rect.width(), rect.height());
-        self.cairo.set_source_color(&self.config.display_output_color().to_rgba(0.75));
+        self.cairo.set_source_color(&self.config.display_output_color().to_rgba(1.));
+        self.cairo.set_operator(Operator::SoftLight);
         self.cairo.fill().unwrap();
+        self.cairo.restore().unwrap();
     }
 
     pub fn draw_selected_output(&self, rect: &Rectangle) {
@@ -89,7 +92,7 @@ impl DrawContext {
         pad: f64,
         text: &str,
     ) -> Result<(), cairo::Error> {
-        self.cairo.set_source_color(&self.config.popup_background_color().to_rgba(0.75));
+        self.cairo.set_source_color(&self.config.popup_background_color().to_rgba(1.));
         self.cairo.rectangle(0., 0., f64::from(rect.width()), f64::from(rect.height()));
         self.cairo.fill()?;
 
