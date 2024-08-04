@@ -107,7 +107,7 @@ impl Config {
         let cfgs = [
             user_config_dir().join(app_name).join(&cfg),
             user_config_dir().join(&cfg),
-            home_dir().join(&cfg),
+            home_dir().join(String::from(".") + &cfg),
         ];
         cfgs.iter().find(|&cfg| cfg.exists()).cloned()
     }
