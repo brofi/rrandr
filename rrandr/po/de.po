@@ -7,8 +7,8 @@ msgid ""
 msgstr ""
 "Project-Id-Version: rrandr 0.2.0\n"
 "Report-Msgid-Bugs-To: https://github.com/brofi/rrandr/issues\n"
-"POT-Creation-Date: 2024-08-03 10:53+0200\n"
-"PO-Revision-Date: 2024-08-03 10:57+0200\n"
+"POT-Creation-Date: 2024-08-05 06:38+0200\n"
+"PO-Revision-Date: 2024-08-05 06:39+0200\n"
 "Last-Translator: Andreas Becker <brofi.archlinux@gmail.com>\n"
 "Language-Team: German\n"
 "Language: de\n"
@@ -30,10 +30,10 @@ msgstr "RRandR"
 msgid "Display Settings"
 msgstr "Anzeigeeinstellungen"
 
-#: src/res/rrandr.desktop.in:7 src/window.rs:358
-msgid "A graphical interface to the RandR X Window System extension."
+#: src/res/rrandr.desktop.in:7 src/window.rs:370
+msgid "A graphical interface to the RandR X Window System extension"
 msgstr ""
-"Eine grafische Schnittstelle zur RandR Erweiterung des X Window Systems."
+"Eine grafische Schnittstelle zur RandR Erweiterung des X Window Systems"
 
 #. Translators: Keep semicolons and end with semicolon
 #: src/res/rrandr.desktop.in:14
@@ -206,51 +206,51 @@ msgstr "Horizontale Position"
 msgid "Vertical position"
 msgstr "Vertikale Position"
 
-#: src/window.rs:278
+#: src/window.rs:283
 msgid "Confirm changes"
 msgstr "Änderungen bestätigen"
 
-#: src/window.rs:279
+#: src/window.rs:284
 msgid "Keep changes?"
 msgstr "Änderungen behalten?"
 
+#: src/window.rs:285
+msgid "_Keep"
+msgstr "_Behalten"
+
+#: src/window.rs:285
+msgid "_Revert"
+msgstr "_Zurücksetzen"
+
+#: src/window.rs:286
+msgid "Keep changes"
+msgstr "Änderungen behalten"
+
+#: src/window.rs:286
+msgid "Revert changes"
+msgstr "Änderungen zurücksetzen"
+
 #. Translators: '{}' gets replaced with the number of seconds left.
-#: src/window.rs:281 src/window.rs:299
+#: src/window.rs:292 src/window.rs:306
 msgid "Reverting in {} second"
 msgid_plural "Reverting in {} seconds"
 msgstr[0] "Zurücksetzen in {} Sekunde"
 msgstr[1] "Zurücksetzen in {} Sekunden"
 
-#: src/window.rs:286
-msgid "_Keep"
-msgstr "_Behalten"
-
-#: src/window.rs:286
-msgid "_Revert"
-msgstr "_Zurücksetzen"
-
-#: src/window.rs:287
-msgid "Keep changes"
-msgstr "Änderungen behalten"
-
-#: src/window.rs:287
-msgid "Revert changes"
-msgstr "Änderungen zurücksetzen"
-
-#: src/window.rs:328 src/window.rs:329
+#: src/window.rs:340 src/window.rs:341
 msgid "Failure"
 msgstr "Fehler"
 
-#: src/window.rs:330
+#: src/window.rs:342
 msgid "Changes have been reverted."
 msgstr "Änderungen wurden zurückgesetzt."
 
-#: src/window.rs:359
+#: src/window.rs:371
 msgid "Repository"
 msgstr "Projektarchiv"
 
 #. Translators: Add your name and email address to the translation (one translator
 #. per line).
-#: src/window.rs:366
+#: src/window.rs:378
 msgid "translator-credits"
 msgstr "Andreas Becker <brofi.archlinux@gmail.com>"

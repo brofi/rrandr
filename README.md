@@ -29,7 +29,7 @@
 
 ## Installation
 
-For Arch Linux users an upstream version of _RRandR_ is available in the _Arch Linux User Repository ([AUR](https://aur.archlinux.org/))_: [rrandr-git](https://aur.archlinux.org/packages/rrandr-git).
+For Arch Linux users an upstream version of _RRandR_ is available in the _Arch User Repository ([AUR](https://aur.archlinux.org/))_: [rrandr-git](https://aur.archlinux.org/packages/rrandr-git).
 
 ### Manual Build & Installation
 

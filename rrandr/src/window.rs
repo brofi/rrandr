@@ -367,7 +367,7 @@ mod imp {
                 .logo(&Texture::from_resource("/com/github/brofi/rrandr/rrandr.svg"))
                 .program_name(env!("CARGO_PKG_NAME"))
                 .version(env!("CARGO_PKG_VERSION"))
-                .comments(gettext("A graphical interface to the RandR X Window System extension."))
+                .comments(gettext("A graphical interface to the RandR X Window System extension"))
                 .website_label(gettext("Repository"))
                 .website(env!("CARGO_PKG_REPOSITORY"))
                 .copyright(env!("RRANDR_COPYRIGHT_NOTICE"))
