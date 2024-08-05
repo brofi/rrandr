@@ -1,6 +1,31 @@
-# <img src="https://raw.githubusercontent.com/brofi/rrandr/master/rrandr/src/res/rrandr.svg" width="64" align="center"/> RRandR
+<p align="center">
+    <img alt="RRandR logo"
+         src="https://raw.githubusercontent.com/brofi/rrandr/master/rrandr/src/res/rrandr.svg"
+         width="200"/>
+</p>
 
-A graphical interface to the RandR X Window System extension.
+<h1 align="center">RRandR - A graphical interface to the RandR X Window System extension</h1>
+
+<p align="center">
+  <img alt="RRandR - A graphical interface to the RandR X Window extension"
+       src="rrandr/src/res/screenshot.png">
+</p>
+
+## Features
+
+* Position outputs in a screen by dragging
+* Enable and disable outputs
+* Change resolution and refresh rate
+* Set primary output
+* Automatic revert after timeout
+* Human-readable output names
+* Visual output identification
+* Update view on external screen configuration changes
+* Run custom script on applying and reverting changes
+* Convenient shortcuts (see `Ctrl + ?`)
+* Configurable light and dark theme colors for dragging area (see: [configuration](#Configuration))
+* Show optional [xrandr](https://x.org/releases/X11R7.5/doc/man/man1/xrandr.1.html) command
+* Localization
 
 ## Installation
 
