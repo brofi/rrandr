@@ -4,7 +4,7 @@ use std::error::Error;
 use std::thread::{self, JoinHandle};
 
 use async_channel::Sender;
-use gtk::prelude::{ListModelExt, ListModelExtManual};
+use gtk::prelude::ListModelExtManual;
 use log::{debug, error, warn};
 use x11rb::connection::{Connection as XConnection, RequestConnection};
 use x11rb::cookie::{Cookie, VoidCookie};
@@ -15,8 +15,8 @@ use x11rb::protocol::randr::{
     set_output_primary, set_screen_size, Connection, ConnectionExt, Crtc as CrtcId, CrtcChange,
     GetCrtcInfoReply, GetOutputInfoReply, GetOutputPrimaryReply, GetScreenResourcesCurrentReply,
     GetScreenSizeRangeReply, Mode as ModeId, ModeInfo, Notify, NotifyData, NotifyEvent, NotifyMask,
-    Output as OutputId, OutputChange, QueryVersionReply, Rotation, ScreenChangeNotifyEvent,
-    ScreenSize, SetConfig,
+    Output as OutputId, OutputChange, QueryVersionReply, Rotation as RRotation,
+    ScreenChangeNotifyEvent, ScreenSize, SetConfig,
 };
 use x11rb::protocol::xproto::{intern_atom, query_extension, AtomEnum, Window as WindowId};
 use x11rb::protocol::Event;
@@ -24,6 +24,7 @@ use x11rb::rust_connection::RustConnection;
 use x11rb::CURRENT_TIME;
 
 use super::x_error_to_string;
+use crate::data::enums::Rotation;
 use crate::data::mode::Mode;
 use crate::data::modes::Modes;
 use crate::data::output::{Output, PPI_DEFAULT};
@@ -138,6 +139,7 @@ impl Randr {
 
     fn handle_screen_change(&self, event: &ScreenChangeNotifyEvent) {
         let ScreenChangeNotifyEvent {
+            rotation: rot,
             root,
             request_window: window,
             width,
@@ -147,14 +149,18 @@ impl Randr {
             ..
         } = *event;
 
-        debug!("ScreenChangeNotifyEvent: {width}x{height} px, {mwidth}x{mheight} mm");
+        debug!("ScreenChangeNotifyEvent: {width}x{height} px, {mwidth}x{mheight} mm, {rot:#?}");
 
         if root != window || root != self.root {
             warn!("Unknown window");
             return;
         }
 
-        self.screen_size.set(ScreenSize { width, height, mwidth, mheight });
+        self.screen_size.set(if rot.intersects(RRotation::ROTATE90 | RRotation::ROTATE270) {
+            ScreenSize { height, width, mheight, mwidth }
+        } else {
+            ScreenSize { width, height, mwidth, mheight }
+        });
     }
 
     fn handle_crtc_change(&self, data: &NotifyData) {
@@ -191,8 +197,13 @@ impl Randr {
         crtc_info.rotation = rot;
         crtc_info.x = x;
         crtc_info.y = y;
-        crtc_info.width = width;
-        crtc_info.height = height;
+        if rot.intersects(RRotation::ROTATE90 | RRotation::ROTATE270) {
+            crtc_info.width = height;
+            crtc_info.height = width;
+        } else {
+            crtc_info.width = width;
+            crtc_info.height = height;
+        }
     }
 
     fn handle_output_change(&self, data: &NotifyData) {
@@ -280,11 +291,15 @@ impl Randr {
             for mode_id in &output_info.modes {
                 modes.append(&Mode::from(self.modes.borrow()[mode_id]));
             }
+            let mut rotation = RRotation::ROTATE0;
             let mut pos = [0, 0];
+            let mut dim = [0, 0];
             if enabled {
                 let crtc_info = &self.crtcs.borrow()[&output_info.crtc];
                 mode = modes.find_by_id(crtc_info.mode);
+                rotation = crtc_info.rotation;
                 pos = [crtc_info.x, crtc_info.y];
+                dim = [crtc_info.width, crtc_info.height];
             }
             let product_name = self
                 .edids
@@ -297,12 +312,13 @@ impl Randr {
                 product_name,
                 enabled,
                 *id == self.primary.get().output,
-                pos[0],
-                pos[1],
+                pos,
                 mode,
                 modes,
-                output_info.mm_width,
-                output_info.mm_height,
+                rotation.into(),
+                rotation.into(),
+                dim,
+                [output_info.mm_width, output_info.mm_height],
             ));
         }
         outputs
@@ -398,6 +414,7 @@ impl Randr {
                     output.x(),
                     output.y(),
                     output.mode().map_or(0, |m| m.id()),
+                    output.randr_rotation(),
                     &[output.id()],
                 ),
                 "update CRTC",
@@ -420,14 +437,12 @@ impl Randr {
     #[allow(clippy::cast_sign_loss)]
     #[allow(clippy::cast_possible_truncation)]
     fn get_screen_size(&self, outputs: &Outputs, primary: Option<&Output>) -> ScreenSize {
-        let bounds = Rect::bounds(
-            outputs
-                .iter::<Output>()
-                .map(Result::unwrap)
-                .filter(Output::enabled)
-                .map(|o| o.rect())
-                .collect(),
-        );
+        let enabled = outputs
+            .iter::<Output>()
+            .map(Result::unwrap)
+            .filter(Output::enabled)
+            .collect::<Vec<_>>();
+        let bounds = Rect::bounds(enabled.iter().map(|o| o.rect()).collect());
         let width = self
             .screen_size_range
             .min_width
@@ -437,25 +452,34 @@ impl Randr {
             .min_height
             .max(self.screen_size_range.max_height.min(bounds.height()));
 
-        let mut mwidth = 0;
-        let mut mheight = 0;
-
-        if outputs.n_items() == 1 {
+        let mut mm_dim = [0, 0];
+        if enabled.len() == 1 {
             let o = outputs.first().unwrap();
-            if let (Ok(w), Ok(h)) = (u16::try_from(o.width()), u16::try_from(o.height())) {
-                mwidth = w;
-                mheight = h;
+            if let (Ok(w), Ok(h)) = (u16::try_from(o.mm_width()), u16::try_from(o.mm_height())) {
+                mm_dim = match o.rotation() {
+                    Rotation::Left | Rotation::Right => [h, w],
+                    _ => [w, h],
+                }
             }
         }
 
-        if mwidth == 0 || mheight == 0 {
-            let ppi = primary.map_or(PPI_DEFAULT, Output::ppi);
+        if mm_dim[0] == 0 || mm_dim[1] == 0 {
+            let ppi = primary.map_or(PPI_DEFAULT, |p| match p.rotation() {
+                Rotation::Left | Rotation::Right => {
+                    let mut ppi = p.ppi();
+                    ppi.reverse();
+                    ppi
+                }
+                _ => p.ppi(),
+            });
             debug!("Using PPI {:.2}x{:.2}", ppi[0], ppi[1]);
-            mwidth = ((MM_PER_INCH * f64::from(width)) / ppi[0]).ceil() as u16;
-            mheight = ((MM_PER_INCH * f64::from(height)) / ppi[1]).ceil() as u16;
+            mm_dim = [
+                ((MM_PER_INCH * f64::from(width)) / ppi[0]).ceil() as u16,
+                ((MM_PER_INCH * f64::from(height)) / ppi[1]).ceil() as u16,
+            ];
         }
 
-        ScreenSize { width, height, mwidth, mheight }
+        ScreenSize { width, height, mwidth: mm_dim[0], mheight: mm_dim[1] }
     }
 
     fn get_valid_empty_crtc(&self, output_id: OutputId) -> Option<CrtcId> {
@@ -476,7 +500,7 @@ impl Randr {
     }
 
     fn disable_crtc(&self, crtc: CrtcId) -> Result<SetConfig, ReplyError> {
-        self.update_crtc(crtc, 0, 0, 0, &[])
+        self.update_crtc(crtc, 0, 0, 0, RRotation::ROTATE0, &[])
     }
 
     fn update_crtc(
@@ -485,6 +509,7 @@ impl Randr {
         x: i16,
         y: i16,
         mode: ModeId,
+        rotation: RRotation,
         outputs: &[OutputId],
     ) -> Result<SetConfig, ReplyError> {
         if outputs.len() > 1 {
@@ -495,6 +520,17 @@ impl Randr {
         if mode == 0 && !outputs.is_empty() || mode > 0 && outputs.is_empty() {
             error!("Output must be set if mode is set and vice versa");
             return Ok(SetConfig::FAILED);
+        }
+
+        match rotation & 0xf {
+            RRotation::ROTATE0
+            | RRotation::ROTATE90
+            | RRotation::ROTATE180
+            | RRotation::ROTATE270 => (),
+            _ => {
+                error!("Invalid rotation: multiple rotation bits set");
+                return Ok(SetConfig::FAILED);
+            }
         }
 
         let crtcs = self.crtcs.borrow();
@@ -512,6 +548,10 @@ impl Randr {
             if let Some(output_info) = self.outputs.borrow().get(&outputs[0]) {
                 if !crtc_info.possible.contains(&outputs[0]) || !output_info.crtcs.contains(&crtc) {
                     error!("Cannot attach output {} to CRTC {crtc}", outputs[0]);
+                    return Ok(SetConfig::FAILED);
+                }
+                if !crtc_info.rotations.contains(rotation) {
+                    error!("Rotation {rotation:#?} not valid for CRTC {crtc}");
                     return Ok(SetConfig::FAILED);
                 }
                 if !output_info.modes.contains(&mode) {
@@ -541,7 +581,7 @@ impl Randr {
             x,
             y,
             mode,
-            Rotation::ROTATE0,
+            rotation,
             outputs,
         )?
         .reply()?
@@ -596,7 +636,14 @@ impl Randr {
 
             if mode > 0 {
                 handle_reply_error(
-                    self.update_crtc(crtc_id, crtc_info.x, crtc_info.y, mode, &crtc_info.outputs),
+                    self.update_crtc(
+                        crtc_id,
+                        crtc_info.x,
+                        crtc_info.y,
+                        mode,
+                        crtc_info.rotation,
+                        &crtc_info.outputs,
+                    ),
                     "revert CRTC",
                 );
             } else {
@@ -725,7 +772,7 @@ fn log_crtcs(crtcs: &HashMap<CrtcId, CrtcInfo>, modes: &HashMap<ModeId, ModeInfo
         debug!("{:-^40}", format!(" CRTC {crtc_id} "));
         debug!("XID:      {crtc_id}");
         debug!("Pos:      +{}+{}", crtc.x, crtc.y);
-        debug!("Res:      {}x{}", crtc.width, crtc.height);
+        debug!("Dim:      {}x{}", crtc.width, crtc.height);
         if crtc.mode > 0 {
             debug!("Mode:     {}: {}", crtc.mode, Mode::from(modes[&crtc.mode]));
         }
@@ -795,6 +842,8 @@ pub fn gen_xrandr_command(outputs: &Outputs) -> String {
             cmd += &format!(" --mode {}x{}", mode.width(), mode.height());
             cmd += &format!(" --rate {:.2}", mode.refresh());
             cmd += &format!(" --pos {}x{}", output.x(), output.y());
+            cmd += &format!(" --rotate {}", output.rotation().xrandr());
+            cmd += &format!(" --reflect {}", output.reflection().xrandr());
             if output.primary() {
                 cmd += " --primary";
                 cmd += &format!(" --dpi {}", &output.name());

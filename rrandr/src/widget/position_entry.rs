@@ -192,7 +192,7 @@ mod imp {
                 } else if coord.to_string() != self.entries[usize::from(axis)].text() {
                     self.entries[usize::from(axis)].set_text(&coord.to_string());
                 }
-                self.obj().emit_by_name::<()>("coordinate-changed", &[&axis, &I16::new(coord)]);
+                self.obj().emit_by_name::<()>("coordinate-changed", &[&axis, &I16::from(coord)]);
             } else if self.entries[usize::from(axis)].text().is_empty() {
                 self.insert_text("0", &mut 0, axis);
             }
@@ -214,7 +214,7 @@ mod imp {
                 } else {
                     self.entries[usize::from(axis)].set_text(&coord.to_string());
                 }
-                self.obj().emit_by_name::<()>("coordinate-changed", &[&axis, &I16::new(coord)]);
+                self.obj().emit_by_name::<()>("coordinate-changed", &[&axis, &I16::from(coord)]);
             } else {
                 self.delete_text(start_pos, end_pos, axis);
                 self.obj().emit_by_name::<()>("coordinate-changed", &[&axis, &I16::default()]);

@@ -164,21 +164,19 @@ mod imp {
             // Translate to x = y = 0
             *bounds = Self::get_bounds(&outputs);
             for output in outputs.iter::<Output>().map(Result::unwrap) {
-                if let Some(mode) = output.mode() {
-                    let max_x =
-                        i16::try_from(self.screen_max_width.get().saturating_sub(mode.width()))
-                            .unwrap_or(i16::MAX);
-                    let x = output.x().saturating_sub(bounds.x()).min(max_x);
-                    if x != output.x() {
-                        output.set_x(x);
-                    }
-                    let max_y =
-                        i16::try_from(self.screen_max_height.get().saturating_sub(mode.height()))
-                            .unwrap_or(i16::MAX);
-                    let y = output.y().saturating_sub(bounds.y()).min(max_y);
-                    if y != output.y() {
-                        output.set_y(y);
-                    }
+                let max_x =
+                    i16::try_from(self.screen_max_width.get().saturating_sub(output.width()))
+                        .unwrap_or(i16::MAX);
+                let x = output.x().saturating_sub(bounds.x()).min(max_x);
+                if x != output.x() {
+                    output.set_x(x);
+                }
+                let max_y =
+                    i16::try_from(self.screen_max_height.get().saturating_sub(output.height()))
+                        .unwrap_or(i16::MAX);
+                let y = output.y().saturating_sub(bounds.y()).min(max_y);
+                if y != output.y() {
+                    output.set_y(y);
                 }
             }
             *bounds = Self::get_bounds(&outputs);
@@ -260,7 +258,13 @@ mod imp {
                     name = format!("[{name}]");
                     product_name = product_name.map(|s| format!("[{s}]"));
                 }
-                context.draw_output_label(&output_rect, &name, product_name.as_deref());
+                context.draw_output_label(
+                    &output_rect,
+                    o.rotation(),
+                    o.reflection(),
+                    &name,
+                    product_name.as_deref(),
+                );
             }
         }
 
@@ -698,14 +702,18 @@ impl OutputArea {
         }
         // Mind the gap
         match update {
-            Update::Enabled | Update::Disabled | Update::Resolution => {
+            Update::Enabled | Update::Disabled | Update::Resolution | Update::Rotation => {
                 imp::OutputArea::mind_the_gap_and_overlap(&self.outputs());
             }
             _ => (),
         }
         // Resize
         match update {
-            Update::Enabled | Update::Disabled | Update::Resolution | Update::Position => {
+            Update::Enabled
+            | Update::Disabled
+            | Update::Resolution
+            | Update::Rotation
+            | Update::Position => {
                 self.imp().resize(self.width(), self.height());
             }
             _ => (),

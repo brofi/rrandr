@@ -1,6 +1,6 @@
 #![allow(clippy::module_name_repetitions)]
 
-use cairo::{Context, LineCap, LineJoin, Operator, Rectangle};
+use cairo::{Context, LineCap, LineJoin, Matrix, Operator, Rectangle};
 use config::data::enums::BorderStyle;
 use config::Config;
 use gtk::prelude::GdkCairoContextExt;
@@ -8,6 +8,7 @@ use pango::ffi::PANGO_SCALE;
 use pango::{Alignment, FontDescription, Layout};
 use pangocairo::functions::{create_layout, show_layout};
 
+use crate::data::enums::{Reflection, Rotation};
 use crate::math::Rect;
 use crate::window::PADDING;
 
@@ -71,7 +72,14 @@ impl DrawContext {
         self.cairo.stroke().unwrap();
     }
 
-    pub fn draw_output_label(&self, rect: &Rectangle, name: &str, product_name: Option<&str>) {
+    pub fn draw_output_label(
+        &self,
+        rect: &Rectangle,
+        rotation: Rotation,
+        reflection: Reflection,
+        name: &str,
+        product_name: Option<&str>,
+    ) {
         self.cairo.save().unwrap();
 
         let layout = create_layout(&self.cairo);
@@ -91,6 +99,18 @@ impl DrawContext {
         {
             self.cairo.set_source_color(&self.config.display_text_color().into());
             self.cairo.move_to(rect.x() + rect.width() / 2., rect.y() + rect.height() / 2.);
+            let mut refl = Matrix::identity();
+            match reflection {
+                Reflection::Horizontal => refl.set_xx(-1.),
+                Reflection::Vertical => refl.set_yy(-1.),
+                Reflection::Both => {
+                    refl.set_xx(-1.);
+                    refl.set_yy(-1.);
+                }
+                _ => (),
+            }
+            self.cairo.transform(refl);
+            self.cairo.rotate(rotation.rad());
             self.cairo.rel_move_to(f64::from(-w) / 2., f64::from(-h) / 2.);
             show_layout(&self.cairo, &layout);
         }

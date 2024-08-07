@@ -14,6 +14,7 @@ use x11rb::connection::Connection as XConnection;
 use x11rb::errors::{ReplyError, ReplyOrIdError};
 use x11rb::protocol::randr::{
     get_crtc_info, get_output_info, get_screen_resources_current, Mode as ModeId, ModeInfo,
+    Rotation as RRotation,
 };
 use x11rb::protocol::xproto::{
     ConnectionExt, CreateWindowAux, EventMask, Visualtype, Window as WindowId, WindowClass,
@@ -117,10 +118,15 @@ fn create_popup_windows(
 
         let mode = rr_modes[&crtc_info.mode];
         let ppmm = if output_info.mm_width > 0 && output_info.mm_height > 0 {
-            [
+            let mut ppmm = [
                 f64::from(mode.width) / f64::from(output_info.mm_width),
                 f64::from(mode.height) / f64::from(output_info.mm_height),
-            ]
+            ];
+            match crtc_info.rotation {
+                RRotation::ROTATE90 | RRotation::ROTATE270 => ppmm.reverse(),
+                _ => (),
+            }
+            ppmm
         } else {
             PPMM_DEFAULT
         };
@@ -128,21 +134,22 @@ fn create_popup_windows(
         let ratio = config.popup.ratio;
         let spacing = f64::from(config.popup.spacing);
 
-        let spacing_x = ((spacing * ppmm[0]).round() as u16).min(mode.width / 2 - 1);
-        let spacing_y = ((spacing * ppmm[1]).round() as u16).min(mode.height / 2 - 1);
+        let spacing_x = ((spacing * ppmm[0]).round() as u16).min(crtc_info.width / 2 - 1);
+        let spacing_y = ((spacing * ppmm[1]).round() as u16).min(crtc_info.height / 2 - 1);
 
-        let width = (f64::from(mode.width) * ratio)
+        let width = (f64::from(crtc_info.width) * ratio)
             .round()
-            .min(f64::from(mode.width - (2 * spacing_x)))
+            .min(f64::from(crtc_info.width - (2 * spacing_x)))
             .max(1.) as u16;
-        let height = (f64::from(mode.height) * ratio)
+        let height = (f64::from(crtc_info.height) * ratio)
             .round()
-            .min(f64::from(mode.height - (2 * spacing_y)))
+            .min(f64::from(crtc_info.height - (2 * spacing_y)))
             .max(1.) as u16;
 
         let x = (i32::from(crtc_info.x) + i32::from(spacing_x)).try_into().unwrap_or(i16::MAX);
-        let y = (i32::from(crtc_info.y) + i32::from(mode.height)
-            - (i32::from(spacing_y) + i32::from(height)))
+        let y = (i32::from(crtc_info.y) + i32::from(crtc_info.height)
+            - i32::from(spacing_y)
+            - i32::from(height))
         .try_into()
         .unwrap_or(i16::MAX);
 

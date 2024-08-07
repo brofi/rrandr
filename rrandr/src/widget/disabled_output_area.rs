@@ -33,6 +33,7 @@ mod imp {
     };
     use log::error;
 
+    use crate::data::enums::{Reflection, Rotation};
     use crate::data::output::Output;
     use crate::data::outputs::Outputs;
     use crate::draw::DrawContext;
@@ -161,7 +162,13 @@ mod imp {
                         f64::from(height),
                     );
                     context.draw_output(&rect);
-                    context.draw_output_label(&rect, &o.name(), o.product_name().as_deref());
+                    context.draw_output_label(
+                        &rect,
+                        Rotation::Normal,
+                        Reflection::Normal,
+                        &o.name(),
+                        o.product_name().as_deref(),
+                    );
                     if let Some(s) = selected.as_ref() {
                         if s.id() == o.id() {
                             context.draw_selected_output(&rect);
@@ -276,7 +283,13 @@ mod imp {
                 let rect = cairo::Rectangle::new(0., 0., f64::from(width), f64::from(height));
                 let context = DrawContext::new(&cr, &self.config.borrow());
                 context.draw_output(&rect);
-                context.draw_output_label(&rect, name, product_name);
+                context.draw_output_label(
+                    &rect,
+                    Rotation::Normal,
+                    Reflection::Normal,
+                    name,
+                    product_name,
+                );
             }
             surface.flush();
             let stride = surface.stride().try_into()?;

@@ -21,9 +21,13 @@ mod imp {
     use gtk::prelude::{CheckButtonExt, ObjectExt, StaticType, WidgetExt};
     use gtk::subclass::prelude::DerivedObjectProperties;
     use gtk::subclass::widget::{WidgetClassExt, WidgetImpl};
-    use gtk::{glib, Align, BinLayout, FlowBox, Orientation, SelectionMode, Widget};
+    use gtk::{
+        glib, Align, BinLayout, DropDown, FlowBox, Orientation, SelectionMode, Widget,
+        INVALID_LIST_POSITION,
+    };
 
     use super::Update;
+    use crate::data::enums::{Reflection, Rotation};
     use crate::data::mode::Mode;
     use crate::data::modes::Modes;
     use crate::data::output::Output;
@@ -54,6 +58,10 @@ mod imp {
         root: FlowBox,
         sw_enabled: Switch,
         mode_selector: ModeSelector,
+        dd_rotation: DropDown,
+        dd_rotation_selected_handler: RefCell<Option<SignalHandlerId>>,
+        dd_reflection: DropDown,
+        dd_reflection_selected_handler: RefCell<Option<SignalHandlerId>>,
         position_entry: PositionEntry,
         cb_primary: CheckButton,
     }
@@ -78,6 +86,20 @@ mod imp {
                     .build(),
                 sw_enabled: Switch::new(&gettext("Enable/disable")),
                 mode_selector: ModeSelector::new(),
+                dd_rotation: DropDown::from_strings(&[
+                    &gettext("Normal"),
+                    &gettext("Left"),
+                    &gettext("Right"),
+                    &gettext("Inverted"),
+                ]),
+                dd_rotation_selected_handler: RefCell::default(),
+                dd_reflection: DropDown::from_strings(&[
+                    &gettext("Normal"),
+                    &gettext("Horizontal"),
+                    &gettext("Vertical"),
+                    &gettext("Both"),
+                ]),
+                dd_reflection_selected_handler: RefCell::default(),
                 position_entry: PositionEntry::new(),
                 cb_primary: CheckButton::new(&gettext("Set as primary")),
             }
@@ -126,6 +148,8 @@ mod imp {
                 &gettext("Mode"),
                 &self.mode_selector,
             ));
+            self.root.append(&DetailsChild::new(&gettext("Rotate"), &self.dd_rotation));
+            self.root.append(&DetailsChild::new(&gettext("Reflect"), &self.dd_reflection));
             self.root.append(&DetailsChild::new(
                 // Output position consisting of X and Y coordinate
                 &gettext("Position"),
@@ -146,6 +170,20 @@ mod imp {
                 #[weak(rename_to = this)]
                 self,
                 move |mode_selector| this.on_mode_selected(mode_selector)
+            ));
+            self.dd_rotation_selected_handler.replace(Some(
+                self.dd_rotation.connect_selected_item_notify(clone!(
+                    #[weak(rename_to = this)]
+                    self,
+                    move |dd| this.on_rotation_selected(dd)
+                )),
+            ));
+            self.dd_reflection_selected_handler.replace(Some(
+                self.dd_reflection.connect_selected_item_notify(clone!(
+                    #[weak(rename_to = this)]
+                    self,
+                    move |dd| this.on_reflection_selected(dd)
+                )),
             ));
             self.position_entry.connect_coordinate_changed(clone!(
                 #[weak(rename_to = this)]
@@ -181,31 +219,49 @@ mod imp {
 
                 self.position_entry.set_x(&output.x().to_string());
                 self.position_entry.set_y(&output.y().to_string());
-                if let Some(mode) = output.mode() {
-                    self.position_entry.set_max_x(
-                        self.screen_max_width
-                            .get()
-                            .saturating_sub(mode.width())
-                            .try_into()
-                            .unwrap_or(i16::MAX),
-                    );
-                    self.position_entry.set_max_y(
-                        self.screen_max_height
-                            .get()
-                            .saturating_sub(mode.height())
-                            .try_into()
-                            .unwrap_or(i16::MAX),
-                    );
-                } else {
-                    self.position_entry.set_max_x(0);
-                    self.position_entry.set_max_y(0);
-                }
+
+                self.position_entry.set_max_x(
+                    self.screen_max_width
+                        .get()
+                        .saturating_sub(output.width())
+                        .try_into()
+                        .unwrap_or(i16::MAX),
+                );
+                self.position_entry.set_max_y(
+                    self.screen_max_height
+                        .get()
+                        .saturating_sub(output.height())
+                        .try_into()
+                        .unwrap_or(i16::MAX),
+                );
 
                 self.mode_selector.set_modes(Some(output.modes()));
                 self.mode_selector.set_selected_mode(output.mode());
+
+                Self::select_pos(
+                    &self.dd_rotation,
+                    self.dd_rotation_selected_handler.borrow().as_ref(),
+                    output.rotation().into(),
+                );
+                Self::select_pos(
+                    &self.dd_reflection,
+                    self.dd_reflection_selected_handler.borrow().as_ref(),
+                    output.reflection().into(),
+                );
             } else {
                 self.mode_selector.set_selected_mode(None::<Mode>);
                 self.mode_selector.set_modes(None::<Modes>);
+
+                Self::select_pos(
+                    &self.dd_rotation,
+                    self.dd_rotation_selected_handler.borrow().as_ref(),
+                    INVALID_LIST_POSITION,
+                );
+                Self::select_pos(
+                    &self.dd_reflection,
+                    self.dd_reflection_selected_handler.borrow().as_ref(),
+                    INVALID_LIST_POSITION,
+                );
             }
             self.output.replace(output.cloned());
             self.update_visibility();
@@ -318,6 +374,26 @@ mod imp {
             }
         }
 
+        fn on_rotation_selected(&self, dd: &DropDown) {
+            if let Some(output) = self.output.borrow().as_ref() {
+                let rotation = Rotation::from(dd.selected());
+                if rotation != output.rotation() {
+                    output.set_rotation(rotation);
+                    self.notify_updated(output, Update::Rotation);
+                }
+            }
+        }
+
+        fn on_reflection_selected(&self, dd: &DropDown) {
+            if let Some(output) = self.output.borrow().as_ref() {
+                let reflection = Reflection::from(dd.selected());
+                if reflection != output.reflection() {
+                    output.set_reflection(reflection);
+                    self.notify_updated(output, Update::Reflection);
+                }
+            }
+        }
+
         fn update_position(&self, axis: Axis, coord: I16) {
             let coord = coord.get();
             if let Some(output) = self.output.borrow().as_ref() {
@@ -373,6 +449,16 @@ mod imp {
         fn notify_updated(&self, output: &Output, update: Update) {
             self.obj().emit_by_name::<()>("output-changed", &[output, &update]);
         }
+
+        fn select_pos(dd: &DropDown, hid: Option<&SignalHandlerId>, pos: u32) {
+            if let Some(hid) = hid {
+                dd.block_signal(hid);
+            }
+            dd.set_selected(pos);
+            if let Some(hid) = hid {
+                dd.unblock_signal(hid);
+            }
+        }
     }
 }
 
@@ -413,6 +499,8 @@ pub enum Update {
     Disabled,
     Resolution,
     Refresh,
+    Rotation,
+    Reflection,
     Position,
     Primary,
 }
@@ -424,8 +512,10 @@ impl From<u8> for Update {
             1 => Update::Disabled,
             2 => Update::Resolution,
             3 => Update::Refresh,
-            4 => Update::Position,
-            5 => Update::Primary,
+            4 => Update::Rotation,
+            5 => Update::Reflection,
+            6 => Update::Position,
+            7 => Update::Primary,
             x => panic!("Not an update value: {x}"),
         }
     }

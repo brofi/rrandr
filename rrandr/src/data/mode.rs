@@ -55,8 +55,8 @@ impl Mode {
     pub fn new(id: ModeId, width: u16, height: u16, refresh: f64, flags: ModeFlag) -> Mode {
         Object::builder()
             .property("id", id)
-            .property("width", U16::new(width))
-            .property("height", U16::new(height))
+            .property("width", U16::from(width))
+            .property("height", U16::from(height))
             .property("refresh", refresh)
             .property("flags", u32::from(flags))
             .build()

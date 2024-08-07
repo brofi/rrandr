@@ -11,6 +11,10 @@ impl I16 {
     pub fn get(self) -> i16 { self.0 }
 }
 
+impl From<i16> for I16 {
+    fn from(value: i16) -> Self { Self(value) }
+}
+
 impl From<i32> for I16 {
     fn from(value: i32) -> Self { Self(value.try_into().expect("smaller value")) }
 }
@@ -31,6 +35,10 @@ impl U16 {
     pub fn new(value: u16) -> Self { Self(value) }
 
     pub fn get(self) -> u16 { self.0 }
+}
+
+impl From<u16> for U16 {
+    fn from(value: u16) -> Self { Self(value) }
 }
 
 impl From<u32> for U16 {
