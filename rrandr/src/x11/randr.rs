@@ -4,7 +4,7 @@ use std::error::Error;
 use std::thread::{self, JoinHandle};
 
 use async_channel::Sender;
-use gtk::prelude::ListModelExtManual;
+use gtk::prelude::{ListModelExt, ListModelExtManual};
 use log::{debug, error, warn};
 use x11rb::connection::{Connection as XConnection, RequestConnection};
 use x11rb::cookie::{Cookie, VoidCookie};
@@ -836,8 +836,10 @@ fn handle_no_reply_error(
 
 pub fn gen_xrandr_command(outputs: &Outputs) -> String {
     let mut cmd = "xrandr".to_owned();
-    for output in outputs.iter::<Output>().map(Result::unwrap) {
-        cmd += &format!(" --output {}", &output.name());
+    for (i, output) in outputs.iter::<Output>().map(Result::unwrap).enumerate() {
+        let pad = if i == 0 { 1 } else { 7 };
+        let nl = if u32::try_from(i).unwrap() < outputs.n_items() - 1 { " \\\n" } else { "" };
+        cmd += &format!("{:>pad$}--output {}", "", &output.name());
         if let Some(mode) = output.mode() {
             cmd += &format!(" --mode {}x{}", mode.width(), mode.height());
             cmd += &format!(" --rate {:.2}", mode.refresh());
@@ -848,8 +850,9 @@ pub fn gen_xrandr_command(outputs: &Outputs) -> String {
                 cmd += " --primary";
                 cmd += &format!(" --dpi {}", &output.name());
             }
+            cmd += nl;
         } else {
-            cmd += " --off";
+            cmd += &format!(" --off{nl}");
         }
     }
     cmd
