@@ -54,6 +54,10 @@ mod imp {
         rotation: Cell<Rotation>,
         #[property(get, set, builder(Reflection::default()))]
         reflection: Cell<Reflection>,
+        #[property(get, set, construct_only, default = 1.)]
+        pub(super) scale_x: Cell<f64>,
+        #[property(get, set, construct_only, default = 1.)]
+        pub(super) scale_y: Cell<f64>,
         #[property(set, construct_only)]
         pub(super) width: Cell<U16>,
         #[property(set, construct_only)]
@@ -83,16 +87,7 @@ mod imp {
                 if let Some(m) = self.modes.borrow().find_by_id(mode.id()) {
                     if *mode == m {
                         self.mode.set(Some(mode.clone()));
-                        match self.rotation.get() {
-                            Rotation::Normal | Rotation::Inverted => {
-                                self.width.set(mode.width().into());
-                                self.height.set(mode.height().into());
-                            }
-                            Rotation::Left | Rotation::Right => {
-                                self.width.set(mode.height().into());
-                                self.height.set(mode.width().into());
-                            }
-                        }
+                        self.update_dim();
                     } else {
                         panic!("Different GObject with same Mode ID");
                     }
@@ -104,17 +99,18 @@ mod imp {
 
         fn set_rotation(&self, rotation: Rotation) {
             self.rotation.set(rotation);
+            self.update_dim();
+        }
+
+        pub(super) fn update_dim(&self) {
             if let Some(mode) = self.mode.borrow().as_ref() {
-                match rotation {
-                    Rotation::Normal | Rotation::Inverted => {
-                        self.width.set(mode.width().into());
-                        self.height.set(mode.height().into());
-                    }
-                    Rotation::Left | Rotation::Right => {
-                        self.width.set(mode.height().into());
-                        self.height.set(mode.width().into());
-                    }
+                let [w, h] = match self.rotation.get() {
+                    Rotation::Normal | Rotation::Inverted => [mode.width(), mode.height()],
+                    Rotation::Left | Rotation::Right => [mode.height(), mode.width()],
                 }
+                .map(f64::from);
+                self.width.set(((w * self.scale_x.get()).round() as u16).into());
+                self.height.set(((h * self.scale_y.get()).round() as u16).into());
             }
         }
     }
@@ -137,6 +133,7 @@ impl Output {
         modes: Modes,
         rotation: Rotation,
         reflection: Reflection,
+        scale: [f64; 2],
         dim: [u16; 2],
         mm_dim: [u32; 2],
     ) -> Output {
@@ -152,6 +149,8 @@ impl Output {
             .property("mode", mode)
             .property("rotation", rotation)
             .property("reflection", reflection)
+            .property("scale-x", scale[0])
+            .property("scale-y", scale[1])
             .property("width", U16::from(dim[0]))
             .property("height", U16::from(dim[1]))
             .property("mm-width", mm_dim[0])
@@ -206,5 +205,12 @@ impl Output {
 
     pub fn randr_rotation(&self) -> RRotation {
         RRotation::from(self.rotation()) | RRotation::from(self.reflection())
+    }
+
+    pub fn set_scale(&self, scale: f64) {
+        let imp = self.imp();
+        imp.scale_x.set(scale);
+        imp.scale_y.set(scale);
+        imp.update_dim();
     }
 }

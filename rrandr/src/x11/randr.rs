@@ -10,14 +10,16 @@ use x11rb::connection::{Connection as XConnection, RequestConnection};
 use x11rb::cookie::{Cookie, VoidCookie};
 use x11rb::errors::{ConnectionError, ReplyError};
 use x11rb::protocol::randr::{
-    self, get_crtc_info, get_output_info, get_output_primary, get_output_property,
-    get_screen_resources_current, get_screen_size_range, query_version, set_crtc_config,
-    set_output_primary, set_screen_size, Connection, ConnectionExt, Crtc as CrtcId, CrtcChange,
-    GetCrtcInfoReply, GetOutputInfoReply, GetOutputPrimaryReply, GetScreenResourcesCurrentReply,
+    self, get_crtc_info, get_crtc_transform, get_output_info, get_output_primary,
+    get_output_property, get_screen_resources_current, get_screen_size_range, query_version,
+    set_crtc_config, set_crtc_transform, set_output_primary, set_screen_size, Connection,
+    ConnectionExt, Crtc as CrtcId, CrtcChange, GetCrtcInfoReply, GetCrtcTransformReply,
+    GetOutputInfoReply, GetOutputPrimaryReply, GetScreenResourcesCurrentReply,
     GetScreenSizeRangeReply, Mode as ModeId, ModeInfo, Notify, NotifyData, NotifyEvent, NotifyMask,
     Output as OutputId, OutputChange, QueryVersionReply, Rotation as RRotation,
     ScreenChangeNotifyEvent, ScreenSize, SetConfig,
 };
+use x11rb::protocol::render::Transform;
 use x11rb::protocol::xproto::{intern_atom, query_extension, AtomEnum, Window as WindowId};
 use x11rb::protocol::Event;
 use x11rb::rust_connection::RustConnection;
@@ -30,6 +32,7 @@ use crate::data::modes::Modes;
 use crate::data::output::{Output, PPI_DEFAULT};
 use crate::data::outputs::Outputs;
 use crate::math::{Rect, MM_PER_INCH};
+use crate::utils::nearly_eq;
 
 type Version = QueryVersionReply;
 pub type ScreenSizeRange = GetScreenSizeRangeReply;
@@ -49,6 +52,7 @@ pub struct Snapshot {
     root: WindowId,
     screen_size: ScreenSize,
     crtcs: HashMap<CrtcId, CrtcInfo>,
+    transforms: HashMap<CrtcId, Transform>,
 }
 
 pub struct Randr {
@@ -60,6 +64,7 @@ pub struct Randr {
     crtcs: RefCell<HashMap<CrtcId, CrtcInfo>>,
     outputs: RefCell<HashMap<OutputId, OutputInfo>>,
     modes: RefCell<HashMap<ModeId, ModeInfo>>,
+    transforms: RefCell<HashMap<CrtcId, Transform>>,
     edids: HashMap<OutputId, Option<Edid>>,
 }
 
@@ -96,19 +101,19 @@ impl Randr {
 
         let outputs = request_outputs(&conn, &res).expect("cookies to request outputs");
         let crtcs = request_crtcs(&conn, &res).expect("cookies to request crtcs");
+        let transforms = request_transforms(&conn, &res).expect("cookies to request transforms");
 
         let outputs: HashMap<OutputId, OutputInfo> =
             get_outputs(outputs).expect("reply for outputs");
-
         let crtcs: HashMap<CrtcId, CrtcInfo> = get_crtcs(crtcs).expect("reply for crtcs");
-
         let modes: HashMap<ModeId, ModeInfo> = res.modes.iter().map(|m| (m.id, *m)).collect();
+        let transforms = get_transforms(transforms).expect("reply for transforms");
 
         let edids: HashMap<OutputId, Option<Edid>> =
             res.outputs.iter().map(|&o| (o, get_edid(&conn, o).ok())).collect();
 
         #[cfg(debug_assertions)]
-        log_crtcs(&crtcs, &modes);
+        log_crtcs(&crtcs, &modes, &transforms);
         #[cfg(debug_assertions)]
         log_outputs(&outputs, &modes);
 
@@ -121,6 +126,7 @@ impl Randr {
             crtcs: RefCell::new(crtcs),
             outputs: RefCell::new(outputs),
             modes: RefCell::new(modes),
+            transforms: RefCell::new(transforms),
             edids,
         }
     }
@@ -197,13 +203,27 @@ impl Randr {
         crtc_info.rotation = rot;
         crtc_info.x = x;
         crtc_info.y = y;
-        if rot.intersects(RRotation::ROTATE90 | RRotation::ROTATE270) {
-            crtc_info.width = height;
-            crtc_info.height = width;
+
+        let transform = self
+            .conn
+            .randr_get_crtc_transform(crtc)
+            .expect("should send transform request")
+            .reply()
+            .expect("should get transform reply")
+            .current_transform;
+        self.transforms.borrow_mut().insert(crtc, transform);
+
+        let sx = f64::from(Fixed(transform.matrix11));
+        let sy = f64::from(Fixed(transform.matrix22));
+        let [w, h] = if rot.intersects(RRotation::ROTATE90 | RRotation::ROTATE270) {
+            [height, width]
         } else {
-            crtc_info.width = width;
-            crtc_info.height = height;
+            [width, height]
         }
+        .map(f64::from);
+
+        crtc_info.width = (w * sx).round() as u16;
+        crtc_info.height = (h * sy).round() as u16;
     }
 
     fn handle_output_change(&self, data: &NotifyData) {
@@ -294,12 +314,16 @@ impl Randr {
             let mut rotation = RRotation::ROTATE0;
             let mut pos = [0, 0];
             let mut dim = [0, 0];
+            let mut scale = [1., 1.];
             if enabled {
                 let crtc_info = &self.crtcs.borrow()[&output_info.crtc];
                 mode = modes.find_by_id(crtc_info.mode);
                 rotation = crtc_info.rotation;
                 pos = [crtc_info.x, crtc_info.y];
                 dim = [crtc_info.width, crtc_info.height];
+                let transform = self.transforms.borrow()[&output_info.crtc];
+                scale =
+                    [f64::from(Fixed(transform.matrix11)), f64::from(Fixed(transform.matrix22))];
             }
             let product_name = self
                 .edids
@@ -317,6 +341,7 @@ impl Randr {
                 modes,
                 rotation.into(),
                 rotation.into(),
+                scale,
                 dim,
                 [output_info.mm_width, output_info.mm_height],
             ));
@@ -329,6 +354,7 @@ impl Randr {
             root: self.root,
             screen_size: self.screen_size.get(),
             crtcs: self.crtcs.borrow().clone(),
+            transforms: self.transforms.borrow().clone(),
         }
     }
 
@@ -350,7 +376,12 @@ impl Randr {
                 continue;
             }
             let crtc = &self.crtcs.borrow()[&crtc_id];
+            // Even though the crtc dimension contains the transformation, a match error
+            // occurs when setting the screen size, so disable scaled CRTCs.
+            let transform = self.transforms.borrow()[&crtc_id];
+            let has_scale = transform.matrix11 / 65536 != 1 || transform.matrix22 / 65536 != 1;
             if !output.enabled()
+                || has_scale
                 || (screen_size_px_changed
                     && (i32::from(crtc.x) + i32::from(crtc.width) > i32::from(screen_size.width)
                         || i32::from(crtc.y) + i32::from(crtc.height)
@@ -388,10 +419,7 @@ impl Randr {
         }
 
         // Update outputs
-        for output in outputs.iter::<Output>().map(Result::unwrap) {
-            if !output.enabled() {
-                continue;
-            }
+        for output in outputs.iter::<Output>().map(Result::unwrap).filter(Output::enabled) {
             let output_info = &self.outputs.borrow()[&output.id()];
             let mut crtc_id = output_info.crtc;
             if crtc_id == 0
@@ -402,12 +430,25 @@ impl Randr {
                 // If this output was disabled before get it a new empty CRTC. If this output is
                 // enabled, shares a CRTC with other outputs and it's not the first one listed,
                 // move it to a new empty CRTC.
-                if let Some(empty_id) = self.get_valid_empty_crtc(output.id()) {
+                if let Some(empty_id) = self.get_valid_empty_crtc(&output) {
                     crtc_id = empty_id;
                 } else {
                     return false;
                 }
             }
+
+            let mut transform = Transform::default();
+            transform.matrix11 = Fixed::from(output.scale_x()).0;
+            transform.matrix22 = Fixed::from(output.scale_y()).0;
+            transform.matrix33 = Fixed::from(1.).0;
+
+            if handle_no_reply_error(
+                set_crtc_transform(&self.conn, crtc_id, transform, "bilinear".as_bytes(), &[]),
+                "set CRTC transform",
+            ) {
+                return false;
+            }
+
             if handle_reply_error(
                 self.update_crtc(
                     crtc_id,
@@ -482,20 +523,23 @@ impl Randr {
         ScreenSize { width, height, mwidth: mm_dim[0], mheight: mm_dim[1] }
     }
 
-    fn get_valid_empty_crtc(&self, output_id: OutputId) -> Option<CrtcId> {
+    fn get_valid_empty_crtc(&self, output: &Output) -> Option<CrtcId> {
         let outputs = self.outputs.borrow();
-        let Some(output_info) = outputs.get(&output_id) else {
-            error!("Unknown output {output_id}");
+        let Some(output_info) = outputs.get(&output.id()) else {
+            error!("Unknown output {}", output.id());
             return None;
         };
         for crtc_id in &output_info.crtcs {
             if let Some(crtc_info) = self.crtcs.borrow().get(crtc_id) {
-                if crtc_info.outputs.is_empty() && crtc_info.possible.contains(&output_id) {
+                if crtc_info.outputs.is_empty()
+                    && crtc_info.possible.contains(&output.id())
+                    && crtc_info.rotations.contains(output.randr_rotation())
+                {
                     return Some(*crtc_id);
                 }
             }
         }
-        error!("Failed to get empty CRTC for output {output_id}");
+        error!("Failed to get empty CRTC for output {}", output.id());
         None
     }
 
@@ -635,6 +679,16 @@ impl Randr {
             }
 
             if mode > 0 {
+                handle_no_reply_error(
+                    set_crtc_transform(
+                        &self.conn,
+                        crtc_id,
+                        snapshot.transforms[&crtc_id],
+                        "bilinear".as_bytes(),
+                        &[],
+                    ),
+                    "set CRTC transform",
+                );
                 handle_reply_error(
                     self.update_crtc(
                         crtc_id,
@@ -745,6 +799,17 @@ fn request_crtcs<'a, Conn: RequestConnection>(
     Ok(cookies)
 }
 
+fn request_transforms<'a, Conn: RequestConnection>(
+    conn: &'a Conn,
+    res: &ScreenResources,
+) -> Result<HashMap<CrtcId, Cookie<'a, Conn, GetCrtcTransformReply>>, ConnectionError> {
+    let mut cookies = HashMap::new();
+    for crtc in &res.crtcs {
+        cookies.insert(*crtc, get_crtc_transform(conn, *crtc)?);
+    }
+    Ok(cookies)
+}
+
 fn get_outputs(
     cookies: HashMap<OutputId, Cookie<impl RequestConnection, OutputInfo>>,
 ) -> Result<HashMap<OutputId, OutputInfo>, ReplyError> {
@@ -765,21 +830,55 @@ fn get_crtcs(
     Ok(crtcs)
 }
 
+fn get_transforms(
+    cookies: HashMap<CrtcId, Cookie<impl RequestConnection, GetCrtcTransformReply>>,
+) -> Result<HashMap<CrtcId, Transform>, ReplyError> {
+    let mut crtcs = HashMap::new();
+    for (crtc, c) in cookies {
+        crtcs.insert(crtc, c.reply()?.current_transform);
+    }
+    Ok(crtcs)
+}
+
 #[cfg(debug_assertions)]
 #[allow(clippy::use_debug)]
-fn log_crtcs(crtcs: &HashMap<CrtcId, CrtcInfo>, modes: &HashMap<ModeId, ModeInfo>) {
+fn log_crtcs(
+    crtcs: &HashMap<CrtcId, CrtcInfo>,
+    modes: &HashMap<ModeId, ModeInfo>,
+    transforms: &HashMap<CrtcId, Transform>,
+) {
     for (crtc_id, crtc) in crtcs {
         debug!("{:-^40}", format!(" CRTC {crtc_id} "));
-        debug!("XID:      {crtc_id}");
-        debug!("Pos:      +{}+{}", crtc.x, crtc.y);
-        debug!("Dim:      {}x{}", crtc.width, crtc.height);
+        debug!("XID:       {crtc_id}");
+        debug!("Pos:       +{}+{}", crtc.x, crtc.y);
+        debug!("Dim:       {}x{}", crtc.width, crtc.height);
         if crtc.mode > 0 {
-            debug!("Mode:     {}: {}", crtc.mode, Mode::from(modes[&crtc.mode]));
+            debug!("Mode:      {}: {}", crtc.mode, Mode::from(modes[&crtc.mode]));
         }
-        debug!("Outputs:  {:?}", crtc.outputs);
-        debug!("Rot:      {:#?}", crtc.rotation);
-        debug!("Possible: {:?}", crtc.possible);
+        debug!("Outputs:   {:?}", crtc.outputs);
+        debug!("Rot:       {:#?}", crtc.rotation);
+        debug!("Possible:  {:?}", crtc.possible);
+        log_transform(&transforms[crtc_id]);
     }
+}
+
+#[cfg(debug_assertions)]
+#[allow(clippy::use_debug)]
+fn log_transform(transform: &Transform) {
+    let Transform {
+        matrix11: a11,
+        matrix12: a12,
+        matrix13: a13,
+        matrix21: a21,
+        matrix22: a22,
+        matrix23: a23,
+        matrix31: a31,
+        matrix32: a32,
+        matrix33: a33,
+    } = transform;
+    debug!("Transform: | {a11:^5} {a12:^5} {a13:^5} |");
+    debug!("           | {a21:^5} {a22:^5} {a23:^5} |");
+    debug!("           | {a31:^5} {a32:^5} {a33:^5} |");
 }
 
 #[cfg(debug_assertions)]
@@ -846,6 +945,11 @@ pub fn gen_xrandr_command(outputs: &Outputs) -> String {
             cmd += &format!(" --pos {}x{}", output.x(), output.y());
             cmd += &format!(" --rotate {}", output.rotation().xrandr());
             cmd += &format!(" --reflect {}", output.reflection().xrandr());
+            if nearly_eq(output.scale_x(), output.scale_y()) {
+                cmd += &format!(" --scale {:.2}", output.scale_x());
+            } else {
+                cmd += &format!(" --scale {:.2}x{:.2}", output.scale_x(), output.scale_y());
+            }
             if output.primary() {
                 cmd += " --primary";
                 cmd += &format!(" --dpi {}", &output.name());
@@ -856,4 +960,14 @@ pub fn gen_xrandr_command(outputs: &Outputs) -> String {
         }
     }
     cmd
+}
+
+struct Fixed(i32);
+
+impl From<Fixed> for f64 {
+    fn from(f: Fixed) -> Self { f64::from(f.0) / 65536. }
+}
+
+impl From<f64> for Fixed {
+    fn from(f: f64) -> Self { Self((f * 65536.) as i32) }
 }

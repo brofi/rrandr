@@ -18,12 +18,12 @@ mod imp {
         clone, derived_properties, object_subclass, timeout_add_local_once, Properties,
         SignalHandlerId, SourceId,
     };
-    use gtk::prelude::{CheckButtonExt, ObjectExt, StaticType, WidgetExt};
+    use gtk::prelude::{CheckButtonExt, ObjectExt, RangeExt, ScaleExt, StaticType, WidgetExt};
     use gtk::subclass::prelude::DerivedObjectProperties;
     use gtk::subclass::widget::{WidgetClassExt, WidgetImpl};
     use gtk::{
-        glib, Align, BinLayout, DropDown, FlowBox, Orientation, SelectionMode, Widget,
-        INVALID_LIST_POSITION,
+        glib, Align, BinLayout, DropDown, FlowBox, Orientation, PositionType, Scale, SelectionMode,
+        Widget, INVALID_LIST_POSITION,
     };
 
     use super::Update;
@@ -58,16 +58,26 @@ mod imp {
         root: FlowBox,
         sw_enabled: Switch,
         mode_selector: ModeSelector,
+        position_entry: PositionEntry,
+        cb_primary: CheckButton,
         dd_rotation: DropDown,
         dd_rotation_selected_handler: RefCell<Option<SignalHandlerId>>,
         dd_reflection: DropDown,
         dd_reflection_selected_handler: RefCell<Option<SignalHandlerId>>,
-        position_entry: PositionEntry,
-        cb_primary: CheckButton,
+        scale: Scale,
+        scale_value_changed_handler: RefCell<Option<SignalHandlerId>>,
     }
 
     impl Default for DetailsBox {
         fn default() -> Self {
+            let scale = Scale::with_range(Orientation::Horizontal, 1., 200., 1.);
+            scale.set_slider_size_fixed(true);
+            scale.set_draw_value(true);
+            scale.set_value_pos(PositionType::Right);
+            scale.set_value(100.);
+            scale.add_mark(100., PositionType::Bottom, None);
+            scale.set_flippable(true);
+            scale.set_format_value_func(|_, v| format!("{:.2}", v / 100.));
             Self {
                 output: RefCell::default(),
                 enabled_changed_handler: RefCell::default(),
@@ -86,6 +96,8 @@ mod imp {
                     .build(),
                 sw_enabled: Switch::new(&gettext("Enable/disable")),
                 mode_selector: ModeSelector::new(),
+                position_entry: PositionEntry::new(),
+                cb_primary: CheckButton::new(&gettext("Set as primary")),
                 dd_rotation: DropDown::from_strings(&[
                     &gettext("Normal"),
                     &gettext("Left"),
@@ -100,8 +112,8 @@ mod imp {
                     &gettext("Both"),
                 ]),
                 dd_reflection_selected_handler: RefCell::default(),
-                position_entry: PositionEntry::new(),
-                cb_primary: CheckButton::new(&gettext("Set as primary")),
+                scale,
+                scale_value_changed_handler: RefCell::default(),
             }
         }
     }
@@ -148,8 +160,6 @@ mod imp {
                 &gettext("Mode"),
                 &self.mode_selector,
             ));
-            self.root.append(&DetailsChild::new(&gettext("Rotate"), &self.dd_rotation));
-            self.root.append(&DetailsChild::new(&gettext("Reflect"), &self.dd_reflection));
             self.root.append(&DetailsChild::new(
                 // Output position consisting of X and Y coordinate
                 &gettext("Position"),
@@ -160,6 +170,10 @@ mod imp {
                 &gettext("Primary"),
                 &self.cb_primary,
             ));
+            self.root.append(&DetailsChild::new(&gettext("Rotate"), &self.dd_rotation));
+            self.root.append(&DetailsChild::new(&gettext("Reflect"), &self.dd_reflection));
+            self.root.append(&DetailsChild::new(&gettext("Scale"), &self.scale));
+            self.scale.set_width_request(200);
 
             self.sw_enabled.connect_active_notify(clone!(
                 #[weak(rename_to = this)]
@@ -170,6 +184,16 @@ mod imp {
                 #[weak(rename_to = this)]
                 self,
                 move |mode_selector| this.on_mode_selected(mode_selector)
+            ));
+            self.position_entry.connect_coordinate_changed(clone!(
+                #[weak(rename_to = this)]
+                self,
+                move |_, axis, coord| this.update_position(axis, coord)
+            ));
+            self.cb_primary.connect_active_notify(clone!(
+                #[weak(rename_to = this)]
+                self,
+                move |cb| this.on_primary_checked(cb)
             ));
             self.dd_rotation_selected_handler.replace(Some(
                 self.dd_rotation.connect_selected_item_notify(clone!(
@@ -185,16 +209,13 @@ mod imp {
                     move |dd| this.on_reflection_selected(dd)
                 )),
             ));
-            self.position_entry.connect_coordinate_changed(clone!(
-                #[weak(rename_to = this)]
-                self,
-                move |_, axis, coord| this.update_position(axis, coord)
-            ));
-            self.cb_primary.connect_active_notify(clone!(
-                #[weak(rename_to = this)]
-                self,
-                move |cb| this.on_primary_checked(cb)
-            ));
+            self.scale_value_changed_handler.replace(Some(self.scale.connect_value_changed(
+                clone!(
+                    #[weak(rename_to = this)]
+                    self,
+                    move |s| this.on_scale_changed(s)
+                ),
+            )));
 
             self.root.set_parent(&*obj);
         }
@@ -248,6 +269,11 @@ mod imp {
                     self.dd_reflection_selected_handler.borrow().as_ref(),
                     output.reflection().into(),
                 );
+                Self::set_scale(
+                    &self.scale,
+                    self.scale_value_changed_handler.borrow().as_ref(),
+                    output.scale_x() * 100.,
+                );
             } else {
                 self.mode_selector.set_selected_mode(None::<Mode>);
                 self.mode_selector.set_modes(None::<Modes>);
@@ -261,6 +287,11 @@ mod imp {
                     &self.dd_reflection,
                     self.dd_reflection_selected_handler.borrow().as_ref(),
                     INVALID_LIST_POSITION,
+                );
+                Self::set_scale(
+                    &self.scale,
+                    self.scale_value_changed_handler.borrow().as_ref(),
+                    100.,
                 );
             }
             self.output.replace(output.cloned());
@@ -394,6 +425,13 @@ mod imp {
             }
         }
 
+        fn on_scale_changed(&self, s: &Scale) {
+            if let Some(output) = self.output.borrow().as_ref() {
+                output.set_scale(s.value() / 100.);
+                self.notify_updated(output, Update::Scale);
+            }
+        }
+
         fn update_position(&self, axis: Axis, coord: I16) {
             let coord = coord.get();
             if let Some(output) = self.output.borrow().as_ref() {
@@ -459,6 +497,16 @@ mod imp {
                 dd.unblock_signal(hid);
             }
         }
+
+        fn set_scale(scale: &Scale, hid: Option<&SignalHandlerId>, value: f64) {
+            if let Some(hid) = hid {
+                scale.block_signal(hid);
+            }
+            scale.set_value(value);
+            if let Some(hid) = hid {
+                scale.unblock_signal(hid);
+            }
+        }
     }
 }
 
@@ -501,6 +549,7 @@ pub enum Update {
     Refresh,
     Rotation,
     Reflection,
+    Scale,
     Position,
     Primary,
 }
@@ -514,8 +563,9 @@ impl From<u8> for Update {
             3 => Update::Refresh,
             4 => Update::Rotation,
             5 => Update::Reflection,
-            6 => Update::Position,
-            7 => Update::Primary,
+            6 => Update::Scale,
+            7 => Update::Position,
+            8 => Update::Primary,
             x => panic!("Not an update value: {x}"),
         }
     }

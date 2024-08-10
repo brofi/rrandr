@@ -702,7 +702,11 @@ impl OutputArea {
         }
         // Mind the gap
         match update {
-            Update::Enabled | Update::Disabled | Update::Resolution | Update::Rotation => {
+            Update::Enabled
+            | Update::Disabled
+            | Update::Resolution
+            | Update::Rotation
+            | Update::Scale => {
                 imp::OutputArea::mind_the_gap_and_overlap(&self.outputs());
             }
             _ => (),
@@ -713,6 +717,7 @@ impl OutputArea {
             | Update::Disabled
             | Update::Resolution
             | Update::Rotation
+            | Update::Scale
             | Update::Position => {
                 self.imp().resize(self.width(), self.height());
             }
