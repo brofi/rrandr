@@ -9,6 +9,7 @@ use crate::data::mode::Mode;
 use crate::data::modes::Modes;
 use crate::data::values::I16;
 use crate::math::{Rect, MM_PER_INCH};
+use crate::utils::nearly_eq;
 
 pub const PPI_DEFAULT: [f64; 2] = [96., 96.];
 pub const PPMM_DEFAULT: [f64; 2] = [PPI_DEFAULT[0] / MM_PER_INCH, PPI_DEFAULT[1] / MM_PER_INCH];
@@ -21,7 +22,7 @@ mod imp {
     use glib::{derived_properties, object_subclass, Properties};
     use gtk::glib;
     use gtk::prelude::ObjectExt;
-    use gtk::subclass::prelude::DerivedObjectProperties;
+    use gtk::subclass::prelude::{DerivedObjectProperties, ObjectSubclassExt};
     use x11rb::protocol::randr::Output as OutputId;
 
     use crate::data::enums::{Reflection, Rotation};
@@ -80,14 +81,14 @@ mod imp {
 
     impl Output {
         fn set_mode(&self, mode: Option<&Mode>) {
+            if mode == self.mode.borrow().as_ref() {
+                return;
+            }
             self.mode.take();
-            self.width.take();
-            self.height.take();
             if let Some(mode) = mode {
                 if let Some(m) = self.modes.borrow().find_by_id(mode.id()) {
                     if *mode == m {
                         self.mode.set(Some(mode.clone()));
-                        self.update_dim();
                     } else {
                         panic!("Different GObject with same Mode ID");
                     }
@@ -95,22 +96,46 @@ mod imp {
                     panic!("No mode {} for output {}", mode.id(), self.id.get());
                 }
             }
-        }
-
-        fn set_rotation(&self, rotation: Rotation) {
-            self.rotation.set(rotation);
             self.update_dim();
         }
 
+        fn set_rotation(&self, rotation: Rotation) {
+            if self.rotation.get() != rotation {
+                self.rotation.set(rotation);
+                self.update_dim();
+            }
+        }
+
         pub(super) fn update_dim(&self) {
-            if let Some(mode) = self.mode.borrow().as_ref() {
-                let [w, h] = match self.rotation.get() {
-                    Rotation::Normal | Rotation::Inverted => [mode.width(), mode.height()],
-                    Rotation::Left | Rotation::Right => [mode.height(), mode.width()],
+            let obj = self.obj();
+
+            let m = self.mode.borrow();
+            let Some(mode) = m.as_ref() else {
+                if obj.width() != 0 {
+                    self.width.take();
+                    obj.notify_width();
                 }
-                .map(f64::from);
-                self.width.set(((w * self.scale_x.get()).round() as u16).into());
-                self.height.set(((h * self.scale_y.get()).round() as u16).into());
+                if obj.height() != 0 {
+                    self.height.take();
+                    obj.notify_height();
+                }
+                return;
+            };
+
+            let [w, h] = match self.rotation.get() {
+                Rotation::Normal | Rotation::Inverted => [mode.width(), mode.height()],
+                Rotation::Left | Rotation::Right => [mode.height(), mode.width()],
+            }
+            .map(f64::from);
+            let width = (w * self.scale_x.get()).round() as u16;
+            if width != obj.width() {
+                self.width.set(width.into());
+                obj.notify_width();
+            }
+            let height = (h * self.scale_y.get()).round() as u16;
+            if height != obj.height() {
+                self.height.set(height.into());
+                obj.notify_height();
             }
         }
     }
@@ -209,8 +234,14 @@ impl Output {
 
     pub fn set_scale(&self, scale: f64) {
         let imp = self.imp();
-        imp.scale_x.set(scale);
-        imp.scale_y.set(scale);
+        if !nearly_eq(scale, imp.scale_x.get()) {
+            imp.scale_x.set(scale);
+            self.notify_scale_x();
+        }
+        if !nearly_eq(scale, imp.scale_y.get()) {
+            imp.scale_y.set(scale);
+            self.notify_scale_y();
+        }
         imp.update_dim();
     }
 }

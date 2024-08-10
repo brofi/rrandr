@@ -178,11 +178,11 @@ mod imp {
                     output.connect_notify_local(
                         None,
                         clone!(
-                            #[weak(rename_to = this)]
-                            self,
-                            move |_, _| this
-                                .xrandr
-                                .set_text(&randr::gen_xrandr_command(&this.get_outputs()))
+                            #[strong]
+                            outputs,
+                            #[weak(rename_to = view)]
+                            self.xrandr,
+                            move |_, _| view.set_text(&randr::gen_xrandr_command(&outputs))
                         ),
                     );
                 }
@@ -203,7 +203,24 @@ mod imp {
             }
             self.enabled_area.set_outputs(&enabled);
             self.disabled_area.set_outputs(&disabled);
-            self.xrandr.set_text(&randr::gen_xrandr_command(&outputs));
+
+            if self.config.borrow().show_xrandr {
+                self.xrandr.set_text(&randr::gen_xrandr_command(&outputs));
+                enabled.connect_items_changed(clone!(
+                    #[strong]
+                    outputs,
+                    #[weak(rename_to = view)]
+                    self.xrandr,
+                    move |_, _, _, _| view.set_text(&randr::gen_xrandr_command(&outputs))
+                ));
+                disabled.connect_items_changed(clone!(
+                    #[strong]
+                    outputs,
+                    #[weak(rename_to = view)]
+                    self.xrandr,
+                    move |_, _, _, _| view.set_text(&randr::gen_xrandr_command(&outputs))
+                ));
+            }
         }
 
         fn on_key_pressed(
