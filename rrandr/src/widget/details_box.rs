@@ -10,7 +10,7 @@ mod imp {
     use std::sync::OnceLock;
     use std::time::Duration;
 
-    use gettextrs::gettext;
+    use gettextrs::{gettext, pgettext};
     use glib::subclass::object::{ObjectImpl, ObjectImplExt};
     use glib::subclass::types::{ObjectSubclass, ObjectSubclassExt};
     use glib::subclass::Signal;
@@ -99,16 +99,22 @@ mod imp {
                 position_entry: PositionEntry::new(),
                 cb_primary: CheckButton::new(&gettext("Set as primary")),
                 dd_rotation: DropDown::from_strings(&[
-                    &gettext("Normal"),
+                    &pgettext("Rotation", "Normal"),
+                    // Translators: Rotate 270 degrees
                     &gettext("Left"),
+                    // Translators: Rotate 90 degrees
                     &gettext("Right"),
+                    // Translators: Rotate 180 degrees
                     &gettext("Inverted"),
                 ]),
                 dd_rotation_selected_handler: RefCell::default(),
                 dd_reflection: DropDown::from_strings(&[
-                    &gettext("Normal"),
+                    &pgettext("Reflection", "Normal"),
+                    // Translators: Horizontal reflection
                     &gettext("Horizontal"),
+                    // Translators: Vertical reflection
                     &gettext("Vertical"),
+                    // Translators: Horizontal and vertical reflection
                     &gettext("Both"),
                 ]),
                 dd_reflection_selected_handler: RefCell::default(),

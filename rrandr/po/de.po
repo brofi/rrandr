@@ -7,8 +7,8 @@ msgid ""
 msgstr ""
 "Project-Id-Version: rrandr 0.2.0\n"
 "Report-Msgid-Bugs-To: https://github.com/brofi/rrandr/issues\n"
-"POT-Creation-Date: 2024-08-05 06:38+0200\n"
-"PO-Revision-Date: 2024-08-05 06:39+0200\n"
+"POT-Creation-Date: 2024-08-10 02:17+0200\n"
+"PO-Revision-Date: 2024-08-10 02:19+0200\n"
 "Last-Translator: Andreas Becker <brofi.archlinux@gmail.com>\n"
 "Language-Team: German\n"
 "Language: de\n"
@@ -102,7 +102,7 @@ msgstr "Ausgewählten Bildschirm nach rechts verschieben"
 msgid "Disable selected output"
 msgstr "Ausgewählten Bildschirm deaktivieren"
 
-#: src/res/shortcuts.ui:92 src/widget/details_box.rs:82
+#: src/res/shortcuts.ui:92 src/widget/details_box.rs:100
 msgid "Set as primary"
 msgstr "Als primären Bildschirm festlegen"
 
@@ -158,33 +158,85 @@ msgstr "Ü_bernehmen"
 msgid "_Reset"
 msgstr "_Verwerfen"
 
-#: src/res/window.ui:134
+#: src/res/window.ui:143
 msgid "Copied"
 msgstr "Kopiert"
 
-#: src/widget/details_box.rs:79
+#: src/widget/details_box.rs:97
 msgid "Enable/disable"
 msgstr "Aktivieren/deaktivieren"
 
+#: src/widget/details_box.rs:102
+msgctxt "Rotation"
+msgid "Normal"
+msgstr "Normal"
+
+#. Translators: Rotate 270 degrees
+#: src/widget/details_box.rs:104
+msgid "Left"
+msgstr "Links"
+
+#. Translators: Rotate 90 degrees
+#: src/widget/details_box.rs:106
+msgid "Right"
+msgstr "Rechts"
+
+#. Translators: Rotate 180 degrees
+#: src/widget/details_box.rs:108
+msgid "Inverted"
+msgstr "Invertiert"
+
+#: src/widget/details_box.rs:112
+msgctxt "Reflection"
+msgid "Normal"
+msgstr "Normal"
+
+#. Translators: Horizontal reflection
+#: src/widget/details_box.rs:114
+msgid "Horizontal"
+msgstr "Horizontal"
+
+#. Translators: Vertical reflection
+#: src/widget/details_box.rs:116
+msgid "Vertical"
+msgstr "Vertikal"
+
+#. Translators: Horizontal and vertical reflection
+#: src/widget/details_box.rs:118
+msgid "Both"
+msgstr "Beides"
+
 #. Output status
-#: src/widget/details_box.rs:119
+#: src/widget/details_box.rs:159
 msgid "Enabled"
 msgstr "Aktiv"
 
 #. Output mode consisting of resolution and refresh rate
-#: src/widget/details_box.rs:126
+#: src/widget/details_box.rs:166
 msgid "Mode"
 msgstr "Modus"
 
 #. Output position consisting of X and Y coordinate
-#: src/widget/details_box.rs:131
+#: src/widget/details_box.rs:171
 msgid "Position"
 msgstr "Position"
 
 #. Primary output status
-#: src/widget/details_box.rs:136
+#: src/widget/details_box.rs:176
 msgid "Primary"
 msgstr "Primär"
+
+#: src/widget/details_box.rs:179
+msgid "Rotate"
+msgstr "Rotieren"
+
+#: src/widget/details_box.rs:180
+msgid "Reflect"
+msgstr "Spiegeln"
+
+#: src/widget/details_box.rs:181
+msgid "Scale"
+msgstr "Skalieren"
 
 #: src/widget/dialog.rs:136
 msgid "_Close"
