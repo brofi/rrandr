@@ -17,6 +17,7 @@
 * Enable and disable outputs
 * Change resolution and refresh rate
 * Set primary output
+* Rotate, reflect and scale output
 * Automatic revert after timeout
 * Human-readable output names
 * Visual output identification
