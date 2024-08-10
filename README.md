@@ -11,6 +11,10 @@
        src="rrandr/src/res/screenshot.png">
 </p>
 
+## About
+
+_RRandR_ is a graphical interface to the [X Resize, Rotate and Reflect Extension (RandR)](https://www.x.org/releases/current/doc/randrproto/randrproto.txt). It aims to provide the core features of the official command line configuration utility [xrandr](https://www.x.org/wiki/Projects/XRandR) in an easy accessible manner. RRandR was mainly developed for users running an X Server without a desktop environment as an alternative to other standalone graphical tools like [ARandR](https://christian.amsuess.com/tools/arandr), [lxrandr](https://github.com/lxde/lxrandr) or [grandr](https://gitlab.freedesktop.org/xorg/app/grandr). It can however be used side-by-side with destkop-integrated system tools.
+
 ## Features
 
 * Position outputs in a screen by dragging
