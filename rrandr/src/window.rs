@@ -14,6 +14,7 @@ pub const SPACING: u16 = 6;
 mod imp {
     use std::cell::{Cell, RefCell};
     use std::rc::Rc;
+    use std::time::Duration;
 
     use config::Config;
     use gdk::{Key, ModifierType, Texture};
@@ -22,7 +23,10 @@ mod imp {
     use glib::subclass::object::{ObjectImpl, ObjectImplExt};
     use glib::subclass::types::{ObjectSubclass, ObjectSubclassExt};
     use glib::subclass::InitializingObject;
-    use glib::{clone, object_subclass, spawn_future_local, timeout_future_seconds, Propagation};
+    use glib::{
+        clone, object_subclass, spawn_future_local, timeout_future, timeout_future_seconds,
+        Propagation,
+    };
     use gtk::prelude::{
         GtkWindowExt, ListModelExt, ListModelExtManual, ObjectExt, StaticTypeExt, WidgetExt,
     };
@@ -34,11 +38,10 @@ mod imp {
     use gtk::subclass::window::WindowImpl;
     use gtk::{
         glib, template_callbacks, AboutDialog, ApplicationWindow, Box, Button, CompositeTemplate,
-        EventControllerKey, GestureClick, Label, License, Overlay, Paned, Separator, TemplateChild,
+        EventControllerKey, GestureClick, Label, License, Paned, Separator, TemplateChild,
     };
     use log::{error, warn};
 
-    use super::PADDING;
     use crate::app::{APP_NAME, APP_NAME_LOC};
     use crate::data::output::Output;
     use crate::data::outputs::Outputs;
@@ -50,6 +53,8 @@ mod imp {
     use crate::widget::output_area::OutputArea;
     use crate::x11::popup::show_popup_windows;
     use crate::x11::randr::{self, Randr, ScreenSizeRange, Snapshot};
+
+    const COPY_OVERLAY_SHOW_SECS: f64 = 1.5;
 
     #[derive(CompositeTemplate, Default)]
     #[template(resource = "/com/github/brofi/rrandr/window.ui")]
@@ -70,7 +75,7 @@ mod imp {
         #[template_child]
         actions: TemplateChild<Box>,
         #[template_child]
-        overlay_container: TemplateChild<Overlay>,
+        xrandr_container: TemplateChild<Box>,
         #[template_child]
         overlay: TemplateChild<Label>,
         #[template_child]
@@ -134,7 +139,7 @@ mod imp {
             ));
 
             if self.config.borrow().show_xrandr {
-                self.overlay_container.set_visible(true);
+                self.xrandr_container.set_visible(true);
                 let gc = GestureClick::new();
                 gc.connect_pressed(clone!(
                     #[weak(rename_to = this)]
@@ -410,25 +415,24 @@ mod imp {
 
         fn on_xrandr_clicked(&self, n_press: i32) {
             if n_press == 2 {
-                self.xrandr.clipboard().set_text(&self.xrandr.text());
-                self.overlay.set_margin_bottom(
-                    self.overlay_container.height()
-                        + self.details.height()
-                        // xrandr/details spacing + details/paned spacing + 1 spacing
-                        + 3 * i32::from(PADDING)
-                        // hsep
-                        + 1,
-                );
-                spawn_future_local(clone!(
-                    #[weak(rename_to = overlay)]
-                    self.overlay,
-                    async move {
-                        overlay.set_visible(true);
-                        timeout_future_seconds(2).await;
-                        overlay.set_visible(false);
-                    }
-                ));
+                self.copy_xrandr_command();
             }
+        }
+
+        #[template_callback]
+        fn on_copy_clicked(&self) { self.copy_xrandr_command(); }
+
+        fn copy_xrandr_command(&self) {
+            self.xrandr.clipboard().set_text(&self.xrandr.text());
+            spawn_future_local(clone!(
+                #[weak(rename_to = overlay)]
+                self.overlay,
+                async move {
+                    overlay.set_visible(true);
+                    timeout_future(Duration::from_secs_f64(COPY_OVERLAY_SHOW_SECS)).await;
+                    overlay.set_visible(false);
+                }
+            ));
         }
 
         fn get_outputs(&self) -> Outputs {

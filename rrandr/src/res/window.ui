@@ -39,36 +39,59 @@
           <object class="DetailsBox" id="details" />
         </child>
         <child>
-          <object class="GtkOverlay" id="overlay_container">
+          <object class="GtkBox" id="xrandr_container">
             <property name="visible">false</property>
+            <property name="orientation">horizontal</property>
+            <property name="spacing">12</property>
             <style>
               <class name="view" />
               <class name="frame" />
             </style>
             <child>
-              <object class="GtkLabel" id="xrandr">
-                <property name="xalign">0</property>
+              <object class="GtkOverlay">
                 <property name="margin-start">6</property>
-                <property name="margin-end">6</property>
                 <property name="margin-top">6</property>
                 <property name="margin-bottom">6</property>
-                <property name="wrap">true</property>
-                <style>
-                  <class name="dim-label" />
-                  <class name="monospace" />
-                </style>
+                <property name="hexpand">true</property>
+                <child>
+                  <object class="GtkLabel" id="xrandr">
+                    <property name="xalign">0</property>
+                    <property name="wrap">true</property>
+                    <style>
+                      <class name="dim-label" />
+                      <class name="monospace" />
+                    </style>
+                  </object>
+                </child>
+                <child type="overlay">
+                  <object class="GtkLabel" id="overlay">
+                    <property name="visible">false</property>
+                    <property name="halign">fill</property>
+                    <property name="valign">fill</property>
+                    <property name="label" translatable="true">Copied</property>
+                    <style>
+                      <class name="heading" />
+                      <class name="osd" />
+                    </style>
+                  </object>
+                </child>
               </object>
             </child>
-            <child type="overlay">
-              <object class="GtkLabel" id="overlay">
-                <property name="visible">false</property>
-                <property name="margin-end">12</property>
-                <property name="halign">end</property>
-                <property name="valign">end</property>
-                <property name="label" translatable="true">Copied</property>
+            <child>
+              <object class="GtkButton">
+                <signal name="clicked" handler="on_copy_clicked" swapped="true" />
+                <property name="margin-end">6</property>
+                <property name="valign">center</property>
+                <property name="tooltip-text" translatable="yes">Copy</property>
+                <property name="child">
+                  <object class="IconText">
+                    <property name="icon-name">edit-copy-symbolic</property>
+                    <property name="label" translatable="yes">_Copy</property>
+                    <property name="prefer-icon-only">true</property>
+                  </object>
+                </property>
                 <style>
-                  <class name="heading" />
-                  <class name="osd" />
+                  <class name="flat" />
                 </style>
               </object>
             </child>
