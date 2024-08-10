@@ -112,8 +112,12 @@ wrapper! {
 }
 
 impl DetailsChild {
-    pub fn new<W: IsA<Widget>>(label: &str, control: &W) -> Self {
-        Object::builder().property("label", label).property("control", control).build()
+    pub fn new<W: IsA<Widget>>(label: &str, control: &W, name: &str) -> Self {
+        Object::builder()
+            .property("label", label)
+            .property("control", control)
+            .property("name", name)
+            .build()
     }
 }
 

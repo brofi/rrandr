@@ -18,12 +18,15 @@ mod imp {
         clone, derived_properties, object_subclass, timeout_add_local_once, Properties,
         SignalHandlerId, SourceId,
     };
-    use gtk::prelude::{CheckButtonExt, ObjectExt, RangeExt, ScaleExt, StaticType, WidgetExt};
+    use gtk::prelude::{
+        BoxExt, CheckButtonExt, ObjectExt, RangeExt, ScaleExt, StaticType, ToggleButtonExt,
+        WidgetExt,
+    };
     use gtk::subclass::prelude::DerivedObjectProperties;
     use gtk::subclass::widget::{WidgetClassExt, WidgetImpl};
     use gtk::{
-        glib, Align, BinLayout, DropDown, FlowBox, Orientation, PositionType, Scale, SelectionMode,
-        Widget, INVALID_LIST_POSITION,
+        glib, Align, BinLayout, Box, DropDown, FlowBox, Orientation, PositionType, Scale,
+        SelectionMode, Separator, ToggleButton, Widget, INVALID_LIST_POSITION,
     };
 
     use super::Update;
@@ -35,37 +38,48 @@ mod imp {
     use crate::utils::nearly_eq;
     use crate::widget::checkbutton::CheckButton;
     use crate::widget::details_child::DetailsChild;
+    use crate::widget::icon_text::IconText;
     use crate::widget::mode_selector::ModeSelector;
     use crate::widget::position_entry::{Axis, PositionEntry};
     use crate::widget::switch::Switch;
-    use crate::window::SPACING;
+    use crate::window::{PADDING, SPACING};
 
     const POS_UPDATE_DELAY: u64 = 500;
+
     const SW_ENABLED_NAME: &str = "sw_enabled";
+    const DD_ROTATION_NAME: &str = "dd_rotation";
+    const DD_REFLECTION_NAME: &str = "dd_reflection";
+    const SC_SCALE_NAME: &str = "sc_scale";
 
     #[derive(Properties)]
     #[properties(wrapper_type = super::DetailsBox)]
     pub struct DetailsBox {
         #[property(get, set = Self::set_output, nullable)]
         output: RefCell<Option<Output>>,
+
         enabled_changed_handler: RefCell<Option<SignalHandlerId>>,
         mode_changed_handler: RefCell<Option<SignalHandlerId>>,
         pos_changed_handlers: RefCell<[Option<SignalHandlerId>; 2]>,
         pos_modify_sids: RefCell<[Option<SourceId>; 2]>,
         primary_changed_handler: RefCell<Option<SignalHandlerId>>,
+        dd_rotation_selected_handler: RefCell<Option<SignalHandlerId>>,
+        dd_reflection_selected_handler: RefCell<Option<SignalHandlerId>>,
+        scale_value_changed_handler: RefCell<Option<SignalHandlerId>>,
+
         pub(super) screen_max_width: Cell<u16>,
         pub(super) screen_max_height: Cell<u16>,
-        root: FlowBox,
+
+        root: Box,
+        fb_details: FlowBox,
         sw_enabled: Switch,
         mode_selector: ModeSelector,
         position_entry: PositionEntry,
         cb_primary: CheckButton,
         dd_rotation: DropDown,
-        dd_rotation_selected_handler: RefCell<Option<SignalHandlerId>>,
         dd_reflection: DropDown,
-        dd_reflection_selected_handler: RefCell<Option<SignalHandlerId>>,
         scale: Scale,
-        scale_value_changed_handler: RefCell<Option<SignalHandlerId>>,
+        vsep: Separator,
+        tb_advanced: ToggleButton,
     }
 
     impl Default for DetailsBox {
@@ -78,16 +92,28 @@ mod imp {
             scale.add_mark(100., PositionType::Bottom, None);
             scale.set_flippable(true);
             scale.set_format_value_func(|_, v| format!("{:.2}", v / 100.));
+
+            let tb_child = IconText::new(true);
+            tb_child.set_icon_name("view-more-symbolic");
+            tb_child.set_label(gettext("Advanced") + "\u{2026}");
+
             Self {
                 output: RefCell::default(),
+
                 enabled_changed_handler: RefCell::default(),
                 mode_changed_handler: RefCell::default(),
                 pos_changed_handlers: RefCell::default(),
                 pos_modify_sids: RefCell::default(),
                 primary_changed_handler: RefCell::default(),
+                dd_rotation_selected_handler: RefCell::default(),
+                dd_reflection_selected_handler: RefCell::default(),
+                scale_value_changed_handler: RefCell::default(),
+
                 screen_max_width: Cell::default(),
                 screen_max_height: Cell::default(),
-                root: FlowBox::builder()
+
+                root: Box::new(Orientation::Horizontal, PADDING.into()),
+                fb_details: FlowBox::builder()
                     .row_spacing(SPACING.into())
                     .column_spacing(SPACING.into())
                     .orientation(Orientation::Horizontal)
@@ -107,7 +133,6 @@ mod imp {
                     // Translators: Rotate 180 degrees
                     &gettext("Inverted"),
                 ]),
-                dd_rotation_selected_handler: RefCell::default(),
                 dd_reflection: DropDown::from_strings(&[
                     &pgettext("Reflection", "Normal"),
                     // Translators: Horizontal reflection
@@ -117,9 +142,14 @@ mod imp {
                     // Translators: Horizontal and vertical reflection
                     &gettext("Both"),
                 ]),
-                dd_reflection_selected_handler: RefCell::default(),
                 scale,
-                scale_value_changed_handler: RefCell::default(),
+                vsep: Separator::new(Orientation::Vertical),
+                tb_advanced: ToggleButton::builder()
+                    .visible(false)
+                    .valign(Align::Center)
+                    .child(&tb_child)
+                    .tooltip_text(gettext("Advanced") + "\u{2026}")
+                    .build(),
             }
         }
     }
@@ -150,35 +180,48 @@ mod imp {
         fn constructed(&self) {
             self.parent_constructed();
 
-            let obj = self.obj();
-            obj.set_halign(Align::Fill);
-            obj.set_hexpand(true);
+            self.fb_details.set_halign(Align::Fill);
+            self.fb_details.set_hexpand(true);
 
-            let fbc_sw_enabled = DetailsChild::new(
+            self.fb_details.append(&DetailsChild::new(
                 // Output status
                 &gettext("Enabled"),
                 &self.sw_enabled,
-            );
-            fbc_sw_enabled.set_widget_name(SW_ENABLED_NAME);
-            self.root.append(&fbc_sw_enabled);
-            self.root.append(&DetailsChild::new(
+                SW_ENABLED_NAME,
+            ));
+            self.fb_details.append(&DetailsChild::new(
                 // Output mode consisting of resolution and refresh rate
                 &gettext("Mode"),
                 &self.mode_selector,
+                "",
             ));
-            self.root.append(&DetailsChild::new(
+            self.fb_details.append(&DetailsChild::new(
                 // Output position consisting of X and Y coordinate
                 &gettext("Position"),
                 &self.position_entry,
+                "",
             ));
-            self.root.append(&DetailsChild::new(
+            self.fb_details.append(&DetailsChild::new(
                 // Primary output status
                 &gettext("Primary"),
                 &self.cb_primary,
+                "",
             ));
-            self.root.append(&DetailsChild::new(&gettext("Rotate"), &self.dd_rotation));
-            self.root.append(&DetailsChild::new(&gettext("Reflect"), &self.dd_reflection));
-            self.root.append(&DetailsChild::new(&gettext("Scale"), &self.scale));
+            self.fb_details.append(&DetailsChild::new(
+                &gettext("Rotate"),
+                &self.dd_rotation,
+                DD_ROTATION_NAME,
+            ));
+            self.fb_details.append(&DetailsChild::new(
+                &gettext("Reflect"),
+                &self.dd_reflection,
+                DD_REFLECTION_NAME,
+            ));
+            self.fb_details.append(&DetailsChild::new(
+                &gettext("Scale"),
+                &self.scale,
+                SC_SCALE_NAME,
+            ));
             self.scale.set_width_request(200);
 
             self.sw_enabled.connect_active_notify(clone!(
@@ -222,8 +265,16 @@ mod imp {
                     move |s| this.on_scale_changed(s)
                 ),
             )));
+            self.tb_advanced.connect_toggled(clone!(
+                #[weak(rename_to = this)]
+                self,
+                move |tb| this.on_advanced_toggle(tb)
+            ));
 
-            self.root.set_parent(&*obj);
+            self.root.append(&self.tb_advanced);
+            self.root.append(&self.vsep);
+            self.root.append(&self.fb_details);
+            self.root.set_parent(&*self.obj());
         }
 
         fn dispose(&self) { self.root.unparent(); }
@@ -369,14 +420,35 @@ mod imp {
         }
 
         fn update_visibility(&self) {
-            let mut child = self.root.first_child();
+            let mut child = self.fb_details.first_child();
+            let output = self.output.borrow();
             while let Some(c) = child {
-                let visible = self
-                    .output
-                    .borrow()
-                    .as_ref()
-                    .is_some_and(|o| o.enabled() || c.widget_name() == SW_ENABLED_NAME);
-                c.set_visible(visible);
+                c.set_visible(output.as_ref().is_some_and(|o| match c.widget_name().as_str() {
+                    SW_ENABLED_NAME => true,
+                    DD_ROTATION_NAME | DD_REFLECTION_NAME | SC_SCALE_NAME => {
+                        o.enabled() && self.tb_advanced.is_active()
+                    }
+                    _ => o.enabled(),
+                }));
+                child = c.next_sibling();
+            }
+            let visible = output.as_ref().is_some_and(|o| o.enabled());
+            self.vsep.set_visible(visible);
+            self.tb_advanced.set_visible(visible);
+        }
+
+        fn on_advanced_toggle(&self, tb: &ToggleButton) {
+            tb.set_tooltip_text(Some(
+                &(if tb.is_active() { gettext("Basic") } else { gettext("Advanced") } + "\u{2026}"),
+            ));
+            let mut child = self.fb_details.first_child();
+            while let Some(c) = child {
+                match c.widget_name().as_str() {
+                    DD_ROTATION_NAME | DD_REFLECTION_NAME | SC_SCALE_NAME => {
+                        c.set_visible(tb.is_active())
+                    }
+                    _ => (),
+                }
                 child = c.next_sibling();
             }
         }

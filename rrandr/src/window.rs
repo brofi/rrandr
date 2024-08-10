@@ -33,8 +33,8 @@ mod imp {
     };
     use gtk::subclass::window::WindowImpl;
     use gtk::{
-        glib, template_callbacks, AboutDialog, ApplicationWindow, Button, CompositeTemplate,
-        EventControllerKey, FlowBox, GestureClick, Label, License, Overlay, Paned, TemplateChild,
+        glib, template_callbacks, AboutDialog, ApplicationWindow, Box, Button, CompositeTemplate,
+        EventControllerKey, GestureClick, Label, License, Overlay, Paned, Separator, TemplateChild,
     };
     use log::{error, warn};
 
@@ -66,7 +66,9 @@ mod imp {
         #[template_child]
         pub(super) details: TemplateChild<DetailsBox>,
         #[template_child]
-        actions: TemplateChild<FlowBox>,
+        hsep: TemplateChild<Separator>,
+        #[template_child]
+        actions: TemplateChild<Box>,
         #[template_child]
         overlay_container: TemplateChild<Overlay>,
         #[template_child]
@@ -103,6 +105,8 @@ mod imp {
             self.set_config();
             self.set_screen_max_size();
             self.set_outputs();
+
+            self.hsep.set_visible(!self.config.borrow().show_xrandr);
 
             // Remove focusable from automatically added FlowBoxChild
             let mut child = self.actions.first_child();
@@ -248,6 +252,7 @@ mod imp {
             self.disabled_area.deselect();
             self.disabled_area.queue_draw();
             self.details.set_output(Some(output));
+            self.hsep.set_visible(true);
         }
 
         #[template_callback]
@@ -255,6 +260,7 @@ mod imp {
             self.disabled_area.deselect();
             self.disabled_area.queue_draw();
             self.details.set_output(None::<Output>);
+            self.hsep.set_visible(!self.config.borrow().show_xrandr);
         }
 
         #[template_callback]
@@ -262,6 +268,7 @@ mod imp {
             self.enabled_area.deselect();
             self.enabled_area.queue_draw();
             self.details.set_output(Some(output));
+            self.hsep.set_visible(true);
         }
 
         #[template_callback]
@@ -269,6 +276,7 @@ mod imp {
             self.enabled_area.deselect();
             self.enabled_area.queue_draw();
             self.details.set_output(None::<Output>);
+            self.hsep.set_visible(!self.config.borrow().show_xrandr);
         }
 
         pub(super) fn apply(&self) {

@@ -128,9 +128,11 @@ wrapper! {
 }
 
 impl IconText {
-    pub fn new() -> Self { Object::new() }
+    pub fn new(prefer_icon_only: bool) -> Self {
+        Object::builder().property("prefer-icon-only", prefer_icon_only).build()
+    }
 }
 
 impl Default for IconText {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self { Object::new() }
 }
