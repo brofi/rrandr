@@ -28,7 +28,8 @@ mod imp {
         Propagation,
     };
     use gtk::prelude::{
-        GtkWindowExt, ListModelExt, ListModelExtManual, ObjectExt, StaticTypeExt, WidgetExt,
+        GtkWindowExt, ListModelExt, ListModelExtManual, ObjectExt, StaticTypeExt, ToggleButtonExt,
+        WidgetExt,
     };
     use gtk::subclass::application_window::ApplicationWindowImpl;
     use gtk::subclass::widget::{
@@ -39,6 +40,7 @@ mod imp {
     use gtk::{
         glib, template_callbacks, AboutDialog, ApplicationWindow, Box, Button, CompositeTemplate,
         EventControllerKey, GestureClick, Label, License, Paned, Separator, TemplateChild,
+        ToggleButton,
     };
     use log::{error, warn};
 
@@ -80,6 +82,8 @@ mod imp {
         overlay: TemplateChild<Label>,
         #[template_child]
         xrandr: TemplateChild<Label>,
+        #[template_child]
+        tb_show_xrandr: TemplateChild<ToggleButton>,
         last_handle_pos: Cell<i32>,
     }
 
@@ -138,16 +142,21 @@ mod imp {
                 }
             ));
 
-            if self.config.borrow().show_xrandr {
-                self.xrandr_container.set_visible(true);
-                let gc = GestureClick::new();
-                gc.connect_pressed(clone!(
-                    #[weak(rename_to = this)]
-                    self,
-                    move |_, n_press, _, _| this.on_xrandr_clicked(n_press)
-                ));
-                self.xrandr.add_controller(gc);
-            }
+            let gc = GestureClick::new();
+            gc.connect_pressed(clone!(
+                #[weak(rename_to = this)]
+                self,
+                move |_, n_press, _, _| this.on_xrandr_clicked(n_press)
+            ));
+            self.xrandr.add_controller(gc);
+            self.tb_show_xrandr.set_active(self.config.borrow().show_xrandr);
+            self.tb_show_xrandr.set_tooltip_text(Some(
+                &(if self.config.borrow().show_xrandr {
+                    gettext("Hide xrandr command")
+                } else {
+                    gettext("Show xrandr command")
+                } + "\u{2026}"),
+            ));
 
             self.setup_randr_notify();
         }
@@ -179,18 +188,16 @@ mod imp {
             let enabled = Outputs::new();
             let disabled = Outputs::new();
             for output in outputs.iter::<Output>().map(Result::unwrap) {
-                if self.config.borrow().show_xrandr {
-                    output.connect_notify_local(
-                        None,
-                        clone!(
-                            #[strong]
-                            outputs,
-                            #[weak(rename_to = view)]
-                            self.xrandr,
-                            move |_, _| view.set_text(&randr::gen_xrandr_command(&outputs))
-                        ),
-                    );
-                }
+                output.connect_notify_local(
+                    None,
+                    clone!(
+                        #[strong]
+                        outputs,
+                        #[weak(rename_to = view)]
+                        self.xrandr,
+                        move |_, _| view.set_text(&randr::gen_xrandr_command(&outputs))
+                    ),
+                );
                 if output.enabled() { enabled.append(&output) } else { disabled.append(&output) }
             }
             // Keep selection when outputs move from enabled to disabled and vice versa
@@ -209,23 +216,21 @@ mod imp {
             self.enabled_area.set_outputs(&enabled);
             self.disabled_area.set_outputs(&disabled);
 
-            if self.config.borrow().show_xrandr {
-                self.xrandr.set_text(&randr::gen_xrandr_command(&outputs));
-                enabled.connect_items_changed(clone!(
-                    #[strong]
-                    outputs,
-                    #[weak(rename_to = view)]
-                    self.xrandr,
-                    move |_, _, _, _| view.set_text(&randr::gen_xrandr_command(&outputs))
-                ));
-                disabled.connect_items_changed(clone!(
-                    #[strong]
-                    outputs,
-                    #[weak(rename_to = view)]
-                    self.xrandr,
-                    move |_, _, _, _| view.set_text(&randr::gen_xrandr_command(&outputs))
-                ));
-            }
+            self.xrandr.set_text(&randr::gen_xrandr_command(&outputs));
+            enabled.connect_items_changed(clone!(
+                #[strong]
+                outputs,
+                #[weak(rename_to = view)]
+                self.xrandr,
+                move |_, _, _, _| view.set_text(&randr::gen_xrandr_command(&outputs))
+            ));
+            disabled.connect_items_changed(clone!(
+                #[strong]
+                outputs,
+                #[weak(rename_to = view)]
+                self.xrandr,
+                move |_, _, _, _| view.set_text(&randr::gen_xrandr_command(&outputs))
+            ));
         }
 
         fn on_key_pressed(
@@ -282,7 +287,7 @@ mod imp {
             self.disabled_area.deselect();
             self.disabled_area.queue_draw();
             self.details.set_output(None::<Output>);
-            self.hsep.set_visible(!self.config.borrow().show_xrandr);
+            self.hsep.set_visible(!self.tb_show_xrandr.is_active());
         }
 
         #[template_callback]
@@ -298,7 +303,7 @@ mod imp {
             self.enabled_area.deselect();
             self.enabled_area.queue_draw();
             self.details.set_output(None::<Output>);
-            self.hsep.set_visible(!self.config.borrow().show_xrandr);
+            self.hsep.set_visible(!self.tb_show_xrandr.is_active());
         }
 
         pub(super) fn apply(&self) {
@@ -411,6 +416,19 @@ mod imp {
                 warn!("About dialog description differs from crate description");
             }
             about.show();
+        }
+
+        #[template_callback]
+        fn on_show_xrandr_toggled(&self, tb: &ToggleButton) {
+            self.xrandr_container.set_visible(tb.is_active());
+            self.hsep.set_visible(self.details.output().is_some());
+            self.tb_show_xrandr.set_tooltip_text(Some(
+                &(if tb.is_active() {
+                    gettext("Hide xrandr command")
+                } else {
+                    gettext("Show xrandr command")
+                } + "\u{2026}"),
+            ));
         }
 
         fn on_xrandr_clicked(&self, n_press: i32) {

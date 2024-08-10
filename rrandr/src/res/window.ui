@@ -116,6 +116,18 @@
               </object>
             </child>
             <child>
+              <object class="GtkToggleButton" id="tb_show_xrandr">
+                <signal name="toggled" handler="on_show_xrandr_toggled" swapped="true" />
+                <property name="child">
+                  <object class="IconText">
+                    <property name="icon-name">utilities-terminal-symbolic</property>
+                    <property name="label">_Xrandr</property>
+                    <property name="prefer-icon-only">true</property>
+                  </object>
+                </property>
+              </object>
+            </child>
+            <child>
               <object class="GtkButton">
                 <signal name="clicked" handler="on_identify_clicked" swapped="true" />
                 <property name="tooltip-text" translatable="yes">Identify outputs</property>
