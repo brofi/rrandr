@@ -7,8 +7,8 @@ msgid ""
 msgstr ""
 "Project-Id-Version: rrandr 0.2.0\n"
 "Report-Msgid-Bugs-To: https://github.com/brofi/rrandr/issues\n"
-"POT-Creation-Date: 2024-08-10 02:17+0200\n"
-"PO-Revision-Date: 2024-08-10 02:19+0200\n"
+"POT-Creation-Date: 2024-08-10 08:22+0200\n"
+"PO-Revision-Date: 2024-08-10 08:24+0200\n"
 "Last-Translator: Andreas Becker <brofi.archlinux@gmail.com>\n"
 "Language-Team: German\n"
 "Language: de\n"
@@ -30,7 +30,7 @@ msgstr "RRandR"
 msgid "Display Settings"
 msgstr "Anzeigeeinstellungen"
 
-#: src/res/rrandr.desktop.in:7 src/window.rs:370
+#: src/res/rrandr.desktop.in:7 src/window.rs:378
 msgid "A graphical interface to the RandR X Window System extension"
 msgstr ""
 "Eine grafische Schnittstelle zur RandR Erweiterung des X Window Systems"
@@ -46,11 +46,11 @@ msgstr ""
 msgid "General"
 msgstr "Allgemein"
 
-#: src/res/shortcuts.ui:14 src/res/window.ui:89
+#: src/res/shortcuts.ui:14 src/res/window.ui:117
 msgid "Apply changes"
 msgstr "Änderungen übernehmen"
 
-#: src/res/shortcuts.ui:20 src/res/window.ui:101
+#: src/res/shortcuts.ui:20 src/res/window.ui:129
 msgid "Reset changes"
 msgstr "Änderungen verwerfen"
 
@@ -102,7 +102,7 @@ msgstr "Ausgewählten Bildschirm nach rechts verschieben"
 msgid "Disable selected output"
 msgstr "Ausgewählten Bildschirm deaktivieren"
 
-#: src/res/shortcuts.ui:92 src/widget/details_box.rs:100
+#: src/res/shortcuts.ui:92 src/widget/details_box.rs:126
 msgid "Set as primary"
 msgstr "Als primären Bildschirm festlegen"
 
@@ -134,109 +134,118 @@ msgstr "Ausgewählten Bildschirm aktivieren"
 msgid "Toggle view"
 msgstr "Ansicht umschalten"
 
-#: src/res/window.ui:56
-msgid "About"
-msgstr "Über"
-
-#: src/res/window.ui:60
-msgid "_About"
-msgstr "Ü_ber"
-
-#: src/res/window.ui:70
-msgid "Identify outputs"
-msgstr "Bildschirme identifizieren"
-
-#: src/res/window.ui:74
-msgid "_Identify"
-msgstr "_Identifizieren"
-
-#: src/res/window.ui:93
-msgid "_Apply"
-msgstr "Ü_bernehmen"
-
-#: src/res/window.ui:105
-msgid "_Reset"
-msgstr "_Verwerfen"
-
-#: src/res/window.ui:143
+#: src/res/window.ui:68
 msgid "Copied"
 msgstr "Kopiert"
 
-#: src/widget/details_box.rs:97
+#: src/res/window.ui:85
+msgid "About"
+msgstr "Über"
+
+#: src/res/window.ui:89
+msgid "_About"
+msgstr "Ü_ber"
+
+#: src/res/window.ui:98
+msgid "Identify outputs"
+msgstr "Bildschirme identifizieren"
+
+#: src/res/window.ui:102
+msgid "_Identify"
+msgstr "_Identifizieren"
+
+#: src/res/window.ui:121
+msgid "_Apply"
+msgstr "Ü_bernehmen"
+
+#: src/res/window.ui:133
+msgid "_Reset"
+msgstr "_Verwerfen"
+
+#: src/widget/details_box.rs:98 src/widget/details_box.rs:151
+#: src/widget/details_box.rs:442
+msgid "Advanced"
+msgstr "Erweitert"
+
+#: src/widget/details_box.rs:123
 msgid "Enable/disable"
 msgstr "Aktivieren/deaktivieren"
 
-#: src/widget/details_box.rs:102
+#: src/widget/details_box.rs:128
 msgctxt "Rotation"
 msgid "Normal"
 msgstr "Normal"
 
 #. Translators: Rotate 270 degrees
-#: src/widget/details_box.rs:104
+#: src/widget/details_box.rs:130
 msgid "Left"
 msgstr "Links"
 
 #. Translators: Rotate 90 degrees
-#: src/widget/details_box.rs:106
+#: src/widget/details_box.rs:132
 msgid "Right"
 msgstr "Rechts"
 
 #. Translators: Rotate 180 degrees
-#: src/widget/details_box.rs:108
+#: src/widget/details_box.rs:134
 msgid "Inverted"
 msgstr "Invertiert"
 
-#: src/widget/details_box.rs:112
+#: src/widget/details_box.rs:137
 msgctxt "Reflection"
 msgid "Normal"
 msgstr "Normal"
 
 #. Translators: Horizontal reflection
-#: src/widget/details_box.rs:114
+#: src/widget/details_box.rs:139
 msgid "Horizontal"
 msgstr "Horizontal"
 
 #. Translators: Vertical reflection
-#: src/widget/details_box.rs:116
+#: src/widget/details_box.rs:141
 msgid "Vertical"
 msgstr "Vertikal"
 
 #. Translators: Horizontal and vertical reflection
-#: src/widget/details_box.rs:118
+#: src/widget/details_box.rs:143
 msgid "Both"
 msgstr "Beides"
 
 #. Output status
-#: src/widget/details_box.rs:159
+#: src/widget/details_box.rs:188
 msgid "Enabled"
 msgstr "Aktiv"
 
 #. Output mode consisting of resolution and refresh rate
-#: src/widget/details_box.rs:166
+#: src/widget/details_box.rs:194
 msgid "Mode"
 msgstr "Modus"
 
 #. Output position consisting of X and Y coordinate
-#: src/widget/details_box.rs:171
+#: src/widget/details_box.rs:200
 msgid "Position"
 msgstr "Position"
 
 #. Primary output status
-#: src/widget/details_box.rs:176
+#: src/widget/details_box.rs:206
 msgid "Primary"
 msgstr "Primär"
 
-#: src/widget/details_box.rs:179
+#: src/widget/details_box.rs:211
 msgid "Rotate"
 msgstr "Rotieren"
 
-#: src/widget/details_box.rs:180
+#: src/widget/details_box.rs:216
 msgid "Reflect"
 msgstr "Spiegeln"
 
-#: src/widget/details_box.rs:181
+#: src/widget/details_box.rs:221
 msgid "Scale"
 msgstr "Skalieren"
+
+#: src/widget/details_box.rs:442
+msgid "Basic"
+msgstr "Kompakt"
 
 #: src/widget/dialog.rs:136
 msgid "_Close"
@@ -258,51 +267,51 @@ msgstr "Horizontale Position"
 msgid "Vertical position"
 msgstr "Vertikale Position"
 
-#: src/window.rs:283
+#: src/window.rs:291
 msgid "Confirm changes"
 msgstr "Änderungen bestätigen"
 
-#: src/window.rs:284
+#: src/window.rs:292
 msgid "Keep changes?"
 msgstr "Änderungen behalten?"
 
-#: src/window.rs:285
+#: src/window.rs:293
 msgid "_Keep"
 msgstr "_Behalten"
 
-#: src/window.rs:285
+#: src/window.rs:293
 msgid "_Revert"
 msgstr "_Zurücksetzen"
 
-#: src/window.rs:286
+#: src/window.rs:294
 msgid "Keep changes"
 msgstr "Änderungen behalten"
 
-#: src/window.rs:286
+#: src/window.rs:294
 msgid "Revert changes"
 msgstr "Änderungen zurücksetzen"
 
 #. Translators: '{}' gets replaced with the number of seconds left.
-#: src/window.rs:292 src/window.rs:306
+#: src/window.rs:300 src/window.rs:314
 msgid "Reverting in {} second"
 msgid_plural "Reverting in {} seconds"
 msgstr[0] "Zurücksetzen in {} Sekunde"
 msgstr[1] "Zurücksetzen in {} Sekunden"
 
-#: src/window.rs:340 src/window.rs:341
+#: src/window.rs:348 src/window.rs:349
 msgid "Failure"
 msgstr "Fehler"
 
-#: src/window.rs:342
+#: src/window.rs:350
 msgid "Changes have been reverted."
 msgstr "Änderungen wurden zurückgesetzt."
 
-#: src/window.rs:371
+#: src/window.rs:379
 msgid "Repository"
 msgstr "Projektarchiv"
 
 #. Translators: Add your name and email address to the translation (one translator
 #. per line).
-#: src/window.rs:378
+#: src/window.rs:386
 msgid "translator-credits"
 msgstr "Andreas Becker <brofi.archlinux@gmail.com>"

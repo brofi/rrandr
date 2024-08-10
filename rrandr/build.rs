@@ -24,7 +24,7 @@ fn main() {
                 gen_readme();
                 println!(
                     "cargo::rustc-env=RRANDR_LOCALE_DIR={}",
-                    Path::new("../target/po").to_str().unwrap()
+                    Path::new("target/po").to_str().unwrap()
                 );
             } else {
                 println!(
