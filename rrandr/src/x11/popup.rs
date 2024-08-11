@@ -1,17 +1,18 @@
 use std::collections::HashMap;
 use std::error::Error;
+use std::ffi::CString;
 use std::ptr;
 use std::time::{Duration, Instant};
 
 use cairo::{XCBDrawable, XCBSurface, XCBVisualType};
 use config::Config;
 use gio::spawn_blocking;
-use glib::spawn_future_local;
+use glib::{clone, spawn_future_local};
 use gtk::prelude::WidgetExt;
 use gtk::{gio, glib, Button};
 use log::{error, warn};
 use x11rb::connection::Connection as XConnection;
-use x11rb::errors::{ReplyError, ReplyOrIdError};
+use x11rb::errors::ReplyOrIdError;
 use x11rb::protocol::randr::{
     get_crtc_info, get_output_info, get_screen_resources_current, Mode as ModeId, ModeInfo,
     Rotation as RRotation,
@@ -27,6 +28,7 @@ use super::x_error_to_string;
 use crate::data::output::PPMM_DEFAULT;
 use crate::draw::DrawContext;
 use crate::math::Rect;
+use crate::x11::randr::DISPLAY;
 
 fn create_popup_window(
     conn: &impl XConnection,
@@ -169,54 +171,69 @@ fn create_popup_windows(
     Ok(windows)
 }
 
-pub fn show_popup_windows(cfg: &Config, btn: &Button) -> Result<(), Box<dyn Error>> {
+pub fn show_popup_windows(cfg: &Config, btn: &Button) {
     let show_secs = cfg.popup.timeout;
     if show_secs < 0. {
         warn!("Negative show duration: {}", show_secs);
-        return Ok(());
+        return;
     }
 
-    let (conn, screen_num) = XCBConnection::connect(None)?;
-    let Some(visual_type) = get_root_visual_type(&conn, screen_num) else {
-        return Err("Failed to get root visual type".into());
-    };
-    // must outlive visual pointer
-    let mut visual_type = visual_type.serialize();
-    let popups = create_popup_windows(cfg, &conn, screen_num, &mut visual_type)?;
-    conn.flush()?;
-
-    spawn_future_local({
-        let btn = btn.clone();
+    spawn_future_local(clone!(
+        #[strong]
+        cfg,
+        #[strong]
+        btn,
         async move {
             btn.set_sensitive(false);
-            if let Ok(res) =
-                spawn_blocking(move || -> Result<(), ReplyError> { loop_x(&conn, show_secs) }).await
-            {
-                if let Err(e) = res {
-                    error!("Failed to show popups:");
-                    if let ReplyError::X11Error(e) = e {
-                        error!("{}", x_error_to_string(&e));
+            let dpy = DISPLAY.and_then(|s| CString::new(s).ok());
+            match XCBConnection::connect(dpy.as_ref().map(|c| c.as_c_str())) {
+                Ok((conn, screen_num)) => {
+                    if let Some(visual_type) = get_root_visual_type(&conn, screen_num) {
+                        // must outlive visual pointer
+                        let mut visual_type = visual_type.serialize();
+                        match create_popup_windows(&cfg, &conn, screen_num, &mut visual_type) {
+                            Ok(popups) => {
+                                if let Err(e) = conn.flush() {
+                                    error!("Failed to flush connection: {e:?}");
+                                }
+                                match spawn_blocking(
+                                    move || -> Result<(), Box<dyn Error + Send + Sync>> {
+                                        run_event_loop(show_secs)
+                                    },
+                                )
+                                .await
+                                {
+                                    Ok(res) => {
+                                        if let Err(e) = res {
+                                            error!("Error running event loop: {e:?}");
+                                        }
+                                    }
+                                    Err(e) => error!("Failed to await event loop: {e:?}"),
+                                }
+
+                                for surface in popups.values() {
+                                    if let Some(device) = surface.device() {
+                                        device.finish();
+                                    }
+                                    surface.finish();
+                                }
+                            }
+                            Err(e) => error!("Failed create popup windows: {e:?}"),
+                        }
                     } else {
-                        error!("Cause: {e:?}");
+                        error!("Failed to get root visual type");
                     }
                 }
-            } else {
-                error!("Failed to await future");
+                Err(e) => error!("Failed to connect to X Server: {e:?}"),
             }
             btn.set_sensitive(true);
-            for surface in popups.values() {
-                if let Some(device) = surface.device() {
-                    device.finish();
-                }
-                surface.finish();
-            }
         }
-    });
-
-    Ok(())
+    ));
 }
 
-fn loop_x(conn: &XCBConnection, secs: f32) -> Result<(), ReplyError> {
+fn run_event_loop(secs: f32) -> Result<(), Box<dyn Error + Send + Sync>> {
+    let dpy = DISPLAY.and_then(|s| CString::new(s).ok());
+    let (conn, _) = XCBConnection::connect(dpy.as_ref().map(|c| c.as_c_str()))?;
     let now = Instant::now();
     let secs = Duration::from_secs_f32(secs);
     while now.elapsed() < secs {
@@ -227,7 +244,7 @@ fn loop_x(conn: &XCBConnection, secs: f32) -> Result<(), ReplyError> {
                 }
             }
             Some(Event::Error(e)) => {
-                return Err(e.into());
+                return Err(x_error_to_string(&e).into());
             }
             _ => (),
         }

@@ -42,7 +42,7 @@ mod imp {
         EventControllerKey, GestureClick, Label, License, Paned, Separator, TemplateChild,
         ToggleButton,
     };
-    use log::{error, warn};
+    use log::warn;
 
     use crate::app::{APP_NAME, APP_NAME_LOC};
     use crate::data::output::Output;
@@ -389,9 +389,7 @@ mod imp {
 
         #[template_callback]
         fn on_identify_clicked(&self, btn: &Button) {
-            if let Err(e) = show_popup_windows(&self.config.borrow(), btn) {
-                error!("Failed to identify outputs: {e:?}");
-            }
+            show_popup_windows(&self.config.borrow(), btn);
         }
 
         #[template_callback]

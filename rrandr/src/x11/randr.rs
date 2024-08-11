@@ -42,8 +42,8 @@ type CrtcInfo = GetCrtcInfoReply;
 type Primary = GetOutputPrimaryReply;
 type Edid = Vec<u8>;
 
-const DISPLAY: Option<&str> = None;
-// const DISPLAY: Option<&str> = Some(":1");
+pub const DISPLAY: Option<&str> = None;
+// pub const DISPLAY: Option<&str> = Some(":1");
 
 const MIN_VERSION: [u32; 2] = [1, 3];
 const CLIENT_VERSION: [u32; 2] = [1, 5];
