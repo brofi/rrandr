@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::error::Error;
 use std::ffi::CString;
 use std::ptr;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use cairo::{XCBDrawable, XCBSurface, XCBVisualType};
@@ -196,11 +197,15 @@ pub fn show_popup_windows(cfg: &Config, btn: &Button) {
                                 if let Err(e) = conn.flush() {
                                     error!("Failed to flush connection: {e:?}");
                                 }
-                                match spawn_blocking(
+
+                                let conn = Arc::new(conn);
+                                match spawn_blocking(clone!(
+                                    #[strong]
+                                    conn,
                                     move || -> Result<(), Box<dyn Error + Send + Sync>> {
-                                        run_event_loop(show_secs)
-                                    },
-                                )
+                                        run_event_loop(show_secs, &conn)
+                                    }
+                                ))
                                 .await
                                 {
                                     Ok(res) => {
@@ -211,6 +216,7 @@ pub fn show_popup_windows(cfg: &Config, btn: &Button) {
                                     Err(e) => error!("Failed to await event loop: {e:?}"),
                                 }
 
+                                // connection must live and not be moved for surface to finish
                                 for surface in popups.values() {
                                     if let Some(device) = surface.device() {
                                         device.finish();
@@ -231,9 +237,7 @@ pub fn show_popup_windows(cfg: &Config, btn: &Button) {
     ));
 }
 
-fn run_event_loop(secs: f32) -> Result<(), Box<dyn Error + Send + Sync>> {
-    let dpy = DISPLAY.and_then(|s| CString::new(s).ok());
-    let (conn, _) = XCBConnection::connect(dpy.as_ref().map(|c| c.as_c_str()))?;
+fn run_event_loop(secs: f32, conn: &XCBConnection) -> Result<(), Box<dyn Error + Send + Sync>> {
     let now = Instant::now();
     let secs = Duration::from_secs_f32(secs);
     while now.elapsed() < secs {
