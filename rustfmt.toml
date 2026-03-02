@@ -1,4 +1,5 @@
-version = "Two"
+edition = "2021"
+style_edition = "2021"
 unstable_features = true
 
 condense_wildcard_suffixes = true
