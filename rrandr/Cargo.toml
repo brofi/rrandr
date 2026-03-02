@@ -15,6 +15,7 @@ async-channel = "2.3.1"
 cairo-rs = { version = "0.20.0", features = ["xcb"] }
 config = { path = "../rrandr_config", package = "rrandr_config" }
 env_logger = "0.11.3"
+formatx = "0.2.4"
 gdk = { version = "0.9.0", package = "gdk4" }
 gettext-rs = { version = "0.7", features = ["gettext-system"] }
 gtk = { version = "0.9.0", package = "gtk4", features = ["v4_6"] }

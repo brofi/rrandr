@@ -17,6 +17,7 @@ mod imp {
     use std::time::Duration;
 
     use config::Config;
+    use formatx::formatx;
     use gdk::{Key, ModifierType, Texture};
     use gettextrs::{gettext, ngettext};
     use glib::object::CastNone;
@@ -323,12 +324,17 @@ mod imp {
 
                 let timeout = cfg.revert_timeout;
                 if timeout > 0 {
-                    dialog.set_message(ngettext!(
-                        "Reverting in {} second",
-                        "Reverting in {} seconds",
-                        timeout.into(),
-                        timeout
-                    ));
+                    dialog.set_message(
+                        formatx!(
+                            ngettext(
+                                "Reverting in {} second",
+                                "Reverting in {} seconds",
+                                timeout.into()
+                            ),
+                            timeout
+                        )
+                        .expect("valid format string"),
+                    );
                     let countdown = spawn_future_local(clone!(
                         #[weak(rename_to = window)]
                         self,
@@ -337,12 +343,15 @@ mod imp {
                         async move {
                             for i in (1..=timeout).rev() {
                                 // Translators: '{}' gets replaced with the number of seconds left.
-                                let msg = ngettext!(
-                                    "Reverting in {} second",
-                                    "Reverting in {} seconds",
-                                    i.into(),
+                                let msg = formatx!(
+                                    ngettext(
+                                        "Reverting in {} second",
+                                        "Reverting in {} seconds",
+                                        i.into()
+                                    ),
                                     i
-                                );
+                                )
+                                .expect("valid format string");
                                 dialog.set_message(msg);
                                 timeout_future_seconds(1).await;
                             }
