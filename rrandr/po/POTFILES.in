@@ -1,5 +1,10 @@
 # List of files containing translatable strings for use with xgettext extraction.
-# Translatable strings from Rust files are extracted by xtr.
+src/window.rs
+src/data/mode.rs
+src/widget/details_box.rs
+src/widget/dialog.rs
+src/widget/mode_selector.rs
+src/widget/position_entry.rs
 src/res/shortcuts.ui
 src/res/window.ui
 src/res/rrandr.desktop.in

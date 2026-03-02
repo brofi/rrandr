@@ -85,20 +85,16 @@ fn gen_translation_template() {
     let pkg_name = env!("CARGO_PKG_NAME");
     let out = Path::new("po").join(env!("CARGO_PKG_NAME").to_owned() + ".pot");
 
-    let mut gen_pot_rs = Command::new(home::cargo_home().expect("cargo home").join("bin/xtr"));
-    gen_pot_rs.arg("--output").arg(&out).arg("--omit-header").arg("src/main.rs");
-    check_cmd(&mut gen_pot_rs);
-
-    let mut gen_pot_ui = Command::new("xgettext");
-    gen_pot_ui
+    let mut gen_pot = Command::new("xgettext");
+    gen_pot
         .arg("--files-from=po/POTFILES.in")
         .arg(format!("--output={}", out.to_str().unwrap()))
-        .args(["--join-existing", "--add-comments", "--sort-by-file"])
+        .args(["--add-comments", "--sort-by-file"])
         .args(["--copyright-holder", &copyright_holder()])
         .args(["--package-name", pkg_name])
         .args(["--package-version", env!("CARGO_PKG_VERSION")])
         .args(["--msgid-bugs-address", &(env!("CARGO_PKG_REPOSITORY").to_owned() + "/issues")]);
-    check_cmd(&mut gen_pot_ui);
+    check_cmd(&mut gen_pot);
 }
 
 fn check_cmd(cmd: &mut Command) {

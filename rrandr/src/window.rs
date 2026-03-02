@@ -327,6 +327,7 @@ mod imp {
                     dialog.set_message(
                         formatx!(
                             ngettext(
+                                // Translators: '{}' gets replaced with the number of seconds left.
                                 "Reverting in {} second",
                                 "Reverting in {} seconds",
                                 timeout.into()
@@ -342,17 +343,17 @@ mod imp {
                         dialog,
                         async move {
                             for i in (1..=timeout).rev() {
-                                // Translators: '{}' gets replaced with the number of seconds left.
-                                let msg = formatx!(
-                                    ngettext(
-                                        "Reverting in {} second",
-                                        "Reverting in {} seconds",
-                                        i.into()
-                                    ),
-                                    i
-                                )
-                                .expect("valid format string");
-                                dialog.set_message(msg);
+                                dialog.set_message(
+                                    formatx!(
+                                        ngettext(
+                                            "Reverting in {} second",
+                                            "Reverting in {} seconds",
+                                            i.into(),
+                                        ),
+                                        i
+                                    )
+                                    .expect("valid format string"),
+                                );
                                 timeout_future_seconds(1).await;
                             }
                             dialog.close();

@@ -7,8 +7,8 @@ msgid ""
 msgstr ""
 "Project-Id-Version: rrandr 0.2.0\n"
 "Report-Msgid-Bugs-To: https://github.com/brofi/rrandr/issues\n"
-"POT-Creation-Date: 2024-08-10 22:29+0200\n"
-"PO-Revision-Date: 2024-08-10 22:38+0200\n"
+"POT-Creation-Date: 2026-03-02 22:26+0100\n"
+"PO-Revision-Date: 2026-03-02 22:45+0100\n"
 "Last-Translator: Andreas Becker <brofi.archlinux@gmail.com>\n"
 "Language-Team: German\n"
 "Language: de\n"
@@ -16,27 +16,27 @@ msgstr ""
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 "Plural-Forms: nplurals=2; plural=(n != 1);\n"
-"X-Generator: Poedit 3.4.2\n"
+"X-Generator: Poedit 3.8\n"
 
 #: src/data/mode.rs:77
 msgid "Hz"
 msgstr "Hz"
 
-#: src/res/rrandr.desktop.in:5
+#: src/res/rrandr.desktop.in:4
 msgid "RRandR"
 msgstr "RRandR"
 
-#: src/res/rrandr.desktop.in:6
+#: src/res/rrandr.desktop.in:5
 msgid "Display Settings"
 msgstr "Anzeigeeinstellungen"
 
-#: src/res/rrandr.desktop.in:7 src/window.rs:398
+#: src/res/rrandr.desktop.in:6 src/window.rs:413
 msgid "A graphical interface to the RandR X Window System extension"
 msgstr ""
 "Eine grafische Schnittstelle zur RandR Erweiterung des X Window Systems"
 
 #. Translators: Keep semicolons and end with semicolon
-#: src/res/rrandr.desktop.in:14
+#: src/res/rrandr.desktop.in:13
 msgid "settings;configuration;display;screen;monitor;resolution;refresh rate;"
 msgstr ""
 "Einstellungen;Konfiguration;Anzeige;Bildschirm;Monitor;Auflösung;"
@@ -275,59 +275,60 @@ msgstr "Horizontale Position"
 msgid "Vertical position"
 msgstr "Vertikale Position"
 
-#: src/window.rs:311
+#: src/window.rs:156 src/window.rs:435
+msgid "Hide xrandr command"
+msgstr "Xrandr Befehl verbergen"
+
+#: src/window.rs:158 src/window.rs:437
+msgid "Show xrandr command"
+msgstr "Xrandr Befehl anzeigen"
+
+#: src/window.rs:319
 msgid "Confirm changes"
 msgstr "Änderungen bestätigen"
 
-#: src/window.rs:312
+#: src/window.rs:320
 msgid "Keep changes?"
 msgstr "Änderungen behalten?"
 
-#: src/window.rs:313
+#: src/window.rs:321
 msgid "_Keep"
 msgstr "_Behalten"
 
-#: src/window.rs:313
+#: src/window.rs:321
 msgid "_Revert"
 msgstr "_Zurücksetzen"
 
-#: src/window.rs:314
+#: src/window.rs:322
 msgid "Keep changes"
 msgstr "Änderungen behalten"
 
-#: src/window.rs:314
+#: src/window.rs:322
 msgid "Revert changes"
 msgstr "Änderungen zurücksetzen"
 
 #. Translators: '{}' gets replaced with the number of seconds left.
-#: src/window.rs:320 src/window.rs:334
+#: src/window.rs:331 src/window.rs:349
+#, rust-format
 msgid "Reverting in {} second"
 msgid_plural "Reverting in {} seconds"
 msgstr[0] "Zurücksetzen in {} Sekunde"
 msgstr[1] "Zurücksetzen in {} Sekunden"
 
-#: src/window.rs:368 src/window.rs:369
+#: src/window.rs:385 src/window.rs:386
 msgid "Failure"
 msgstr "Fehler"
 
-#: src/window.rs:370
+#: src/window.rs:387
 msgid "Changes have been reverted."
 msgstr "Änderungen wurden zurückgesetzt."
 
-#: src/window.rs:399
+#: src/window.rs:414
 msgid "Repository"
 msgstr "Projektarchiv"
 
 #. Translators: Add your name and email address to the translation (one translator
 #. per line).
-#: src/window.rs:406
+#: src/window.rs:421
 msgid "translator-credits"
 msgstr "Andreas Becker <brofi.archlinux@gmail.com>"
-
-#: src/window.rs:419
-msgid "Hide xrandr command"
-msgstr "Xrandr Befehl verbergen"
-
-#: src/window.rs:421
-msgid "Show xrandr command"
-msgstr "Xrandr Befehl anzeigen"
