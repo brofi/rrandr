@@ -29,7 +29,7 @@ mod imp {
     };
     use gtk::subclass::window::WindowImpl;
     use gtk::{
-        glib, Align, Box, Button, CompositeTemplate, EventControllerKey, Label, StringList,
+        gdk, glib, Align, Box, Button, CompositeTemplate, EventControllerKey, Label, StringList,
         StringObject, TemplateChild, Window,
     };
 

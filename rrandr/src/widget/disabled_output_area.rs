@@ -29,7 +29,8 @@ mod imp {
     use gtk::subclass::prelude::DerivedObjectProperties;
     use gtk::subclass::widget::WidgetImpl;
     use gtk::{
-        glib, DragSource, DrawingArea, DropControllerMotion, EventControllerMotion, GestureClick,
+        gdk, glib, DragSource, DrawingArea, DropControllerMotion, EventControllerMotion,
+        GestureClick,
     };
     use log::error;
 

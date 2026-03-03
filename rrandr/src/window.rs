@@ -39,9 +39,9 @@ mod imp {
     };
     use gtk::subclass::window::WindowImpl;
     use gtk::{
-        glib, template_callbacks, AboutDialog, ApplicationWindow, Box, Button, CompositeTemplate,
-        EventControllerKey, GestureClick, Label, License, Paned, Separator, TemplateChild,
-        ToggleButton,
+        gdk, glib, template_callbacks, AboutDialog, ApplicationWindow, Box, Button,
+        CompositeTemplate, EventControllerKey, GestureClick, Label, License, Paned, Separator,
+        TemplateChild, ToggleButton,
     };
     use log::warn;
 

@@ -1,6 +1,7 @@
 use std::fmt;
 use std::str::FromStr;
 
+use gtk::gdk;
 use serde::de::{self, Unexpected, Visitor};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
