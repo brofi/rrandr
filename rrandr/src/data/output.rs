@@ -88,7 +88,7 @@ mod imp {
             if let Some(mode) = mode {
                 if let Some(m) = self.modes.borrow().find_by_id(mode.id()) {
                     if *mode == m {
-                        self.mode.set(Some(mode.clone()));
+                        self.mode.replace(Some(mode.clone()));
                     } else {
                         panic!("Different GObject with same Mode ID");
                     }

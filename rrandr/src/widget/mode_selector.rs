@@ -1,5 +1,5 @@
 use glib::{wrapper, Object};
-use gtk::{glib, Widget};
+use gtk::{glib, Accessible, Buildable, ConstraintTarget, Widget};
 
 mod imp {
     use std::cell::RefCell;
@@ -11,7 +11,7 @@ mod imp {
     use glib::object::{CastNone, IsA};
     use glib::subclass::object::{ObjectImpl, ObjectImplExt};
     use glib::subclass::types::{ObjectSubclass, ObjectSubclassExt, ObjectSubclassIsExt};
-    use glib::subclass::{Signal, SignalClassHandlerToken};
+    use glib::subclass::Signal;
     use glib::{clone, derived_properties, object_subclass, Properties, SignalHandlerId, Value};
     use gtk::prelude::{BoxExt, ListItemExt, ListModelExtManual, ObjectExt, WidgetExt};
     use gtk::subclass::prelude::DerivedObjectProperties;
@@ -351,7 +351,7 @@ mod imp {
         }
     }
 
-    fn activate(_: &SignalClassHandlerToken, values: &[Value]) -> Option<Value> {
+    fn activate(values: &[Value]) -> Option<Value> {
         if let Some(value) = values.first() {
             if let Ok(this) = value.get::<super::ModeSelector>() {
                 this.imp().resolution.activate();
@@ -362,7 +362,9 @@ mod imp {
 }
 
 wrapper! {
-    pub struct ModeSelector(ObjectSubclass<imp::ModeSelector>) @extends Widget;
+    pub struct ModeSelector(ObjectSubclass<imp::ModeSelector>)
+        @extends Widget,
+        @implements Accessible, Buildable, ConstraintTarget;
 }
 
 impl ModeSelector {

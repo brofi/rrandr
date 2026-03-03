@@ -1,7 +1,7 @@
 use glib::object::ObjectExt;
 use glib::{closure_local, wrapper, Object, ValueDelegate};
 use gtk::subclass::prelude::ObjectSubclassIsExt;
-use gtk::{glib, Widget};
+use gtk::{glib, Accessible, Buildable, ConstraintTarget, Widget};
 
 use crate::data::values::I16;
 
@@ -252,7 +252,9 @@ mod imp {
 }
 
 wrapper! {
-    pub struct PositionEntry(ObjectSubclass<imp::PositionEntry>) @extends Widget;
+    pub struct PositionEntry(ObjectSubclass<imp::PositionEntry>)
+        @extends Widget,
+        @implements Accessible, Buildable, ConstraintTarget;
 }
 
 impl PositionEntry {

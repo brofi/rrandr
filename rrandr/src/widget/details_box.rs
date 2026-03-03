@@ -1,7 +1,7 @@
 use glib::subclass::types::ObjectSubclassIsExt;
 use glib::{closure_local, wrapper, Object, ValueDelegate};
 use gtk::prelude::ObjectExt;
-use gtk::{glib, Widget};
+use gtk::{glib, Accessible, Buildable, ConstraintTarget, Widget};
 
 use crate::data::output::Output;
 
@@ -589,7 +589,9 @@ mod imp {
 }
 
 wrapper! {
-    pub struct DetailsBox(ObjectSubclass<imp::DetailsBox>) @extends Widget;
+    pub struct DetailsBox(ObjectSubclass<imp::DetailsBox>)
+        @extends Widget,
+        @implements Accessible, Buildable, ConstraintTarget;
 }
 
 impl DetailsBox {

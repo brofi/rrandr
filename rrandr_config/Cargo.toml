@@ -9,8 +9,8 @@ repository = "https://github.com/brofi/rrandr"
 license = "GPL-3.0-or-later"
 
 [dependencies]
-gdk = { version = "0.9.0", package = "gdk4" }
-gtk = { version = "0.9.0", package = "gtk4" }
+gdk = { version = "0.10.0", package = "gdk4" }
+gtk = { version = "0.10.0", package = "gtk4" }
 log = "0.4.22"
 rrandr_config_derive = { path = "../rrandr_config_derive" }
 serde = { version = "1.0.203", features = ["derive"] }

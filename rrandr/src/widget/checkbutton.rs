@@ -1,7 +1,7 @@
 use glib::subclass::types::ObjectSubclassIsExt;
 use glib::{wrapper, Object};
 use gtk::prelude::{CheckButtonExt, ObjectExt};
-use gtk::{glib, Widget};
+use gtk::{glib, Accessible, Buildable, ConstraintTarget, Widget};
 
 mod imp {
     use std::cell::RefCell;
@@ -10,7 +10,7 @@ mod imp {
     use glib::object::ObjectExt;
     use glib::subclass::object::{ObjectImpl, ObjectImplExt};
     use glib::subclass::types::{ObjectSubclass, ObjectSubclassExt, ObjectSubclassIsExt};
-    use glib::subclass::{Signal, SignalClassHandlerToken};
+    use glib::subclass::Signal;
     use glib::{object_subclass, SignalHandlerId, Value};
     use gtk::prelude::WidgetExt;
     use gtk::subclass::widget::{WidgetClassExt, WidgetImpl};
@@ -65,7 +65,7 @@ mod imp {
         }
     }
 
-    fn activate(_: &SignalClassHandlerToken, values: &[Value]) -> Option<Value> {
+    fn activate(values: &[Value]) -> Option<Value> {
         if let Some(value) = values.first() {
             if let Ok(this) = value.get::<super::CheckButton>() {
                 this.imp().widget.activate();
@@ -76,7 +76,9 @@ mod imp {
 }
 
 wrapper! {
-    pub struct CheckButton(ObjectSubclass<imp::CheckButton>) @extends Widget;
+    pub struct CheckButton(ObjectSubclass<imp::CheckButton>)
+        @extends Widget,
+        @implements Accessible, Buildable, ConstraintTarget;
 }
 
 impl CheckButton {

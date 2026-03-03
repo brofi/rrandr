@@ -1,5 +1,5 @@
 use glib::{wrapper, Object};
-use gtk::{glib, Widget};
+use gtk::{glib, Accessible, Buildable, ConstraintTarget, Widget};
 
 mod imp {
     use std::cell::Cell;
@@ -124,7 +124,9 @@ mod imp {
 }
 
 wrapper! {
-    pub struct IconText(ObjectSubclass<imp::IconText>) @extends Widget;
+    pub struct IconText(ObjectSubclass<imp::IconText>)
+        @extends Widget,
+        @implements Accessible, Buildable, ConstraintTarget;
 }
 
 impl IconText {
