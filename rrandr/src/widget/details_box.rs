@@ -118,7 +118,8 @@ mod imp {
                     .column_spacing(SPACING.into())
                     .orientation(Orientation::Horizontal)
                     .selection_mode(SelectionMode::None)
-                    .max_children_per_line(u32::MAX)
+                    .halign(Align::Start)
+                    .hexpand(true)
                     .build(),
                 sw_enabled: Switch::new(&gettext("Enable/disable")),
                 mode_selector: ModeSelector::new(),
@@ -179,9 +180,6 @@ mod imp {
 
         fn constructed(&self) {
             self.parent_constructed();
-
-            self.fb_details.set_halign(Align::Fill);
-            self.fb_details.set_hexpand(true);
 
             self.fb_details.append(&DetailsChild::new(
                 // Output status
