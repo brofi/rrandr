@@ -25,8 +25,9 @@ mod imp {
     use gtk::subclass::prelude::DerivedObjectProperties;
     use gtk::subclass::widget::{WidgetClassExt, WidgetImpl};
     use gtk::{
-        glib, Align, BinLayout, Box, DropDown, FlowBox, Orientation, PositionType, Scale,
-        SelectionMode, Separator, ToggleButton, Widget, INVALID_LIST_POSITION,
+        glib, major_version, micro_version, minor_version, Align, BinLayout, Box, DropDown,
+        FlowBox, Orientation, PositionType, Scale, SelectionMode, Separator, ToggleButton, Widget,
+        INVALID_LIST_POSITION,
     };
 
     use super::Update;
@@ -118,7 +119,6 @@ mod imp {
                     .column_spacing(SPACING.into())
                     .orientation(Orientation::Horizontal)
                     .selection_mode(SelectionMode::None)
-                    .halign(Align::Start)
                     .hexpand(true)
                     .build(),
                 sw_enabled: Switch::new(&gettext("Enable/disable")),
@@ -180,6 +180,13 @@ mod imp {
 
         fn constructed(&self) {
             self.parent_constructed();
+
+            if major_version() >= 4 && minor_version() >= 17 && micro_version() >= 2 {
+                self.fb_details.set_halign(Align::Start);
+            } else {
+                self.fb_details.set_halign(Align::Fill);
+                self.fb_details.set_max_children_per_line(u32::MAX);
+            }
 
             self.fb_details.append(&DetailsChild::new(
                 // Output status
