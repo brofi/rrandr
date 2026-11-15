@@ -359,66 +359,107 @@ impl Randr {
     }
 
     pub fn apply(&self, outputs: &Outputs) -> bool {
-        debug!("Applying changes");
+        debug!("Applying changes (KScreen-style transactional path)");
         let primary = outputs.iter::<Output>().map(Result::unwrap).find(Output::primary);
-        let screen_size = self.get_screen_size(outputs, primary.as_ref());
+        let final_screen_size = self.get_screen_size(outputs, primary.as_ref());
 
-        let screen_size_px_changed = self.screen_size.get().width != screen_size.width
-            || self.screen_size.get().height != screen_size.height;
-        let screen_size_mm_changed = self.screen_size.get().mwidth != screen_size.mwidth
-            || self.screen_size.get().mheight != screen_size.mheight;
+        let current = self.screen_size.get();
+        let screen_size_px_changed =
+            current.width != final_screen_size.width || current.height != final_screen_size.height;
+        let screen_size_mm_changed = current.mwidth != final_screen_size.mwidth
+            || current.mheight != final_screen_size.mheight;
 
-        // Disable outputs
+        // Collect which CRTCs must be turned off completely (output disabled or scaled).
+        // CRTCs that stay enabled are left enabled so we can move them in place, matching
+        // the successful KScreen sequence (no intermediate disable for them).
+        let mut crtcs_to_disable: Vec<CrtcId> = Vec::new();
         for output in outputs.iter::<Output>().map(Result::unwrap) {
             let crtc_id = self.outputs.borrow()[&output.id()].crtc;
             if crtc_id == 0 {
-                // Output already disabled
                 continue;
             }
-            let crtc = &self.crtcs.borrow()[&crtc_id];
-            // Even though the crtc dimension contains the transformation, a match error
-            // occurs when setting the screen size, so disable scaled CRTCs.
             let transform = self.transforms.borrow()[&crtc_id];
             let has_scale = transform.matrix11 / 65536 != 1 || transform.matrix22 / 65536 != 1;
-            if !output.enabled()
-                || has_scale
-                || (screen_size_px_changed
-                    && (i32::from(crtc.x) + i32::from(crtc.width) > i32::from(screen_size.width)
-                        || i32::from(crtc.y) + i32::from(crtc.height)
-                            > i32::from(screen_size.height)))
-            {
-                // Disable outputs that are still enabled but shouldn't be and outputs that stay
-                // enabled but currently don't fit the new screen size. The latter needs to be
-                // done to avoid an invalid intermediate configuration when actually setting the
-                // new screen size.
-                if handle_reply_error(self.disable_crtc(crtc_id), "disable CRTC") {
+            if !output.enabled() || has_scale {
+                crtcs_to_disable.push(crtc_id);
+            }
+        }
+
+        for &crtc_id in &crtcs_to_disable {
+            if handle_reply_error(self.disable_crtc(crtc_id), "disable CRTC") {
+                return false;
+            }
+        }
+
+        // When the framebuffer size changes, first grow to a temporary size that can
+        // contain both the current CRTC positions and the desired new positions.
+        // This avoids the driver seeing a CRTC outside the screen during the transition
+        // (the pattern observed in successful KScreen logs that briefly used 3840x2160).
+        if screen_size_px_changed {
+            let enabled_new: Vec<_> = outputs
+                .iter::<Output>()
+                .map(Result::unwrap)
+                .filter(Output::enabled)
+                .collect();
+            let new_bounds = Rect::bounds(enabled_new.iter().map(|o| o.rect()).collect());
+
+            // Union of current screen and the new desired bounds
+            let tmp_w = current
+                .width
+                .max(final_screen_size.width)
+                .max(new_bounds.width());
+            let tmp_h = current
+                .height
+                .max(final_screen_size.height)
+                .max(new_bounds.height());
+
+            // Clamp to hardware limits
+            let tmp_w = self
+                .screen_size_range
+                .min_width
+                .max(self.screen_size_range.max_width.min(tmp_w));
+            let tmp_h = self
+                .screen_size_range
+                .min_height
+                .max(self.screen_size_range.max_height.min(tmp_h));
+
+            if tmp_w != current.width || tmp_h != current.height {
+                debug!(
+                    "Growing screen to intermediate size {}x{} px (to hold old+new geometries)",
+                    tmp_w, tmp_h
+                );
+                // Keep mm roughly proportional; exact mm will be corrected on the final set
+                let tmp_mm_w = if current.width > 0 {
+                    ((u32::from(tmp_w) * u32::from(current.mwidth)) / u32::from(current.width))
+                        .max(1) as u16
+                } else {
+                    final_screen_size.mwidth
+                };
+                let tmp_mm_h = if current.height > 0 {
+                    ((u32::from(tmp_h) * u32::from(current.mheight)) / u32::from(current.height))
+                        .max(1) as u16
+                } else {
+                    final_screen_size.mheight
+                };
+
+                if handle_no_reply_error(
+                    set_screen_size(
+                        &self.conn,
+                        self.root,
+                        tmp_w,
+                        tmp_h,
+                        tmp_mm_w.into(),
+                        tmp_mm_h.into(),
+                    ),
+                    "set intermediate screen size",
+                ) {
                     return false;
                 }
             }
         }
 
-        if screen_size_px_changed || screen_size_mm_changed {
-            debug!(
-                "Setting screen size to {}x{} px, {}x{} mm",
-                screen_size.width, screen_size.height, screen_size.mwidth, screen_size.mheight
-            );
-
-            if handle_no_reply_error(
-                set_screen_size(
-                    &self.conn,
-                    self.root,
-                    screen_size.width,
-                    screen_size.height,
-                    screen_size.mwidth.into(),
-                    screen_size.mheight.into(),
-                ),
-                "set screen size",
-            ) {
-                return false;
-            }
-        }
-
-        // Update outputs
+        // Now move / (re)enable every output that should be on. They stay enabled
+        // throughout, matching KScreen's RRSetCrtcConfig (change output) behaviour.
         for output in outputs.iter::<Output>().map(Result::unwrap).filter(Output::enabled) {
             let output_info = &self.outputs.borrow()[&output.id()];
             let mut crtc_id = output_info.crtc;
@@ -427,9 +468,7 @@ impl Randr {
                     ci.outputs.len() > 1 && ci.outputs[0] != output.id()
                 })
             {
-                // If this output was disabled before get it a new empty CRTC. If this output is
-                // enabled, shares a CRTC with other outputs and it's not the first one listed,
-                // move it to a new empty CRTC.
+                // Previously disabled or shared-CRTC case: allocate a free CRTC
                 if let Some(empty_id) = self.get_valid_empty_crtc(&output) {
                     crtc_id = empty_id;
                 } else {
@@ -459,6 +498,31 @@ impl Randr {
                     &[output.id()],
                 ),
                 "update CRTC",
+            ) {
+                return false;
+            }
+        }
+
+        // Finally shrink (or set exact mm) to the precise final screen size
+        if screen_size_px_changed || screen_size_mm_changed {
+            debug!(
+                "Setting final screen size to {}x{} px, {}x{} mm",
+                final_screen_size.width,
+                final_screen_size.height,
+                final_screen_size.mwidth,
+                final_screen_size.mheight
+            );
+
+            if handle_no_reply_error(
+                set_screen_size(
+                    &self.conn,
+                    self.root,
+                    final_screen_size.width,
+                    final_screen_size.height,
+                    final_screen_size.mwidth.into(),
+                    final_screen_size.mheight.into(),
+                ),
+                "set final screen size",
             ) {
                 return false;
             }
